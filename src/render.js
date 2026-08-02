@@ -98,6 +98,48 @@ function drawArena() {
   ctx.arc(ARENA.w / 2, ARENA.h / 2, 96, 0, Math.PI * 2);
   ctx.stroke();
 
+  // ---- 場地物件：牆、地刺、冰塊 ----
+  for (const wl of G.walls) {
+    ctx.fillStyle = '#2b3140';
+    ctx.strokeStyle = INK; ctx.lineWidth = 3;
+    roundRect(ctx, wl.x, wl.y, wl.w, wl.h, 6);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#3c4354';
+    roundRect(ctx, wl.x + 3, wl.y + 3, wl.w - 6, Math.max(4, wl.h * 0.3), 4);
+    ctx.fill();
+  }
+  for (const hz of G.hazards) {
+    ctx.fillStyle = 'rgba(120,60,80,0.25)';
+    ctx.beginPath(); ctx.arc(hz.x, hz.y, hz.r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#7a3c50'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(hz.x, hz.y, hz.r, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = '#9a5468';
+    for (let i = 0; i < 6; i++) {
+      const a = i * Math.PI / 3 + Math.sin(hz.x) * 2;
+      const sx = hz.x + Math.cos(a) * hz.r * 0.5, sy = hz.y + Math.sin(a) * hz.r * 0.5;
+      ctx.beginPath();
+      ctx.moveTo(sx - 4, sy + 3); ctx.lineTo(sx, sy - 6); ctx.lineTo(sx + 4, sy + 3);
+      ctx.closePath(); ctx.fill();
+    }
+  }
+  for (const ib of G.iceblocks) {
+    ctx.fillStyle = 'rgba(191,232,245,0.85)';
+    ctx.strokeStyle = '#7ab8d0'; ctx.lineWidth = 3;
+    roundRect(ctx, ib.x - ib.r, ib.y - ib.r, ib.r * 2, ib.r * 2, 7);
+    ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(ib.x - ib.r * 0.4, ib.y - ib.r * 0.5); ctx.lineTo(ib.x + ib.r * 0.1, ib.y + ib.r * 0.3);
+    ctx.moveTo(ib.x + ib.r * 0.3, ib.y - ib.r * 0.3); ctx.lineTo(ib.x, ib.y + ib.r * 0.5);
+    ctx.stroke();
+    if (ib.hp < ib.maxHp) {
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(ib.x - ib.r, ib.y - ib.r - 7, ib.r * 2, 3.5);
+      ctx.fillStyle = '#7ab8d0';
+      ctx.fillRect(ib.x - ib.r, ib.y - ib.r - 7, ib.r * 2 * Math.max(0, ib.hp / ib.maxHp), 3.5);
+    }
+  }
+
   // 邊界警戒條
   const T = 16;
   ctx.save();

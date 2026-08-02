@@ -34,12 +34,33 @@ function buildCharSelect() {
   const wrap = $('char-grid');
   wrap.innerHTML = '';
   if (!SAVE) SAVE = loadSave();
-  CHARACTERS.forEach(ch => {
+  // 排序：可選的在前（三傑＋已解鎖），未解鎖照解鎖順序排後面
+  const ordered = [...CHARACTERS].sort((a, b) => {
+    const ua = charUnlocked(a.id) ? 0 : 1, ub = charUnlocked(b.id) ? 0 : 1;
+    if (ua !== ub) return ua - ub;
+    return 0;
+  });
+  ordered.forEach(ch => {
     const w = WEAPON_MAP[ch.weapon];
+    const unlocked = charUnlocked(ch.id);
     const el = document.createElement('div');
-    el.className = 'char-card' + (selectedChar === ch.id ? ' active' : '');
+    el.className = 'char-card' + (selectedChar === ch.id ? ' active' : '') + (unlocked ? '' : ' locked');
     el.dataset.char = ch.id;
     const best = SAVE.best[ch.id];
+    if (!unlocked) {
+      const idx = UNLOCK_ORDER.indexOf(ch.id);
+      const need = unlockNeed(idx);
+      const have = SAVE.totalWaves || 0;
+      el.innerHTML =
+        '<img class="portrait dim" src="assets/portraits/' + ch.id + '.png" alt="' + ch.name + '"' +
+          ' onerror="this.style.display=\'none\'">' +
+        '<div class="char-name">' + ch.name + '</div>' +
+        '<div class="char-tag">修行中</div>' +
+        '<div class="char-lock">累積 ' + need + ' 波解鎖<br>（目前 ' + Math.min(have, need) + '／' + need + '）</div>';
+      el.title = '每一局打到的波數都會累積，累積 ' + need + ' 波後解鎖';
+      wrap.appendChild(el);
+      return;
+    }
     el.innerHTML =
       '<img class="portrait" src="assets/portraits/' + ch.id + '.png" alt="' + ch.name + '"' +
         ' onerror="this.style.display=\'none\'">' +
@@ -113,7 +134,7 @@ function updateStartBtn() {
 }
 
 function beginRun() {
-  if (!selectedChar) return;
+  if (!selectedChar || !charUnlocked(selectedChar)) return;
   startRun(selectedChar, selectedDanger);
   onModeChange();
 }
@@ -375,6 +396,69 @@ function renderEnd() {
   }
 }
 
+/* ---------- F2 即時調參面板 ----------
+   改數字立即生效並存 localStorage；「匯出」複製 JSON 給工程回寫官方預設。 */
+function saveTune() {
+  try { localStorage.setItem('penguin_tune_v1', JSON.stringify(TUNE)); } catch (e) {}
+}
+
+function buildTunePanel() {
+  const body = $('tune-body');
+  if (!body || body.childElementCount) return;
+  let curGroup = null;
+  TUNE_DEFS.forEach(d => {
+    if (d.g !== curGroup) {
+      curGroup = d.g;
+      const gh = document.createElement('div');
+      gh.className = 'tune-group';
+      gh.textContent = d.g;
+      body.appendChild(gh);
+    }
+    const row = document.createElement('div');
+    row.className = 'tune-row' + (TUNE[d.k] !== d.def ? ' changed' : '');
+    row.innerHTML =
+      '<label>' + d.n + '</label>' +
+      '<input type="range" min="' + d.min + '" max="' + d.max + '" step="' + d.step + '" value="' + TUNE[d.k] + '">' +
+      '<input type="number" min="' + d.min + '" max="' + d.max + '" step="' + d.step + '" value="' + TUNE[d.k] + '">';
+    const [slider, num] = row.querySelectorAll('input');
+    const apply = v => {
+      v = parseFloat(v);
+      if (isNaN(v)) return;
+      TUNE[d.k] = v;
+      slider.value = v; num.value = v;
+      row.classList.toggle('changed', v !== d.def);
+      saveTune();
+      if (G.player) recalcStats(G.player);   // 生命上限等即時反映
+    };
+    slider.oninput = () => apply(slider.value);
+    num.onchange = () => apply(num.value);
+    row.dataset.key = d.k;
+    body.appendChild(row);
+  });
+  $('tune-reset').onclick = () => {
+    TUNE_DEFS.forEach(d => TUNE[d.k] = d.def);
+    saveTune();
+    body.innerHTML = '';
+    buildTunePanel();
+    if (G.player) recalcStats(G.player);
+    toast('調參已全部重置');
+  };
+  $('tune-export').onclick = () => {
+    const diff = {};
+    TUNE_DEFS.forEach(d => { if (TUNE[d.k] !== d.def) diff[d.k] = TUNE[d.k]; });
+    const txt = JSON.stringify(diff, null, 2);
+    navigator.clipboard.writeText(txt).then(() => toast('已複製調整值（貼給工程定案）'));
+  };
+  $('tune-close').onclick = () => $('tune-panel').classList.add('hidden');
+}
+
+function toggleTunePanel() {
+  const p = $('tune-panel');
+  if (!p) return;
+  buildTunePanel();
+  p.classList.toggle('hidden');
+}
+
 /* ---------- 輸入 ---------- */
 function initInput() {
   window.addEventListener('keydown', e => {
@@ -388,6 +472,7 @@ function initInput() {
     if (k === 'm' && typeof sfxToggleMute === 'function') {
       toast(sfxToggleMute() ? '靜音' : '音效開');
     }
+    if (k === 'f2') { e.preventDefault(); toggleTunePanel(); }
     if (G.mode === 'levelup' && ['1', '2', '3', '4'].includes(k)) {
       const i = parseInt(k) - 1;
       if (G.levelChoices && G.levelChoices[i]) chooseLevelUp(i);

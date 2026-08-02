@@ -4,6 +4,41 @@
    所有數值為本專案自行重建，非引用任何既有作品數據
    ============================================================ */
 
+/* ---------- 即時調參（F2 面板） ----------
+   總監直接改數字即時試玩微調，不用等工程改版。
+   值存 localStorage（penguin_tune_v1），重載後保留；「重置」回官方預設。
+   模擬量測環境沒有 localStorage，永遠用官方預設——平衡數據不會被面板污染。
+*/
+const TUNE_DEFS = [
+  { g: '玩家', k: 'playerHp',       n: '初始生命',       def: 60,    min: 10,  max: 300,  step: 5 },
+  { g: '玩家', k: 'playerSpeed',    n: '移動速度',       def: 190,   min: 80,  max: 400,  step: 10 },
+  { g: '玩家', k: 'playerDmgMul',   n: '傷害倍率',       def: 1.0,   min: 0.2, max: 5,    step: 0.1 },
+  { g: '玩家', k: 'playerAtkSpdMul', n: '攻速倍率',      def: 1.0,   min: 0.2, max: 5,    step: 0.1 },
+  { g: '玩家', k: 'playerRangeMul', n: '攻擊範圍倍率',   def: 1.0,   min: 0.3, max: 3,    step: 0.1 },
+  { g: '玩家', k: 'levelHp',        n: '升級送生命',     def: 3,     min: 0,   max: 30,   step: 1 },
+  { g: '玩家', k: 'levelDmg',       n: '升級送傷害%',    def: 2,     min: 0,   max: 20,   step: 1 },
+  { g: '敵人', k: 'enemyHpBase',    n: '血量基礎倍率',   def: 3.0,   min: 0.5, max: 10,   step: 0.25 },
+  { g: '敵人', k: 'enemyHpGrowth',  n: '血量成長指數',   def: 1.065, min: 1.0, max: 1.3,  step: 0.005 },
+  { g: '敵人', k: 'enemyDmgMul',    n: '傷害倍率',       def: 1.3,   min: 0.3, max: 5,    step: 0.1 },
+  { g: '敵人', k: 'enemyCountMul',  n: '數量倍率',       def: 1.0,   min: 0.3, max: 3,    step: 0.1 },
+  { g: '敵人', k: 'enemySpeedMul',  n: '移速倍率',       def: 1.0,   min: 0.5, max: 2,    step: 0.05 },
+  { g: '招式', k: 'dashCdMul',      n: '衝刺冷卻倍率',   def: 1.0,   min: 0.2, max: 3,    step: 0.1 },
+  { g: '招式', k: 'techDmgMul',     n: '招式傷害倍率',   def: 1.0,   min: 0.2, max: 5,    step: 0.1 },
+  { g: '手感', k: 'hitstopLight',   n: '輕頓幀秒',       def: 0.035, min: 0,   max: 0.15, step: 0.005 },
+  { g: '手感', k: 'hitstopHeavy',   n: '重頓幀秒',       def: 0.07,  min: 0,   max: 0.3,  step: 0.01 },
+  { g: '經濟', k: 'matMul',         n: '素材掉落倍率',   def: 1.0,   min: 0.3, max: 5,    step: 0.1 },
+  { g: '經濟', k: 'waveDurMul',     n: '波長倍率',       def: 1.0,   min: 0.5, max: 2,    step: 0.1 },
+];
+const TUNE = {};
+TUNE_DEFS.forEach(d => TUNE[d.k] = d.def);
+(function loadTune() {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    const saved = JSON.parse(localStorage.getItem('penguin_tune_v1') || '{}');
+    for (const k in saved) if (k in TUNE && typeof saved[k] === 'number') TUNE[k] = saved[k];
+  } catch (e) {}
+})();
+
 /* ---------- 屬性定義 ---------- */
 const STAT_DEFS = [
   { key: 'maxHp',   name: '最大生命', suffix: '',  color: '#e05c5c', desc: '生命上限' },
@@ -585,6 +620,8 @@ const ENEMIES = [
     healCd: 2.4, healAmt: 14, healRange: 190 },
   { id: 'summoner', name: '召喚者', behavior: 'summoner', hp: 44, dmg: 8, speed: 52, size: 17, color: '#8a6bb0', mat: 4, wave: 13,
     sumCd: 4.0, sumN: 2 },
+  { id: 'wisp', name: '狙擊鬼火', behavior: 'thrower', hp: 10, dmg: 11, speed: 60, size: 10, color: '#7ab8e0', mat: 2, wave: 6,
+    keepDist: 300, shotCd: 2.6, shotSpd: 360 },
 ];
 const ENEMY_MAP = {};
 ENEMIES.forEach(e => ENEMY_MAP[e.id] = e);
@@ -611,9 +648,32 @@ const DANGER_LEVELS = [
   { lv: 5, name: '危險 5', hp: 2.80, dmg: 1.72, count: 1.92, mat: 1.25 },
 ];
 
-function waveDuration(w) { return 20 + (w - 1) * 1.5; }
+function waveDuration(w) { return (20 + (w - 1) * 1.5) * TUNE.waveDurMul; }
 function isBossWave(w) { return w === 10 || w === 20; }
 function bossOfWave(w) { return w === 10 ? 'champ' : 'yokozuna'; }
+
+/* ---------- 武器流派套裝 ----------
+   同流派湊 2 把＝小成、湊 3 把以上＝大成。逼出「走流派」的 build 決策。
+   bonus 直接疊進屬性；摔技與掌另有專屬接點（摔投傷害／擊退）。 */
+const KLASS_BONUS = {
+  '拳':   { name: '拳法',  s2: { atkSpd: 10 }, s3: { atkSpd: 25 } },
+  '刃':   { name: '刀劍',  s2: { crit: 8 },    s3: { crit: 20 } },
+  '腿':   { name: '腿功',  s2: { range: 8 },   s3: { range: 18 } },
+  '棍':   { name: '棍術',  s2: { dmg: 8 },     s3: { dmg: 18 } },
+  '重械': { name: '重械',  s2: { dmg: 10 },    s3: { dmg: 25 } },
+  '肘膝': { name: '肘膝',  s2: { lifesteal: 3 }, s3: { lifesteal: 8 } },
+  '相撲': { name: '相撲',  s2: { maxHp: 15 },  s3: { maxHp: 35 } },
+  '軟兵': { name: '軟兵',  s2: { range: 10 },  s3: { range: 20 } },
+  '摔技': { name: '摔投',  s2: { throwMul: 0.15 }, s3: { throwMul: 0.35 } },
+  '掌':   { name: '掌勁',  s2: { knockMul: 0.30 }, s3: { knockMul: 0.60 } },
+};
+
+/* ---------- 角色解鎖 ----------
+   三傑起手，其餘按順序用「累積波數」解鎖——每一局打到的波數都算進度。 */
+const START_CHARS = ['karate', 'wrestler', 'kenshi'];
+const UNLOCK_ORDER = ['boxer', 'sumo', 'muaythai', 'judo', 'ninja', 'taichi',
+  'ironhead', 'thug', 'nunchaku', 'monk', 'berserker', 'strongman', 'aikido'];
+function unlockNeed(idx) { return (idx + 1) * 8; }   // 第 N 隻要累積 8N 波
 
 /* 敵人成長：「前期格鬥、後期割草」的成長曲線。
    基礎血量拉高 2.2 倍讓前期單怪扛得住一整套連段（有東西可以 COMBO），
@@ -622,18 +682,20 @@ function bossOfWave(w) { return w === 10 ? 'champ' : 'yokozuna'; }
 function enemyScale(wave, danger) {
   const d = DANGER_LEVELS[danger];
   return {
-    hp: 2.5 * Math.pow(1.065, wave - 1) * d.hp,
-    dmg: 1.12 * (1 + (wave - 1) * 0.10) * d.dmg,
-    speed: 1 + (wave - 1) * 0.010,
+    hp: TUNE.enemyHpBase * Math.pow(TUNE.enemyHpGrowth, wave - 1) * d.hp,
+    dmg: TUNE.enemyDmgMul * (1 + (wave - 1) * 0.10) * d.dmg,
+    speed: (1 + (wave - 1) * 0.010) * TUNE.enemySpeedMul,
   };
 }
+
+function isEliteWave(w) { return w === 7 || w === 13 || w === 17; }
 
 /* 每波生成預算：決定同時在場的壓力。
    走平方成長是刻意的——單體血量壓低、數量拉高，才有「被淹沒」的手感；
    血量與數量的乘積（整波總血量）維持在玩家該波總輸出的七成左右。 */
 function waveBudget(wave, danger) {
   const d = DANGER_LEVELS[danger];
-  return (14 + 3.0 * wave + 0.8 * wave * wave) * d.count;
+  return (14 + 3.0 * wave + 0.8 * wave * wave) * d.count * TUNE.enemyCountMul;
 }
 
 /* 升級所需經驗 */
