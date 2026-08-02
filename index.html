@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>肉搏場</title>
+<style>
+:root{
+  --bg:#0d0f14; --panel:#171a21; --panel2:#1e222c; --line:#2c3340;
+  --ink:#0d0f14; --text:#e2e4e9; --muted:#8d95a5;
+  --accent:#d98a3c; --good:#77c47f; --bad:#d9564f; --gold:#e0c341;
+  --font:"Noto Sans TC","Microsoft JhengHei","PingFang TC",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);overflow:hidden;font-family:var(--font);color:var(--text)}
+body{display:flex;align-items:center;justify-content:center}
+#stage{position:relative;width:1280px;height:720px;transform-origin:center center;flex:none}
+#game{position:absolute;inset:0;width:1280px;height:720px;background:#12141a;display:block}
+
+.hidden{display:none !important}
+button{font-family:var(--font);cursor:pointer;border:none;color:inherit}
+button:disabled{cursor:not-allowed;opacity:.45}
+
+/* ---- 覆蓋面板共用 ---- */
+.overlay{position:absolute;inset:0;background:rgba(8,9,13,.9);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;padding:26px}
+.title-xl{font-size:62px;font-weight:900;letter-spacing:.22em;text-indent:.22em;line-height:1}
+.title-md{font-size:26px;font-weight:800;letter-spacing:.16em;text-indent:.16em}
+.sub{color:var(--muted);font-size:14px;letter-spacing:.08em;margin-top:12px;line-height:1.9}
+.rule{width:120px;height:3px;background:var(--accent);margin:20px 0}
+
+.btn{background:var(--panel2);border:2px solid var(--line);color:var(--text);
+  padding:13px 34px;font-size:16px;font-weight:700;letter-spacing:.12em;transition:.12s}
+.btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#181008}
+.btn.primary:hover:not(:disabled){background:#e8994a;border-color:#e8994a;color:#181008}
+.btn.ghost{background:transparent}
+
+/* ---- 主選單 ---- */
+#panel-menu .logo{position:relative;text-align:center}
+#panel-menu .logo .cn{font-size:88px;font-weight:900;letter-spacing:.3em;text-indent:.3em}
+#panel-menu .logo .bar{height:5px;background:var(--accent);margin:14px auto 0;width:340px}
+#panel-menu .tagline{margin-top:18px;color:var(--muted);font-size:15px;letter-spacing:.2em}
+#panel-menu .keys{margin-top:38px;color:#5f6878;font-size:12.5px;letter-spacing:.1em;line-height:2.1;text-align:center}
+
+/* ---- 角色選擇 ---- */
+#panel-select{justify-content:flex-start;padding:18px 26px}
+.select-head{display:flex;align-items:baseline;gap:18px;width:100%;max-width:1180px;margin-bottom:10px}
+.select-head h2{font-size:22px;font-weight:800;letter-spacing:.18em}
+.select-head .hint{color:var(--muted);font-size:12.5px;letter-spacing:.06em}
+#char-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;width:100%;max-width:1180px;
+  overflow-y:auto;max-height:592px;padding-right:4px}
+#char-grid::-webkit-scrollbar{width:8px}
+#char-grid::-webkit-scrollbar-thumb{background:#2c3340}
+.char-card{background:var(--panel);border:2px solid var(--line);padding:6px;cursor:pointer;transition:.12s;
+  display:flex;flex-direction:column;align-items:center;text-align:center}
+.char-card:hover{border-color:#4a5568}
+.char-card.active{border-color:var(--accent);background:#20242e}
+.char-card .portrait{width:48px;height:48px;image-rendering:auto}
+.char-name{font-size:16px;font-weight:800;letter-spacing:.08em}
+.char-tag{font-size:10.5px;color:var(--accent);letter-spacing:.06em;margin-bottom:5px}
+.char-tag i{font-style:normal;color:#7d8698}
+.char-stats{display:flex;flex-wrap:wrap;gap:2px;justify-content:center;margin-bottom:5px}
+.char-stats span{font-size:10px;padding:0 4px;border:1px solid;line-height:1.55}
+.char-stats .up{color:var(--good);border-color:#2f4a35}
+.char-stats .down{color:var(--bad);border-color:#4a2f2f}
+.char-desc{font-size:10.5px;color:var(--muted);line-height:1.5;text-align:left;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.char-best{font-size:10px;color:var(--gold);margin-top:4px}
+
+.select-foot{display:flex;align-items:center;gap:20px;margin-top:14px}
+#danger-row{display:flex;gap:6px}
+.danger-btn{width:40px;height:40px;background:var(--panel);border:2px solid var(--line);
+  font-size:17px;font-weight:800;color:var(--text)}
+.danger-btn.active{border-color:var(--bad);color:var(--bad);background:#241a1c}
+.danger-btn.locked{opacity:.3;cursor:not-allowed}
+#danger-note{font-size:11.5px;color:var(--muted)}
+.foot-label{font-size:12px;color:var(--muted);letter-spacing:.14em}
+
+/* ---- 升級 ---- */
+#panel-levelup{background:rgba(8,9,13,.94)}
+#levelup-title{font-size:30px;font-weight:900;letter-spacing:.18em}
+#levelup-cards{display:flex;gap:14px;margin-top:26px}
+.lv-card{width:214px;background:var(--panel);border:2px solid var(--line);padding:20px 16px;
+  text-align:left;transition:.12s}
+.lv-card:hover{background:#20242e;transform:translateY(-3px)}
+.lv-stat{font-size:15px;font-weight:800;letter-spacing:.1em}
+.lv-val{font-size:34px;font-weight:900;margin:6px 0 10px}
+.lv-desc{font-size:11.5px;color:var(--muted);line-height:1.7;min-height:38px}
+.lv-cur{font-size:11px;color:#5f6878;margin-top:8px;border-top:1px solid var(--line);padding-top:7px}
+
+/* ---- 商店 ---- */
+#panel-shop{justify-content:flex-start;padding:14px 22px;background:#0b0d12}
+.shop-head{display:flex;align-items:center;gap:16px;width:100%;max-width:1200px;margin-bottom:10px}
+.shop-head h2{font-size:20px;font-weight:800;letter-spacing:.16em}
+.shop-head .mat{font-size:18px;font-weight:800;color:var(--good);margin-left:auto}
+.shop-head .mat b{font-size:24px}
+#shop-items{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;width:100%;max-width:1200px}
+.shop-card{background:var(--panel);border:2px solid var(--line);padding:11px;display:flex;flex-direction:column}
+.shop-card.sold{opacity:.4}
+.shop-top{display:flex;align-items:center;gap:9px}
+.shop-icon{width:56px;height:56px;flex:none}
+.shop-name .tier{font-size:11px;font-weight:700;letter-spacing:.1em}
+.shop-name .nm{font-size:19px;font-weight:800;letter-spacing:.06em}
+.merge-flag{margin-top:6px;font-size:11.5px;color:var(--gold);border:1px solid #4a3f1e;
+  background:#221d10;padding:3px 7px;letter-spacing:.05em}
+.shop-info{margin:8px 0;flex:1}
+.kv{display:flex;justify-content:space-between;font-size:12.5px;padding:2.5px 0;
+  border-bottom:1px solid #23272f;color:var(--muted)}
+.kv b{color:var(--text);font-weight:700}
+.kv b.up{color:var(--good)} .kv b.down{color:var(--bad)}
+.tagrow{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.tagrow i{font-style:normal;font-size:10.5px;color:var(--accent);border:1px solid #4a3a22;padding:1px 5px}
+.flavor{font-size:11px;color:#6d7583;line-height:1.6;margin-top:7px}
+.shop-bottom{display:flex;gap:6px}
+.buy-btn{flex:1;background:var(--accent);color:#181008;font-weight:800;font-size:13.5px;padding:8px}
+.buy-btn:disabled{background:#2a3040;color:#5f6878}
+.lock-btn{background:var(--panel2);border:1px solid var(--line);color:var(--muted);font-size:12px;padding:8px 10px}
+.lock-btn.on{background:#3a2f18;border-color:var(--gold);color:var(--gold)}
+
+.shop-lower{display:flex;gap:12px;width:100%;max-width:1200px;margin-top:11px;flex:1;min-height:0}
+#loadout{flex:1;background:var(--panel);border:2px solid var(--line);padding:10px;overflow-y:auto}
+#stats-panel{width:330px;background:var(--panel);border:2px solid var(--line);padding:10px}
+.sec-title{font-size:12px;font-weight:800;letter-spacing:.16em;color:var(--muted);
+  border-bottom:1px solid var(--line);padding-bottom:5px;margin-bottom:8px}
+.loadout-row{display:flex;flex-wrap:wrap;gap:7px}
+.slot{width:78px;border:2px solid var(--line);background:var(--panel2);padding:4px 4px 0;
+  text-align:center;position:relative;overflow:hidden}
+.slot canvas{width:52px;height:52px;display:block;margin:0 auto}
+.slot-name{font-size:11.5px;font-weight:700;line-height:1.3}
+.slot-tier{font-size:10px;line-height:1.3;margin-bottom:3px}
+.sell-btn{display:block;width:calc(100% + 8px);margin:0 -4px;background:#3a2226;border:none;
+  border-top:1px solid #5c3239;color:#e08a8a;font-size:10px;padding:2px 0}
+.sell-btn:hover{background:#5c3239;color:#fff}
+.item-row{display:flex;flex-wrap:wrap;gap:5px}
+.item-chip{display:flex;align-items:center;gap:4px;border:1px solid var(--line);
+  background:var(--panel2);padding:2px 7px 2px 2px}
+.item-chip canvas{width:34px;height:34px}
+.item-chip span{font-size:11.5px}
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px 12px}
+.stat-cell{display:flex;justify-content:space-between;font-size:12.5px;padding:2.5px 0;
+  border-bottom:1px solid #23272f}
+.stat-cell.zero{opacity:.35}
+.stat-cell .sn{color:var(--muted)}
+.shop-foot{display:flex;gap:10px;align-items:center;width:100%;max-width:1200px;margin-top:10px}
+.shop-foot .keyhint{font-size:11px;color:#5f6878;margin-left:auto;letter-spacing:.06em}
+
+/* ---- 結算 ---- */
+#end-title{font-size:70px;font-weight:900;letter-spacing:.24em;text-indent:.24em}
+#end-sub{color:var(--muted);font-size:14.5px;margin-top:8px;letter-spacing:.06em}
+#end-stats{margin-top:22px;width:330px}
+#end-unlock{margin-top:16px;color:var(--gold);font-size:14px;letter-spacing:.1em;
+  border:1px solid #4a3f1e;background:#221d10;padding:7px 18px}
+.end-btns{display:flex;gap:12px;margin-top:26px}
+
+/* ---- 提示 ---- */
+.toast{position:absolute;left:50%;top:78px;transform:translateX(-50%) translateY(-14px);
+  background:var(--panel2);border:2px solid var(--accent);color:var(--text);
+  padding:8px 20px;font-size:14px;font-weight:700;letter-spacing:.06em;opacity:0;
+  transition:.16s;pointer-events:none;z-index:20}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.bad{border-color:var(--bad);color:#e89a9a}
+#hud-hint{position:absolute;right:16px;bottom:14px;font-size:11px;color:#4f5766;letter-spacing:.08em;text-align:right;line-height:1.8}
+#errbox{position:absolute;left:12px;bottom:12px;background:#3a1c1c;border:2px solid #d9564f;
+  color:#ffb3b3;font-size:12px;padding:8px 12px;max-width:600px;z-index:99}
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="game"></canvas>
+
+  <!-- 主選單 -->
+  <div id="panel-menu" class="overlay">
+    <div class="logo">
+      <div class="cn">肉搏場</div>
+      <div class="bar"></div>
+    </div>
+    <div class="tagline">全近戰　波次生存</div>
+    <div class="rule"></div>
+    <button id="btn-play" class="btn primary">開始</button>
+    <div class="keys">
+      WASD 或方向鍵移動　·　武器全自動攻擊，不用瞄準<br>
+      活過二十波　·　波與波之間進商店補強<br>
+      Esc 暫停　·　升級時按 1 至 4 直接選
+    </div>
+  </div>
+
+  <!-- 角色選擇 -->
+  <div id="panel-select" class="overlay hidden">
+    <div class="select-head">
+      <h2>選擇職業</h2>
+      <span class="hint">每個職業都有明確的強項與代價，決定這一局的打法</span>
+    </div>
+    <div id="char-grid"></div>
+    <div class="select-foot">
+      <span class="foot-label">危險等級</span>
+      <div id="danger-row"></div>
+      <span id="danger-note"></span>
+      <button id="btn-start" class="btn primary">先選一個職業</button>
+      <button id="btn-back" class="btn ghost">返回</button>
+    </div>
+  </div>
+
+  <!-- 升級 -->
+  <div id="panel-levelup" class="overlay hidden">
+    <div id="levelup-title"></div>
+    <div class="sub" style="margin-top:6px">選一項永久強化</div>
+    <div id="levelup-cards"></div>
+  </div>
+
+  <!-- 商店 -->
+  <div id="panel-shop" class="overlay hidden">
+    <div class="shop-head">
+      <h2 id="shop-wave"></h2>
+      <button id="shop-reroll" class="btn" style="padding:8px 18px;font-size:13px">重骰</button>
+      <div class="mat"><b id="shop-mat">0</b> 素材</div>
+    </div>
+    <div id="shop-items"></div>
+    <div class="shop-lower">
+      <div id="loadout"></div>
+      <div id="stats-panel"></div>
+    </div>
+    <div class="shop-foot">
+      <button id="shop-next" class="btn primary"><span id="shop-next-label">進入下一波</span></button>
+      <span class="keyhint">R 重骰　·　Enter 進入下一波　·　同名同階武器買下即合成</span>
+    </div>
+  </div>
+
+  <!-- 結算 -->
+  <div id="panel-end" class="overlay hidden">
+    <div id="end-title"></div>
+    <div id="end-sub"></div>
+    <div id="end-stats"></div>
+    <div id="end-unlock" class="hidden"></div>
+    <div class="end-btns">
+      <button id="btn-retry" class="btn primary">再來一局</button>
+      <button id="btn-menu" class="btn ghost">回主選單</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <div id="hud-hint">WASD 移動　·　Esc 暫停</div>
+  <div id="errbox" class="hidden"></div>
+</div>
+
+<script src="src/data.js"></script>
+<script src="src/engine.js"></script>
+<script src="src/render.js"></script>
+<script src="src/ui.js"></script>
+<script>
+/* 固定舞台等比縮放，讓遊戲在任何視窗尺寸都完整可見 */
+(function () {
+  const stage = document.getElementById('stage');
+  function fit() {
+    const s = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+    stage.style.transform = 'scale(' + s + ')';
+    window.__stageScale = s;
+  }
+  window.addEventListener('resize', fit);
+  fit();
+})();
+</script>
+</body>
+</html>
