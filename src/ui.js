@@ -155,6 +155,7 @@ function renderLevelUp() {
         ).join('　') + '</div>'
       : '<div class="lv-cur">' + (g.unique ? '獨門裝備' : '可重複拿') + '</div>';
     el.innerHTML =
+      '<img class="lv-icon" src="assets/icons/' + g.id + '.png" alt="" onerror="this.style.display=\'none\'">' +
       '<div class="lv-stat" style="color:' + gearColor[i % 4] + '">' + g.name + '</div>' +
       '<div class="lv-desc" style="min-height:64px">' + g.desc + '</div>' +
       statLineHtml;
@@ -329,15 +330,19 @@ function renderLoadout() {
       const el = document.createElement('div');
       el.className = 'item-chip';
       el.style.borderColor = isGear ? '#d98a3c' : TIER_COLOR[it.tier];
-      el.innerHTML = '<canvas width="34" height="34"></canvas><span>' + it.name +
-        (counts[id] > 1 ? ' ×' + counts[id] : '') + '</span>';
+      el.innerHTML = (isGear
+          ? '<img class="chip-icon" src="assets/icons/' + id + '.png" alt="" ' +
+            'onerror="this.outerHTML=\'<canvas width=34 height=34></canvas>\'">'
+          : '<canvas width="34" height="34"></canvas>') +
+        '<span>' + it.name + (counts[id] > 1 ? ' ×' + counts[id] : '') + '</span>';
       const statTxt = it.stats
         ? Object.keys(it.stats).map(k => STAT_MAP[k].name + ' ' + (it.stats[k] > 0 ? '+' : '') + it.stats[k] + STAT_MAP[k].suffix).join('　')
         : '';
       el.title = (it.desc || '') + (statTxt ? '　' + statTxt : '') +
         (it.special ? '　' + SPECIAL_DESC[it.special] : '');
       irow.appendChild(el);
-      drawIconTo(el.querySelector('canvas'), isGear ? 'gear' : 'item', id, it.tier || 2);
+      const cv = el.querySelector('canvas');
+      if (cv) drawIconTo(cv, isGear ? 'gear' : 'item', id, it.tier || 2);
     });
     wrap.appendChild(irow);
   }
