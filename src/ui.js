@@ -41,17 +41,40 @@ function buildCharSelect() {
     el.dataset.char = ch.id;
     const best = SAVE.best[ch.id];
     el.innerHTML =
-      '<canvas class="portrait" width="40" height="40"></canvas>' +
+      '<canvas class="portrait" width="60" height="60"></canvas>' +
       '<div class="char-name">' + ch.name + '</div>' +
-      '<div class="char-tag">' + ch.tag + '　<i>' + w.name + '＋' +
-        (ch.startTech ? TECH_MAP[ch.startTech].name : '') + '</i></div>' +
+      '<div class="char-tag">' + ch.tag + '</div>' +
+      '<div class="char-combo">' + ['dash', 'move', 'still'].map(slot => {
+        const d = moveDef(ch.moves[slot]);
+        return '<b style="color:' + d.color + '" title="' + SLOT_NAME[slot] + '">' + d.short + '</b>';
+      }).join('<i>·</i>') +
+      (OUGI[ch.id] ? '<i>｜</i><b style="color:#ffd44a" title="奧義">' + OUGI[ch.id].name.slice(0, 2) + '</b>' : '') +
+      '</div>' +
       '<div class="char-stats">' + statLine(ch.stats) + '</div>' +
-      '<div class="char-desc">' + ch.desc + '</div>' +
       (best ? '<div class="char-best">最佳　第 ' + best.wave + ' 波 · 危險 ' + best.danger + '</div>' : '');
-    el.onclick = () => { selectedChar = ch.id; buildCharSelect(); updateStartBtn(); };
+    el.title = ch.desc;
+    el.onclick = () => { selectedChar = ch.id; buildCharSelect(); updateStartBtn(); updateCharDetail(ch); };
     wrap.appendChild(el);
     drawCharPortraitTo(el.querySelector('.portrait'), ch.id);
   });
+}
+
+/* 點選職業後，下方大字顯示完整說明與連段全名——特色要讀得到，不是擠在小卡裡 */
+function updateCharDetail(ch) {
+  const el = $('char-detail');
+  if (!el) return;
+  const w = WEAPON_MAP[ch.weapon];
+  const moveNames = ['dash', 'move', 'still'].map(slot =>
+    SLOT_NAME[slot] + '「' + moveDef(ch.moves[slot]).name + '」').join('　');
+  const o = OUGI[ch.id];
+  el.innerHTML =
+    '<b style="color:' + ch.color + '">' + ch.name + '</b>　' +
+    '<span class="d-combo">' + moveNames + '</span>　' +
+    '<span class="d-weapon">起手武器「' + w.name + '」</span><br>' +
+    (o ? '<span class="d-combo">奧義「' + o.name + '」＝' +
+      o.seq.map(b => b === 'S' ? '站' : '移').join('·') + '＋衝刺　—　' + o.desc + '</span><br>' : '') +
+    '<span class="d-desc">' + ch.desc + '</span>';
+  el.classList.remove('hidden');
 }
 
 function statLine(stats) {
@@ -100,25 +123,23 @@ function renderLevelUp() {
   $('levelup-title').textContent = '等級 ' + G.level + (G.levelQueue > 1 ? '　（還有 ' + (G.levelQueue - 1) + ' 次）' : '');
   const wrap = $('levelup-cards');
   wrap.innerHTML = '';
-  G.levelChoices.forEach((c, i) => {
+  const gearColor = ['#d98a3c', '#c9576b', '#5a8ac9', '#77c47f'];
+  G.levelChoices.forEach((g, i) => {
     const el = document.createElement('button');
     el.className = 'lv-card';
-    el.style.borderColor = c.color;
+    el.style.borderColor = gearColor[i % 4];
+    const statLineHtml = g.stats
+      ? '<div class="lv-cur">' + Object.keys(g.stats).map(k =>
+          STAT_MAP[k].name + ' ' + (g.stats[k] > 0 ? '+' : '') + g.stats[k] + STAT_MAP[k].suffix
+        ).join('　') + '</div>'
+      : '<div class="lv-cur">' + (g.unique ? '獨門裝備' : '可重複拿') + '</div>';
     el.innerHTML =
-      '<div class="lv-stat" style="color:' + c.color + '">' + c.name + '</div>' +
-      '<div class="lv-val">+' + c.value + c.suffix + '</div>' +
-      '<div class="lv-desc">' + STAT_MAP[c.key].desc + '</div>' +
-      '<div class="lv-cur">目前　' + fmtStat(c.key) + '</div>';
+      '<div class="lv-stat" style="color:' + gearColor[i % 4] + '">' + g.name + '</div>' +
+      '<div class="lv-desc" style="min-height:64px">' + g.desc + '</div>' +
+      statLineHtml;
     el.onclick = () => { chooseLevelUp(i); };
     wrap.appendChild(el);
   });
-}
-
-function fmtStat(key) {
-  const v = G.player.stats[key];
-  const d = STAT_MAP[key];
-  if (key === 'maxHp') return G.player.maxHp + '';
-  return (Math.round(v * 10) / 10) + d.suffix;
 }
 
 /* ---------- 商店 ---------- */
@@ -141,41 +162,34 @@ function renderShop() {
     const p = G.player;
     const mergeable = e.kind === 'weapon' && e.tier < 4 &&
       p.weapons.some(w => w.id === e.id && w.tier === e.tier);
-    const techFull = isTech && p.techs[0] && p.techs[1];
     el.innerHTML =
       '<div class="shop-top">' +
         '<canvas class="shop-icon" width="56" height="56"></canvas>' +
         '<div class="shop-name">' +
           '<div class="tier" style="color:' + (isTech ? e.color : TIER_COLOR[e.tier]) + '">' +
-            (isTech ? '絕技' : TIER_NAME[e.tier]) + '</div>' +
+            (isTech ? SLOT_NAME[MOVE_MAP[e.id].slot] : TIER_NAME[e.tier]) + '</div>' +
           '<div class="nm">' + e.name + '</div>' +
         '</div>' +
       '</div>' +
       (mergeable ? '<div class="merge-flag">可合成 → ' + TIER_NAME[e.tier + 1] + '</div>' : '') +
       '<div class="shop-info">' + info + '</div>' +
       '<div class="shop-bottom">' +
-        (techFull && !e.sold
-          ? '<button class="buy-btn rep" data-slot="0">換掉 ' + p.techs[0].def.name + '</button>' +
-            '<button class="buy-btn rep" data-slot="1">換掉 ' + p.techs[1].def.name + '</button>'
-          : '<button class="buy-btn"' + (e.sold ? ' disabled' : '') + '>' + (e.sold ? '已售出' : ('買下　' + e.price)) + '</button>') +
+        '<button class="buy-btn"' + (e.sold ? ' disabled' : '') + '>' + (e.sold ? '已售出' : ('買下　' + e.price)) + '</button>' +
         '<button class="lock-btn' + (e.locked ? ' on' : '') + '">' + (e.locked ? '已鎖定' : '鎖定') + '</button>' +
       '</div>';
     wrap.appendChild(el);
     drawIconTo(el.querySelector('.shop-icon'), e.kind, e.id, e.tier);
-    el.querySelectorAll('.buy-btn').forEach(buy => {
-      const slot = buy.dataset.slot !== undefined ? parseInt(buy.dataset.slot) : undefined;
-      if (!e.sold && e.kind === 'weapon' && !mergeable && p.weapons.length >= p.slots) {
-        buy.disabled = true; buy.textContent = '武器欄已滿';
-      } else if (!e.sold && G.materials < e.price) {
-        buy.disabled = true;
-        buy.textContent = (slot !== undefined ? buy.textContent + '（素材不足）' : '素材不足　' + e.price);
-      }
-      buy.onclick = () => {
-        const r = shopBuy(i, slot);
-        if (r.ok) { toast(r.msg); renderShop(); }
-        else if (r.msg) toast(r.msg, true);
-      };
-    });
+    const buy = el.querySelector('.buy-btn');
+    if (!e.sold && e.kind === 'weapon' && !mergeable && p.weapons.length >= p.slots) {
+      buy.disabled = true; buy.textContent = '武器欄已滿';
+    } else if (!e.sold && G.materials < e.price) {
+      buy.disabled = true; buy.textContent = '素材不足　' + e.price;
+    }
+    buy.onclick = () => {
+      const r = shopBuy(i);
+      if (r.ok) { toast(r.msg); renderShop(); }
+      else if (r.msg) toast(r.msg, true);
+    };
     el.querySelector('.lock-btn').onclick = () => { e.locked = !e.locked; renderShop(); };
   });
 
@@ -203,9 +217,12 @@ function weaponShopInfo(e) {
 }
 
 function techShopInfo(e) {
-  const t = TECH_MAP[e.id];
-  return '<div class="kv"><span>冷卻</span><b>' + t.cd + ' 秒</b></div>' +
-    '<div class="kv"><span>按鍵</span><b>Space 或 E</b></div>' +
+  const t = moveDef(e.id);
+  let extra = '';
+  if (t.slot === 'dash') extra = '<div class="kv"><span>冷卻</span><b>' + t.cd + ' 秒</b></div>';
+  else if (t.interval) extra = '<div class="kv"><span>觸發</span><b>每 ' + t.interval + ' 秒</b></div>';
+  return '<div class="kv"><span>類型</span><b>' + SLOT_NAME[t.slot] + '　' + SLOT_KEY[t.slot] + '</b></div>' +
+    extra +
     '<div class="flavor">' + t.desc + '</div>';
 }
 
@@ -224,27 +241,27 @@ function renderLoadout() {
   const p = G.player;
   const wrap = $('loadout');
   wrap.innerHTML = '';
-  // 絕技欄
+  // 三態招式欄：點擊換同類型的已學招式
+  const ougi = OUGI[G.char.id];
   const tTitle = document.createElement('div');
   tTitle.className = 'sec-title';
-  tTitle.textContent = '絕技　' + p.techs.filter(Boolean).length + ' / 2';
+  tTitle.textContent = '招式（點擊換裝）　·　招式庫 ' + p.knownMoves.length + ' 式' +
+    (ougi ? '　·　奧義「' + ougi.name + '」＝' + ougi.seq.map(b => b === 'S' ? '站' : '移').join('·') + '＋衝' : '');
   wrap.appendChild(tTitle);
   const tRow = document.createElement('div');
-  tRow.className = 'loadout-row';
-  p.techs.forEach((t, i) => {
+  tRow.className = 'loadout-row combo-row';
+  ['dash', 'move', 'still'].forEach(slot => {
+    const def = moveDef(p.moves[slot]);
+    const pool = movesBySlot(slot).filter(x => p.knownMoves.includes(x.id));
     const el = document.createElement('div');
-    el.className = 'slot tech-slot';
-    if (t) {
-      el.style.borderColor = t.def.color;
-      el.innerHTML = '<div class="tech-glyph" style="color:' + t.def.color + '">' + t.def.short + '</div>' +
-        '<div class="slot-name">' + t.def.name + '</div>' +
-        '<div class="slot-tier">' + (i === 0 ? 'Space' : 'E') + '</div>';
-      el.title = t.def.desc;
-    } else {
-      el.innerHTML = '<div class="tech-glyph empty">—</div>' +
-        '<div class="slot-name" style="color:#5f6878">空</div>' +
-        '<div class="slot-tier">' + (i === 0 ? 'Space' : 'E') + '</div>';
-    }
+    el.className = 'slot tech-slot' + (pool.length > 1 ? ' clickable' : '');
+    el.style.borderColor = def.color;
+    el.innerHTML = '<div class="tech-glyph" style="color:' + def.color + '">' + def.short + '</div>' +
+      '<div class="slot-name">' + def.name + '</div>' +
+      '<div class="slot-tier">' + SLOT_NAME[slot] + (pool.length > 1 ? ' ⟳' : '') + '</div>';
+    el.title = SLOT_KEY[slot] + '\n' + def.desc +
+      (pool.length > 1 ? '\n（點擊切換：' + pool.map(x => x.name).join('、') + '）' : '');
+    if (pool.length > 1) el.onclick = () => { cycleMoveSlot(slot); renderShop(); };
     tRow.appendChild(el);
   });
   wrap.appendChild(tRow);
@@ -278,23 +295,28 @@ function renderLoadout() {
   if (p.items.length) {
     const t = document.createElement('div');
     t.className = 'sec-title';
-    t.textContent = '道具　' + p.items.length;
+    t.textContent = '道具與裝備　' + p.items.length;
     wrap.appendChild(t);
     const irow = document.createElement('div');
     irow.className = 'item-row';
     const counts = {};
     p.items.forEach(i => counts[i.id] = (counts[i.id] || 0) + 1);
     Object.keys(counts).forEach(id => {
-      const it = ITEM_MAP[id];
+      const it = ITEM_MAP[id] || GEAR_MAP[id];
+      if (!it) return;
+      const isGear = !ITEM_MAP[id];
       const el = document.createElement('div');
       el.className = 'item-chip';
-      el.style.borderColor = TIER_COLOR[it.tier];
+      el.style.borderColor = isGear ? '#d98a3c' : TIER_COLOR[it.tier];
       el.innerHTML = '<canvas width="34" height="34"></canvas><span>' + it.name +
         (counts[id] > 1 ? ' ×' + counts[id] : '') + '</span>';
-      el.title = Object.keys(it.stats).map(k => STAT_MAP[k].name + ' ' + (it.stats[k] > 0 ? '+' : '') + it.stats[k] + STAT_MAP[k].suffix).join('　') +
+      const statTxt = it.stats
+        ? Object.keys(it.stats).map(k => STAT_MAP[k].name + ' ' + (it.stats[k] > 0 ? '+' : '') + it.stats[k] + STAT_MAP[k].suffix).join('　')
+        : '';
+      el.title = (it.desc || '') + (statTxt ? '　' + statTxt : '') +
         (it.special ? '　' + SPECIAL_DESC[it.special] : '');
       irow.appendChild(el);
-      drawIconTo(el.querySelector('canvas'), 'item', id, it.tier);
+      drawIconTo(el.querySelector('canvas'), isGear ? 'gear' : 'item', id, it.tier || 2);
     });
     wrap.appendChild(irow);
   }
@@ -361,8 +383,7 @@ function initInput() {
     if (k === ' ' || k === 'arrowup' || k === 'arrowdown') e.preventDefault();
     if (k === 'escape' && G.mode === 'playing') G.paused = !G.paused;
     if (G.mode === 'playing' && !G.paused) {
-      if (k === ' ') castTech(0);
-      if (k === 'e') castTech(1);
+      if (k === ' ') castDash();
     }
     if (G.mode === 'levelup' && ['1', '2', '3', '4'].includes(k)) {
       const i = parseInt(k) - 1;
@@ -405,40 +426,61 @@ function drawIdleBackdrop() {
 /* ---------- 自動測試機器人（開發用） ---------- */
 const BOT = { on: false, dir: 0, dirT: 0 };
 
-/* 機器人的絕技判斷：模擬一個會看時機的玩家 */
-function botCastTechs() {
+/* 機器人的衝刺判斷：奧義就緒立刻放，否則依衝刺技的性質看時機 */
+function botDash() {
   const p = G.player;
-  p.techs.forEach((t, slot) => {
-    if (!t || t.cdLeft > 0) return;
-    const near = r => G.enemies.filter(e => !e.dead && !e.grabbed && !e.thrown &&
-      dist2(e.x, e.y, p.x, p.y) < r * r).length;
-    const bossHere = G.enemies.some(e => e.boss);
-    switch (t.id) {
-      case 'grab_spin': if (near(100) >= 1 && G.enemies.length >= 2) castTech(slot); break;
-      case 'spear_rush': if (near(260) >= 4) castTech(slot); break;
-      case 'palm_flurry': if (near(120) >= 3) castTech(slot); break;
-      case 'counter_throw': if (near(110) >= 2) castTech(slot); break;
-      case 'flash_step': {
-        const e = nearestEnemy(p.x, p.y, 320);
-        const rangeMul = liveRangeMult();
-        let reach = 0; p.weapons.forEach(w => reach = Math.max(reach, w.range * rangeMul));
-        if (e && dist2(e.x, e.y, p.x, p.y) > (reach + 60) * (reach + 60)) castTech(slot);
-        break;
-      }
-      case 'limit_release': if (bossHere || G.enemies.length >= 8) castTech(slot); break;
-      case 'quake_stomp': if (near(140) >= 3 || (bossHere && near(140) >= 1)) castTech(slot); break;
-      case 'cyclone_kick': if (near(110) >= 3) castTech(slot); break;
-      case 'mountain_bash': if (near(120) >= 2) castTech(slot); break;
-      case 'iron_bell': if (near(150) >= 5 || (bossHere && p.hp < p.maxHp * 0.6)) castTech(slot); break;
-      case 'sway_step': if (near(140) >= 3) castTech(slot); break;
+  if (p.dashCd > 0 || p.dashState || p.grabState) return;
+  const near = r => G.enemies.filter(e => !e.dead && !e.grabbed && !e.thrown &&
+    dist2(e.x, e.y, p.x, p.y) < r * r).length;
+  if (ougiReady() && near(300) >= 1) { castDash(); return; }
+  let go = false;
+  switch (p.moves.dash) {
+    case 'tackle': go = near(260) >= 3; break;
+    case 'grab_spin': go = near(160) >= 1 && G.enemies.length >= 2; break;
+    case 'flash_step': {
+      const e = nearestEnemy(p.x, p.y, 320);
+      const rangeMul = liveRangeMult();
+      let reach = 0; p.weapons.forEach(w => reach = Math.max(reach, w.range * rangeMul));
+      go = e && dist2(e.x, e.y, p.x, p.y) > (reach + 60) * (reach + 60);
+      break;
     }
-  });
+    case 'mountain_bash': go = near(130) >= 2; break;
+    case 'knee_dash': go = near(240) >= 3; break;
+    case 'drunk_roll': go = near(130) >= 3 || (p.hp < p.maxHp * 0.4 && near(110) >= 1); break;
+  }
+  if (go) castDash();
+}
+
+/* 站樁技有價值時，機器人要肯站著——威脅低就停下來蓄力／回氣 */
+function botWantsStill() {
+  const p = G.player;
+  const sid = p.moves.still;
+  // 場上有遠程壓力（投擲手或飛行物瞄著你）就別死站著捱打
+  const throwers = G.enemies.filter(e => !e.dead && e.behavior === 'thrower').length;
+  const bullets = G.projectiles.length;
+  if (throwers >= 1 || bullets >= 1) return false;
+  const nearCount = G.enemies.filter(e => !e.dead &&
+    dist2(e.x, e.y, p.x, p.y) < 150 * 150).length;
+  const farthest = nearestEnemy(p.x, p.y, 3000);
+  // 貼身型站樁：敵人來了才站（化勁摔、金鐘罩、震腳、千手）
+  if (sid === 'counter_stance' || sid === 'iron_bell' || sid === 'quake_pulse' || sid === 'palm_flurry') {
+    return nearCount >= 1 && p.hp > p.maxHp * 0.45;
+  }
+  // 蓄力型站樁：沒威脅才站（寸勁、吐納）
+  if (sid === 'focus_strike') {
+    return nearCount === 0 && farthest && dist2(farthest.x, farthest.y, p.x, p.y) > 240 * 240 && p.focusStacks < 6;
+  }
+  if (sid === 'breath_heal') {
+    return nearCount === 0 && p.hp < p.maxHp * 0.85;
+  }
+  return false;
 }
 
 function botControl(dt) {
   const p = G.player;
   G.keys = {};
-  botCastTechs();
+  botDash();
+  if (botWantsStill()) return;   // 這一拍選擇站樁：不按方向鍵
   // 交戰距離取自身最長武器：近戰遊戲的正解是「進到打得到、但沒被摸到」
   const rangeMul = liveRangeMult();
   let reach = 0;
@@ -494,18 +536,21 @@ function botControl(dt) {
 
 function botAutoUi() {
   if (G.mode === 'levelup' && G.levelChoices) {
-    // 模擬會挑的玩家：先顧活著跟輸出，幸運與收成只在行有餘力時拿
+    // 模擬會挑的玩家：脆的時候優先保命裝，其餘看通用強度
     const p = G.player;
-    const squishy = p.maxHp < 90 + G.wave * 4;
+    const squishy = p.hp < p.maxHp * 0.5 || p.maxHp < 90 + G.wave * 4;
     const W = {
-      maxHp: squishy ? 3.4 : 1.9, armor: squishy ? 2.6 : 1.7,
-      dmg: 3.0, atkSpd: 2.6, crit: 1.8, range: 1.5,
-      lifesteal: 2.2, regen: G.char.special === 'no_regen' || G.char.special === 'rage' ? 0.1 : 1.8,
-      dodge: 1.6, block: 1.4, speed: 1.5, luck: 0.8, harvest: 0.7,
+      iron_jaw: squishy ? 5 : 3, sand_shinguard: squishy ? 3.5 : 2, anchor_sandal: 1.2,
+      blood_headband: 2.6, tiger_claw: 2.8, hundred_knuckle: 3.0, oni_gauntlet: 2.6,
+      fist_wrap: 2.4, rebound_belt: 2.4, master_obi: 2.2, bedrock_belt: 2.2,
+      shura_mask: 1.8, swift_tabi: 1.6, bell_plate: squishy ? 3 : 1.8,
+      drunken_gourd: 1.6, swallow_step: 1.8, training_gi: 2.0, immovable_sash: 1.6,
+      gale_elbowguard: 2.0, famed_koshirae: 2.0, snake_legwrap: 1.5,
+      thunder_tattoo: 2.0, keen_eyepatch: 2.0, void_palmwrap: 1.4,
     };
     let best = 0, bestScore = -1;
-    G.levelChoices.forEach((c, i) => {
-      const s = (W[c.key] || 1) * (0.8 + rng() * 0.4);
+    G.levelChoices.forEach((g, i) => {
+      const s = (W[g.id] || 1.5) * (0.85 + rng() * 0.3);
       if (s > bestScore) { bestScore = s; best = i; }
     });
     chooseLevelUp(best);
@@ -521,8 +566,7 @@ function botAutoUi() {
           const e = o.e;
           let score = e.price * 0.5;
           if (e.kind === 'tech') {
-            if (!p.techs[0] || !p.techs[1]) score += 550;
-            else score -= 900;
+            score += 130;   // 招式庫是選項不是必需
           } else if (e.kind === 'weapon') {
             const merge = p.weapons.some(w => w.id === e.id && w.tier === e.tier) && e.tier < 4;
             if (merge) score += 1200;

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>肉搏場</title>
+<title>肉搏場：功夫貓</title>
 <style>
 :root{
   --bg:#0d0f14; --panel:#171a21; --panel2:#1e222c; --line:#2c3340;
@@ -135,7 +135,19 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .tech-slot{padding-bottom:4px}
 .tech-glyph{font-size:30px;font-weight:900;line-height:48px;height:48px}
 .tech-glyph.empty{color:#3a4050}
-.buy-btn.rep{font-size:11px;padding:6px 2px}
+.combo-row{align-items:center}
+.combo-arrow{font-size:20px;font-weight:900;color:#5f6878;padding:0 2px}
+.tech-slot.clickable{cursor:pointer}
+.tech-slot.clickable:hover{background:#242a36}
+.char-combo{display:flex;align-items:center;gap:2px;font-size:15px;font-weight:900;margin-bottom:4px}
+.char-combo i{font-style:normal;color:#4f5766;font-size:11px}
+#char-detail{position:absolute;left:50%;transform:translateX(-50%);bottom:76px;
+  width:calc(100% - 52px);max-width:1200px;background:#141821;
+  border:2px solid var(--accent);padding:8px 14px;font-size:13px;line-height:1.7;z-index:5}
+#char-detail b{font-size:15px;letter-spacing:.08em}
+#char-detail .d-combo{color:var(--accent)}
+#char-detail .d-weapon{color:#9aa4b2}
+#char-detail .d-desc{color:var(--muted);font-size:12.5px}
 .item-row{display:flex;flex-wrap:wrap;gap:5px}
 .item-chip{display:flex;align-items:center;gap:4px;border:1px solid var(--line);
   background:var(--panel2);padding:2px 7px 2px 2px}
@@ -179,13 +191,13 @@ button:disabled{cursor:not-allowed;opacity:.45}
       <div class="cn">肉搏場</div>
       <div class="bar"></div>
     </div>
-    <div class="tagline">全近戰　波次生存</div>
+    <div class="tagline">功夫貓　全近戰擂台</div>
     <div class="rule"></div>
     <button id="btn-play" class="btn primary">開始</button>
     <div class="keys">
       WASD 或方向鍵移動　·　武器全自動攻擊，不用瞄準<br>
-      Space／E 施放絕技：抓摔、衝撞、化勁、震腳──流派自由組合<br>
-      活過二十波　·　波與波之間進商店補強　·　Esc 暫停
+      Space／Q 連按打出連段：起手式→起手式→終結技，連段可自由改裝<br>
+      升級撿格鬥家裝備　·　活過二十波　·　Esc 暫停
     </div>
   </div>
 
@@ -196,6 +208,7 @@ button:disabled{cursor:not-allowed;opacity:.45}
       <span class="hint">每個職業都有明確的強項與代價，決定這一局的打法</span>
     </div>
     <div id="char-grid"></div>
+    <div id="char-detail" class="hidden"></div>
     <div class="select-foot">
       <span class="foot-label">危險等級</span>
       <div id="danger-row"></div>

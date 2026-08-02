@@ -119,15 +119,264 @@ function drawArena() {
   ctx.strokeRect(2, 2, ARENA.w - 4, ARENA.h - 4);
 }
 
+/* ---------- 格鬥家骨架 ----------
+   每個職業有自己的站架（idle 姿勢），出招時蓋上出招姿勢。
+   角度定義：手臂從肩膀出發，0＝垂直向下，正值＝朝面向方向抬起。
+   戰鬥中的玩家與選角畫面的立繪共用同一套繪製，職業辨識度才會一致。
+*/
+const STANCES = {
+  //            前臂上臂角度(上segment,下segment)  後臂         蹲低  前傾   節奏感
+  boxer:     { fArm: [2.4, 2.6], bArm: [2.2, 2.8], crouch: 2, lean: 0.06, bounce: 2.2 },
+  wrestler:  { fArm: [1.4, 1.1], bArm: [1.4, 1.1], crouch: 4, lean: 0.16, bounce: 0.8, spread: true },
+  karate:    { fArm: [1.7, 1.4], bArm: [0.5, 1.6], crouch: 2, lean: 0.02, bounce: 0.5 },
+  kenshi:    { fArm: [1.1, 1.5], bArm: [1.1, 1.5], crouch: 1, lean: 0.04, bounce: 0.3, together: true },
+  judo:      { fArm: [1.6, 0.9], bArm: [0.9, 0.9], crouch: 3, lean: 0.10, bounce: 0.6 },
+  sumo:      { fArm: [0.9, 0.5], bArm: [0.9, 0.5], crouch: 6, lean: 0.12, bounce: 0.4, spread: true },
+  muaythai:  { fArm: [2.6, 2.4], bArm: [2.3, 2.6], crouch: 1, lean: 0.03, bounce: 1.6 },
+  monk:      { fArm: [1.9, 2.6], bArm: [1.9, 2.6], crouch: 2, lean: 0.00, bounce: 0.4, together: true },
+  ninja:     { fArm: [1.8, 1.2], bArm: [0.4, 0.8], crouch: 5, lean: 0.22, bounce: 1.0 },
+  thug:      { fArm: [0.5, 0.3], bArm: [0.5, 0.3], crouch: 1, lean: -0.06, bounce: 0.8 },
+  nunchaku:  { fArm: [2.0, 1.6], bArm: [0.6, 2.2], crouch: 2, lean: 0.05, bounce: 1.4 },
+  ironhead:  { fArm: [1.2, 0.8], bArm: [1.2, 0.8], crouch: 3, lean: 0.30, bounce: 0.5 },
+  taichi:    { fArm: [1.5, 1.8], bArm: [1.0, 1.4], crouch: 3, lean: 0.02, bounce: 0.2, cloud: true },
+  berserker: { fArm: [0.7, 0.4], bArm: [0.7, 0.4], crouch: 2, lean: 0.20, bounce: 1.8 },
+  strongman: { fArm: [1.0, 0.6], bArm: [1.0, 0.6], crouch: 2, lean: 0.05, bounce: 0.4, spread: true },
+  aikido:    { fArm: [1.3, 1.6], bArm: [1.3, 1.6], crouch: 2, lean: -0.02, bounce: 0.3, together: true },
+};
+
+function easeOutBack(k) { const c1 = 1.7; return 1 + (c1 + 1) * Math.pow(k - 1, 3) + c1 * Math.pow(k - 1, 2); }
+
+/* 出招姿勢：回傳兩隻手臂與腿的覆寫角度（都以面向方向為正） */
+function attackPose(pose) {
+  const k = Math.min(1, pose.t / pose.dur);
+  const snap = k < 0.35 ? easeOutBack(k / 0.35) : 1 - (k - 0.35) / 0.65 * 0.3;
+  switch (pose.type) {
+    case 'jab':   return { fArm: [1.55 * snap + 0.6, 0.02], punch: snap };
+    case 'chop':  return { fArm: [2.6 - snap * 1.3, 0.3], chopSwing: snap };
+    case 'palm':  return { fArm: [1.5 * snap + 0.5, 0.1], bArm: [1.5 * snap + 0.5, 0.1], punch: snap };
+    case 'elbow': return { fArm: [1.9 * snap, 2.9], lean: 0.25 * snap };
+    case 'kick':  return { kick: snap };
+    case 'knee':  return { knee: snap };
+    case 'swing': return { fArm: [1.45 * snap + 0.5, 0.25], punch: snap * 0.7 };
+    case 'dash':  return { fArm: [0.3, 0.2], bArm: [0.3, 0.2], lean: 0.5 * snap };
+    case 'stomp': return { knee: snap, fArm: [0.6, 0.4], bArm: [0.6, 0.4] };
+    default: return {};
+  }
+}
+
+/* 共用的格鬥家繪製：ctx 已 translate 到腳底中心，face=1 朝右 */
+function drawFighter(c, charDef, opts) {
+  const st = STANCES[charDef.id] || STANCES.boxer;
+  const t = opts.time || 0;
+  const face = opts.face || 1;
+  const walk = opts.walk || 0;
+  const pose = opts.pose ? attackPose(opts.pose) : null;
+  const skin = opts.flash ? '#ffffff' : charDef.skin;
+  const cloth = opts.flash ? '#ffffff' : charDef.color;
+
+  const crouch = st.crouch + (pose && (pose.kick || pose.knee) ? 1.5 : 0);
+  const bob = Math.sin(t * 3.1) * st.bounce * 0.9 + Math.sin(walk) * 2.0;
+  const lean = (st.lean + (pose ? (pose.lean || 0) : 0)) * face + Math.sin(walk) * 0.05;
+  const hipY = -9 + crouch * 0.55;
+
+  c.save();
+  c.rotate(lean);
+  c.translate(0, bob * 0.4);
+
+  // ---- 腿（兩節：髖→膝→腳） ----
+  const legSw = Math.sin(walk) * 0.55;
+  const legLen = 8 - crouch * 0.35;
+  c.strokeStyle = INK; c.lineWidth = 5; c.lineCap = 'round';
+  function leg(side, liftAng) {
+    const hx = side * 4 * (st.spread ? 1.6 : 1);
+    const bend = 0.35 + crouch * 0.09;
+    let a1 = bend * side * 0.3 + liftAng;
+    if (pose && pose.kick && side === face) a1 = -1.5 * pose.kick * face + 0.2;
+    if (pose && pose.knee && side === face) a1 = -1.9 * pose.knee * face;
+    const kx = hx + Math.sin(a1) * legLen * face;
+    const ky = hipY + 9 + Math.cos(a1) * legLen;
+    let a2 = a1 * 0.4;
+    if (pose && pose.kick && side === face) a2 = a1;   // 踢直
+    const fx2 = kx + Math.sin(a2) * legLen * face;
+    const fy2 = ky + Math.cos(a2) * legLen;
+    c.beginPath(); c.moveTo(hx, hipY + 9); c.lineTo(kx, ky); c.lineTo(fx2, fy2); c.stroke();
+  }
+  leg(-1, -legSw);
+  leg(1, legSw);
+
+  // ---- 尾巴（畫在軀幹後面）----
+  // 尾巴是貓的情緒指針：太極緩慢大擺、狂人高速抽動、忍者壓低
+  const tailSpd = st.cloud ? 1.2 : (charDef.id === 'berserker' ? 9 : 2.6);
+  const tailAmp = st.cloud ? 0.9 : (charDef.id === 'berserker' ? 0.5 : 0.6);
+  const tw = Math.sin(t * tailSpd) * tailAmp;
+  const tbx = -face * 9, tby = hipY + 5;
+  c.strokeStyle = opts.flash ? '#ffffff' : skin;
+  c.lineWidth = 3.6; c.lineCap = 'round';
+  c.beginPath();
+  c.moveTo(tbx, tby);
+  c.quadraticCurveTo(
+    tbx - face * 8, tby - 3 + tw * 5,
+    tbx - face * 11, tby - 10 + tw * 8 - (charDef.id === 'ninja' ? -8 : 0));
+  c.stroke();
+  c.strokeStyle = INK; c.lineWidth = 1.2;
+  c.beginPath();
+  c.moveTo(tbx, tby);
+  c.quadraticCurveTo(
+    tbx - face * 8, tby - 3 + tw * 5,
+    tbx - face * 11, tby - 10 + tw * 8 - (charDef.id === 'ninja' ? -8 : 0));
+  c.stroke();
+
+  // ---- 軀幹 ----
+  c.fillStyle = cloth;
+  c.strokeStyle = INK; c.lineWidth = 3;
+  roundRect(c, -10, hipY - 10, 20, 19, 5);
+  c.fill(); c.stroke();
+  c.fillStyle = opts.flash ? '#ffffff' : shade(charDef.color, -45);
+  c.fillRect(-10, hipY + 4, 20, 4);
+
+  // ---- 手臂（兩節：肩→肘→拳） ----
+  const armLen = 7.5;
+  const idleSway = Math.sin(t * 3.1) * 0.12;
+  function arm(front) {
+    const side = front ? face : -face;
+    const sx = side * 7.5;
+    const sy = hipY - 6;
+    let spec = front ? st.fArm : st.bArm;
+    let a1 = spec[0], a2 = spec[1];
+    // 太極：雲手，雙手緩慢畫圓
+    if (st.cloud) {
+      const ph = front ? 0 : Math.PI * 0.9;
+      a1 = 1.5 + Math.sin(t * 1.6 + ph) * 0.75;
+      a2 = 1.6 + Math.cos(t * 1.6 + ph) * 0.55;
+    } else { a1 += idleSway; a2 -= idleSway; }
+    // 出招覆寫（前手為主，開掌雙推連後手一起）
+    if (pose) {
+      if (front && pose.fArm) { a1 = pose.fArm[0]; a2 = pose.fArm[1]; }
+      if (!front && pose.bArm) { a1 = pose.bArm[0]; a2 = pose.bArm[1]; }
+    }
+    // 手臂朝面向側伸出：把「抬起角」轉成向量
+    const dir = front ? face : face;   // 兩臂都往面向側，用角度大小區分前後
+    const ex = sx + Math.sin(a1) * armLen * dir;
+    const ey = sy + Math.cos(a1) * armLen;
+    const hx2 = ex + Math.sin(a2) * armLen * dir;
+    const hy2 = ey + Math.cos(a2) * armLen;
+    c.strokeStyle = opts.flash ? '#ffffff' : skin;
+    c.lineWidth = 4.5;
+    c.beginPath(); c.moveTo(sx, sy); c.lineTo(ex, ey); c.lineTo(hx2, hy2); c.stroke();
+    // 拳頭
+    c.fillStyle = opts.flash ? '#ffffff' : skin;
+    c.strokeStyle = INK; c.lineWidth = 1.6;
+    c.beginPath(); c.arc(hx2, hy2, 2.8, 0, Math.PI * 2); c.fill(); c.stroke();
+  }
+  arm(false);   // 後臂先畫（被身體壓住的層次）
+
+  // ---- 貓頭 ----
+  const headY = hipY - 15 + (pose && pose.punch ? -0.6 : 0);
+  const id = charDef.id;
+
+  // 耳朵（畫在頭圓前面才不會被蓋掉輪廓）
+  function ear(side) {
+    c.fillStyle = skin;
+    c.strokeStyle = INK; c.lineWidth = 2;
+    c.beginPath();
+    c.moveTo(side * 2.2, headY - 6.5);
+    c.lineTo(side * 7.5, headY - 13.5);
+    c.lineTo(side * 8, headY - 5);
+    c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = opts.flash ? '#ffffff' : '#d98a92';
+    c.beginPath();
+    c.moveTo(side * 4.2, headY - 7);
+    c.lineTo(side * 6.8, headY - 11);
+    c.lineTo(side * 7, headY - 6.5);
+    c.closePath(); c.fill();
+  }
+  ear(-1); ear(1);
+
+  c.fillStyle = skin;
+  c.strokeStyle = INK; c.lineWidth = 3;
+  c.beginPath(); c.arc(0, headY, 8, 0, Math.PI * 2);
+  c.fill(); c.stroke();
+
+  // 吻部與鼻子
+  c.fillStyle = opts.flash ? '#ffffff' : shade(charDef.skin, 30);
+  c.beginPath(); c.ellipse(face * 2.6, headY + 3, 4.2, 3.1, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#c05a6a';
+  c.beginPath();
+  c.moveTo(face * 2.6 - 1.5, headY + 1.6);
+  c.lineTo(face * 2.6 + 1.5, headY + 1.6);
+  c.lineTo(face * 2.6, headY + 3.2);
+  c.closePath(); c.fill();
+
+  // 鬍鬚：小尺寸下辨識「這是貓」的關鍵
+  c.strokeStyle = 'rgba(255,255,255,0.8)';
+  c.lineWidth = 1;
+  for (let i = 0; i < 3; i++) {
+    c.beginPath();
+    c.moveTo(face * 5, headY + 2 + i);
+    c.lineTo(face * 12.5, headY - 0.5 + i * 2.4);
+    c.stroke();
+    c.beginPath();
+    c.moveTo(-face * 3, headY + 2 + i);
+    c.lineTo(-face * 9, headY + 0.5 + i * 2.2);
+    c.stroke();
+  }
+
+  // 頭部配件（流派辨識）
+  c.fillStyle = INK;
+  if (id === 'ninja') {
+    c.fillStyle = '#1e222c'; c.fillRect(-8, headY - 3, 16, 5);   // 蒙面
+    c.fillStyle = '#ffe08a';
+    c.fillRect(face * 1, headY - 2, 3, 2); c.fillRect(face * 5 - 1, headY - 2, 3, 2);
+  }
+  else if (id === 'boxer' || id === 'muaythai') { c.fillStyle = id === 'boxer' ? '#c03a3a' : '#3a5aa0'; c.fillRect(-8, headY - 6, 16, 3.4); }
+  else if (id === 'sumo') { c.fillStyle = INK; c.beginPath(); c.arc(0, headY - 9, 3.6, 0, Math.PI * 2); c.fill(); }
+  else if (id === 'monk') { c.fillStyle = '#c9803c'; c.fillRect(-2, headY - 9, 4, 3); }
+  else if (id === 'thug') { c.fillStyle = '#3a5a2a'; c.fillRect(-8, headY - 7, 16, 3.4); }
+  else if (id === 'aikido') { c.fillStyle = '#2b3a4a'; c.fillRect(-8, headY + 5.5, 16, 2.6); }
+  if (id === 'karate' || id === 'judo' || id === 'kenshi') {
+    c.strokeStyle = '#e8e4dc'; c.lineWidth = 3;
+    c.beginPath(); c.moveTo(-8.5, headY - 4.5); c.lineTo(8.5, headY - 4.5); c.stroke();
+    c.strokeStyle = INK;
+  }
+  if (id === 'ironhead') {
+    c.strokeStyle = '#c9cdd6'; c.lineWidth = 3;
+    c.beginPath(); c.arc(0, headY - 1, 8.6, Math.PI * 1.05, Math.PI * 1.95); c.stroke();
+    c.strokeStyle = INK;
+  }
+  if (id === 'berserker') {   // 狂貓：炸毛
+    c.strokeStyle = INK; c.lineWidth = 1.6;
+    for (let i = -2; i <= 2; i++) {
+      c.beginPath(); c.moveTo(i * 3, headY - 7.5); c.lineTo(i * 3.8, headY - 10.5); c.stroke();
+    }
+  }
+  // 眼睛（忍者蒙面版已畫過）
+  if (id !== 'ninja') {
+    c.fillStyle = INK;
+    c.fillRect(face * 4.6 - 1.2, headY - 2.6, 2.4, 3.2);
+    c.fillRect(-face * 1.4 - 1.2, headY - 2.6, 2.4, 3.2);
+  }
+
+  arm(true);   // 前臂最後畫（在最上層，出招看得最清楚）
+
+  // 手刀軌跡
+  if (pose && pose.chopSwing) {
+    c.strokeStyle = '#ffffff';
+    c.globalAlpha = (1 - pose.chopSwing) * 0.6;
+    c.lineWidth = 2.5;
+    c.beginPath();
+    c.arc(face * 6, hipY - 8, 13, -1.3 * face, (pose.chopSwing * 1.8 - 1.3) * face, face < 0);
+    c.stroke();
+    c.globalAlpha = 1;
+  }
+  c.restore();
+}
+
 /* ---------- 玩家 ---------- */
 function drawPlayer() {
   const p = G.player;
   const c = G.char;
   ctx.save();
   ctx.translate(p.x, p.y);
-
-  const bob = Math.sin(p.walkAnim) * 2.2;
-  const lean = Math.sin(p.walkAnim) * 0.06;
 
   // 影子
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
@@ -145,39 +394,51 @@ function drawPlayer() {
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
-  // 絕技狀態視覺
-  if (p.counterT > 0) {   // 借力化勁：藍色架式圈
-    ctx.strokeStyle = '#5a8ac9';
+  // 三態招式視覺：站樁與移動技生效時要一眼看得出「開著」
+  const stillOn = stillActive();
+  const movingOn = movingActive();
+  if (stillOn) {
+    const sid = p.moves.still;
+    const col = MOVE_MAP[sid] ? MOVE_MAP[sid].color : '#e8e4dc';
+    ctx.strokeStyle = col;
     ctx.lineWidth = 2.5;
-    ctx.globalAlpha = 0.7 + Math.sin(G.time * 10) * 0.2;
-    ctx.beginPath(); ctx.arc(0, 0, p.r + 7, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = 0.55 + Math.sin(G.time * 8) * 0.2;
+    ctx.beginPath(); ctx.arc(0, 0, p.r + 8, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = 1;
+    if (sid === 'focus_strike' && p.focusStacks > 0) {   // 蓄力層數
+      ctx.fillStyle = '#e8964a';
+      for (let i = 0; i < p.focusStacks; i++) {
+        const a = -Math.PI / 2 + (i - (p.focusStacks - 1) / 2) * 0.5;
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * (p.r + 13), Math.sin(a) * (p.r + 13) - 4, 2.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+  if (movingOn && p.moves.move === 'phantom_press') {   // 威壓氣場
+    ctx.strokeStyle = '#c9576b';
+    ctx.globalAlpha = 0.4;
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(0, 0, p.r + 10, 0, Math.PI * 2); ctx.stroke();
     ctx.globalAlpha = 1;
   }
-  if (p.limitT > 0) {     // 解縛：紅色蒸氣線
-    ctx.strokeStyle = '#d9564f';
-    ctx.globalAlpha = 0.6;
-    ctx.lineWidth = 2;
-    for (let i = 0; i < 3; i++) {
-      const ox = Math.sin(G.time * 7 + i * 2.1) * 6;
+  if (movingOn && p.moves.move === 'gale_step') {   // 疾風速度線
+    ctx.strokeStyle = '#8fd4e0';
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = 1.6;
+    for (let i = -1; i <= 1; i++) {
       ctx.beginPath();
-      ctx.moveTo(ox - 6 + i * 6, -20);
-      ctx.lineTo(ox - 3 + i * 6, -30 - (G.time * 40 + i * 9) % 8);
+      ctx.moveTo(-p.face * (16 + (G.time * 90) % 8), -6 + i * 7);
+      ctx.lineTo(-p.face * (26 + (G.time * 90) % 8), -6 + i * 7);
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
   }
-  if (p.bellT > 0) {      // 金鐘罩：金色鐘形罩
-    ctx.strokeStyle = '#d9b06a';
+  if (p.ougiField > 0) {   // 圓相領域
+    ctx.strokeStyle = '#5a8ac9';
     ctx.lineWidth = 3;
-    ctx.globalAlpha = 0.5;
-    ctx.beginPath(); ctx.arc(0, -4, p.r + 12, Math.PI * 0.95, Math.PI * 2.05); ctx.stroke();
-    ctx.globalAlpha = 1;
-  }
-  if (p.swayT > 0) {      // 搖擺身法：殘影
-    ctx.globalAlpha = 0.25;
-    ctx.fillStyle = G.char.color;
-    const sw = Math.sin(G.time * 16) * 8;
-    ctx.beginPath(); ctx.arc(sw, -4, p.r * 0.8, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 0.5 + Math.sin(G.time * 12) * 0.25;
+    ctx.beginPath(); ctx.arc(0, 0, p.r + 16, 0, Math.PI * 2); ctx.stroke();
     ctx.globalAlpha = 1;
   }
   if (p.staggerT > 0) {   // 踉蹌：頭上冒星
@@ -190,58 +451,10 @@ function drawPlayer() {
     }
   }
 
-  ctx.rotate(lean);
-  ctx.translate(0, bob);
   const flash = p.iframe > 0 && Math.floor(G.time * 20) % 2 === 0;
-
-  // 腿
-  const legSw = Math.sin(p.walkAnim) * 5;
-  ctx.strokeStyle = INK; ctx.lineWidth = 6; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(-4, 6); ctx.lineTo(-4 + legSw, 15); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(4, 6); ctx.lineTo(4 - legSw, 15); ctx.stroke();
-
-  // 身體
-  ctx.fillStyle = flash ? '#ffffff' : c.color;
-  ctx.strokeStyle = INK; ctx.lineWidth = 3;
-  roundRect(ctx, -10, -8, 20, 17, 5);
-  ctx.fill(); ctx.stroke();
-
-  // 腰帶
-  ctx.fillStyle = flash ? '#ffffff' : shade(c.color, -45);
-  ctx.fillRect(-10, 2, 20, 4);
-
-  // 手臂
-  ctx.strokeStyle = flash ? '#ffffff' : c.skin;
-  ctx.lineWidth = 5;
-  ctx.beginPath(); ctx.moveTo(-9, -4); ctx.lineTo(-14, 2 - legSw * 0.4); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(9, -4); ctx.lineTo(14, 2 + legSw * 0.4); ctx.stroke();
-
-  // 頭
-  ctx.fillStyle = flash ? '#ffffff' : c.skin;
-  ctx.strokeStyle = INK; ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.arc(0, -14, 8, 0, Math.PI * 2);
-  ctx.fill(); ctx.stroke();
-
-  // 頭部特徵（依職業給一點辨識度）
-  ctx.fillStyle = INK;
-  const id = c.id;
-  if (id === 'ninja') { ctx.fillRect(-8, -17, 16, 5); }
-  else if (id === 'boxer' || id === 'muaythai') { ctx.fillRect(-8, -20, 16, 4); }
-  else if (id === 'karate' || id === 'judo' || id === 'kenshi') {
-    ctx.strokeStyle = '#e8e4dc'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(-9, -18); ctx.lineTo(9, -18); ctx.stroke();
-    ctx.strokeStyle = INK;
-  } else if (id === 'sumo') { ctx.beginPath(); ctx.arc(0, -21, 4, 0, Math.PI * 2); ctx.fill(); }
-  else if (id === 'monk') { ctx.fillRect(-2, -22, 4, 3); }
-  else if (id === 'ironhead') {
-    ctx.strokeStyle = '#c9cdd6'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(0, -14, 9, Math.PI, Math.PI * 2); ctx.stroke();
-    ctx.strokeStyle = INK;
-  }
-  // 眼睛
-  ctx.fillStyle = INK;
-  ctx.fillRect(p.face > 0 ? 1 : -5, -15, 4, 2.4);
-
+  drawFighter(ctx, c, {
+    time: G.time, face: p.face, walk: p.walkAnim, flash, pose: p.pose,
+  });
   ctx.restore();
 }
 
@@ -405,6 +618,25 @@ function drawEnemies() {
           ctx.beginPath(); ctx.arc(0, 0, e.r, 0, Math.PI * 2);
         }
         ctx.fill(); ctx.stroke();
+        // 野狗幫：垂耳＋吻部，跟貓的立耳做出敵我區隔
+        {
+          const er = e.r;
+          ctx.fillStyle = flash ? '#fff' : shade(e.color, -30);
+          ctx.beginPath();
+          ctx.moveTo(-er * 0.55, -er * 0.75);
+          ctx.lineTo(-er * 1.05, -er * 0.15);
+          ctx.lineTo(-er * 0.35, -er * 0.25);
+          ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(er * 0.55, -er * 0.75);
+          ctx.lineTo(er * 1.05, -er * 0.15);
+          ctx.lineTo(er * 0.35, -er * 0.25);
+          ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = '#12141a';
+          ctx.beginPath();
+          ctx.arc(er * 0.55 * (e.face || 1), er * 0.18, er * 0.16, 0, Math.PI * 2);
+          ctx.fill();
+        }
         break;
 
       case 'spiker':
@@ -823,50 +1055,98 @@ function drawHud() {
     }
   });
 
-  // 絕技冷卻（右下）
-  const TS = 54;
-  p.techs.forEach((t, i) => {
-    const x = VIEW.w - 24 - (2 - i) * (TS + 8);
-    const y = VIEW.h - TS - 30;
+  // ---- 三態招式欄（右下）----
+  const TS = 44;
+  const slots = ['dash', 'move', 'still'];
+  const slotLit = {
+    dash: p.dashCd <= 0,
+    move: movingActive(),
+    still: stillActive(),
+  };
+  const baseX = VIEW.w - 24 - 3 * (TS + 8);
+  const baseY = VIEW.h - TS - 46;
+  slots.forEach((slot, i) => {
+    const def = MOVE_MAP[p.moves[slot]];
+    const x = baseX + i * (TS + 8);
+    const lit = slotLit[slot];
     ctx.fillStyle = 'rgba(10,12,16,0.82)';
-    roundRect(ctx, x, y, TS, TS, 6); ctx.fill();
-    if (t) {
-      const ready = t.cdLeft <= 0;
-      ctx.strokeStyle = ready ? t.def.color : '#3a4050';
-      ctx.lineWidth = ready ? 3 : 2;
-      roundRect(ctx, x, y, TS, TS, 6); ctx.stroke();
-      ctx.fillStyle = ready ? t.def.color : '#5f6878';
-      ctx.font = 'bold 26px ' + FONT;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(t.def.short, x + TS / 2, y + TS / 2 + 1);
-      ctx.textBaseline = 'alphabetic';
-      if (!ready) {
-        const k = t.cdLeft / t.def.cd;
-        ctx.fillStyle = 'rgba(0,0,0,0.65)';
-        ctx.fillRect(x, y, TS, TS * Math.min(1, k));
-        ctx.fillStyle = '#e8e4dc';
-        ctx.font = 'bold 15px ' + FONT;
-        ctx.fillText(Math.ceil(t.cdLeft), x + TS / 2, y + TS / 2 + 5);
-      }
-      ctx.fillStyle = '#6d7583';
-      ctx.font = 'bold 10px ' + FONT;
-      ctx.fillText(i === 0 ? 'SPACE' : 'E', x + TS / 2, y + TS + 12);
-      ctx.fillStyle = ready ? '#c8ccd6' : '#5f6878';
-      ctx.font = 'bold 11px ' + FONT;
-      ctx.fillText(t.def.name, x + TS / 2, y - 5);
-    } else {
-      ctx.strokeStyle = '#262b36'; ctx.lineWidth = 2;
-      roundRect(ctx, x, y, TS, TS, 6); ctx.stroke();
-      ctx.fillStyle = '#3a4050';
-      ctx.font = 'bold 20px ' + FONT;
-      ctx.textAlign = 'center';
-      ctx.fillText('—', x + TS / 2, y + TS / 2 + 7);
-      ctx.fillStyle = '#6d7583';
-      ctx.font = 'bold 10px ' + FONT;
-      ctx.fillText(i === 0 ? 'SPACE' : 'E', x + TS / 2, y + TS + 12);
+    roundRect(ctx, x, baseY, TS, TS, 6); ctx.fill();
+    ctx.strokeStyle = lit ? def.color : '#3a4050';
+    ctx.lineWidth = lit ? 3 : 2;
+    roundRect(ctx, x, baseY, TS, TS, 6); ctx.stroke();
+    ctx.fillStyle = lit ? def.color : '#5f6878';
+    ctx.font = 'bold 20px ' + FONT;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(def.short, x + TS / 2, baseY + TS / 2 + 1);
+    ctx.textBaseline = 'alphabetic';
+    if (slot === 'dash' && p.dashCd > 0) {
+      const k = Math.min(1, p.dashCd / (def.cd || 6));
+      ctx.fillStyle = 'rgba(0,0,0,0.65)';
+      ctx.fillRect(x, baseY, TS, TS * k);
+      ctx.fillStyle = '#e8e4dc';
+      ctx.font = 'bold 13px ' + FONT;
+      ctx.fillText(Math.ceil(p.dashCd), x + TS / 2, baseY + TS / 2 + 4);
     }
+    ctx.fillStyle = '#6d7583';
+    ctx.font = 'bold 9px ' + FONT;
+    ctx.fillText(slot === 'dash' ? 'SPACE' : (slot === 'move' ? '移動' : '站定'), x + TS / 2, baseY + TS + 11);
+    ctx.fillStyle = lit ? '#c8ccd6' : '#5f6878';
+    ctx.font = 'bold 10px ' + FONT;
+    ctx.fillText(def.name, x + TS / 2, baseY - 4);
   });
-  ctx.textAlign = 'left';
+
+  // ---- 節拍條與奧義指令（醍醐味的回饋核心）----
+  const o = OUGI[G.char.id];
+  if (o) {
+    const beatY = baseY - 34;
+    const ready = ougiReady();
+    // 自家奧義指令（底）與目前節拍（上）對照
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 11px ' + FONT;
+    ctx.fillStyle = ready ? '#ffd44a' : '#6d7583';
+    const seqStr = o.seq.map(b => b === 'S' ? '站' : '移').join('·') + '＋衝';
+    ctx.fillText((ready ? '奧義就緒！' : o.name + '　') + seqStr, baseX + (3 * (TS + 8) - 8) / 2, beatY - 12);
+    // 目前已敲出的節拍
+    for (let i = 0; i < 3; i++) {
+      const bx = baseX + 26 + i * 34;
+      const beat = p.beatLog.length >= 3 ? p.beatLog[i] : p.beatLog[i];
+      ctx.fillStyle = 'rgba(10,12,16,0.8)';
+      roundRect(ctx, bx, beatY, 26, 18, 4); ctx.fill();
+      const want = o.seq[i];
+      const match = beat && beat === want;
+      ctx.strokeStyle = ready ? '#ffd44a' : (match ? '#77c47f' : '#3a4050');
+      ctx.lineWidth = 1.6;
+      roundRect(ctx, bx, beatY, 26, 18, 4); ctx.stroke();
+      if (beat) {
+        ctx.fillStyle = beat === 'S' ? '#e8964a' : '#8fd4e0';
+        ctx.font = 'bold 12px ' + FONT;
+        ctx.fillText(beat === 'S' ? '站' : '移', bx + 13, beatY + 14);
+      }
+    }
+    ctx.textAlign = 'left';
+  }
+
+  // ---- 奧義發動字卡 ----
+  if (G.ougiBanner && G.ougiBanner.t > 0) {
+    const k = G.ougiBanner.t / 1.3;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, k * 3);
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 58px ' + FONT;
+    ctx.lineWidth = 9;
+    ctx.strokeStyle = INK;
+    const by = VIEW.h * 0.32 - (1 - k) * 14;
+    ctx.strokeText('奧義', VIEW.w / 2, by - 54);
+    ctx.fillStyle = '#ffd44a';
+    ctx.fillText('奧義', VIEW.w / 2, by - 54);
+    ctx.font = 'bold 44px ' + FONT;
+    ctx.lineWidth = 8;
+    ctx.strokeText(G.ougiBanner.name, VIEW.w / 2, by);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(G.ougiBanner.name, VIEW.w / 2, by);
+    ctx.restore();
+    ctx.textAlign = 'left';
+  }
 
   // 波末提示
   if (G.waveEnding > 0) {
@@ -886,8 +1166,19 @@ function drawIconTo(canvasEl, kind, id, tier) {
   c.clearRect(0, 0, canvasEl.width, canvasEl.height);
   c.save();
   c.translate(canvasEl.width / 2, canvasEl.height / 2);
+  if (kind === 'gear') {
+    const g = GEAR_MAP[id];
+    c.strokeStyle = '#d98a3c'; c.lineWidth = 2.5;
+    roundRect(c, -13, -13, 26, 26, 5); c.stroke();
+    c.fillStyle = '#d98a3c';
+    c.font = 'bold 15px ' + FONT;
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(g.name.slice(0, 1), 0, 1);
+    c.restore();
+    return;
+  }
   if (kind === 'tech') {
-    const t = TECH_MAP[id];
+    const t = moveDef(id);
     c.strokeStyle = t.color; c.lineWidth = 3;
     c.beginPath(); c.arc(0, 0, 20, 0, Math.PI * 2); c.stroke();
     c.fillStyle = t.color;
@@ -939,39 +1230,9 @@ function drawCharPortraitTo(canvasEl, charId) {
   const ch = CHARACTERS.find(x => x.id === charId);
   c.clearRect(0, 0, canvasEl.width, canvasEl.height);
   c.save();
-  c.translate(canvasEl.width / 2, canvasEl.height / 2 + 3);
-  c.scale(0.95, 0.95);
-  c.strokeStyle = INK; c.lineWidth = 3;
-  // 腿
-  c.lineCap = 'round';
-  c.beginPath(); c.moveTo(-4, 6); c.lineTo(-5, 15); c.stroke();
-  c.beginPath(); c.moveTo(4, 6); c.lineTo(5, 15); c.stroke();
-  // 身
-  c.fillStyle = ch.color;
-  roundRect(c, -10, -8, 20, 17, 5); c.fill(); c.stroke();
-  c.fillStyle = shade(ch.color, -45);
-  c.fillRect(-10, 2, 20, 4);
-  // 手
-  c.strokeStyle = ch.skin; c.lineWidth = 5;
-  c.beginPath(); c.moveTo(-9, -4); c.lineTo(-14, 3); c.stroke();
-  c.beginPath(); c.moveTo(9, -4); c.lineTo(14, 3); c.stroke();
-  // 頭
-  c.fillStyle = ch.skin; c.strokeStyle = INK; c.lineWidth = 3;
-  c.beginPath(); c.arc(0, -14, 8, 0, Math.PI * 2); c.fill(); c.stroke();
-  c.fillStyle = INK;
-  if (ch.id === 'ninja') c.fillRect(-8, -17, 16, 5);
-  else if (ch.id === 'boxer' || ch.id === 'muaythai') c.fillRect(-8, -20, 16, 4);
-  else if (ch.id === 'sumo') { c.beginPath(); c.arc(0, -21, 4, 0, Math.PI * 2); c.fill(); }
-  else if (ch.id === 'monk') c.fillRect(-2, -22, 4, 3);
-  if (ch.id === 'karate' || ch.id === 'judo' || ch.id === 'kenshi') {
-    c.strokeStyle = '#e8e4dc'; c.lineWidth = 3;
-    c.beginPath(); c.moveTo(-9, -18); c.lineTo(9, -18); c.stroke();
-  }
-  if (ch.id === 'ironhead') {
-    c.strokeStyle = '#c9cdd6'; c.lineWidth = 3;
-    c.beginPath(); c.arc(0, -14, 9, Math.PI, Math.PI * 2); c.stroke();
-  }
-  c.fillStyle = INK;
-  c.fillRect(1, -15, 4, 2.4);
+  c.translate(canvasEl.width / 2, canvasEl.height / 2 + 4);
+  c.scale(1.35, 1.35);
+  // 立繪＝各職業的站架，跟戰鬥中同一套骨架
+  drawFighter(c, ch, { time: 0.7, face: 1, walk: 0 });
   c.restore();
 }
