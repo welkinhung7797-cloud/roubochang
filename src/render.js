@@ -120,6 +120,193 @@ function drawArena() {
   ctx.strokeRect(2, 2, ARENA.w - 4, ARENA.h - 4);
 }
 
+/* ---------- 全幀動畫（Brotato 式共用基底） ----------
+   一隻基底企鵝的全幀動畫全職業共用；職業差異疊在配件層與特效層。
+   幀圖缺席時自動退回程序繪製。
+*/
+const BASE_FRAMES = { loaded: 0, ready: false };
+const FRAME_DEFS = {
+  idle: 2, walk: 4, punch: 3, grab: 2, hurt: 2, dash: 2, ko: 1,
+};
+const ACC_IMGS = {};   // charId -> Image（頭部配件）
+const FX_IMGS = {};    // fx 名 -> Image（招式特效貼圖，黑底發光）
+
+function loadBaseFrames() {
+  if (BASE_FRAMES.ready || BASE_FRAMES.loading || typeof Image === 'undefined') return;
+  BASE_FRAMES.loading = true;
+  let need = 0;
+  for (const k in FRAME_DEFS) need += FRAME_DEFS[k];
+  for (const k in FRAME_DEFS) {
+    BASE_FRAMES[k] = [];
+    for (let i = 1; i <= FRAME_DEFS[k]; i++) {
+      const img = new Image();
+      img.onload = () => {
+        BASE_FRAMES.loaded++;
+        // 至少 idle 與 walk 到齊才啟用（其餘動作缺幀時用 idle 頂）
+        if (BASE_FRAMES.idle[0] && BASE_FRAMES.idle[0].complete && BASE_FRAMES.loaded >= 6) {
+          BASE_FRAMES.ready = true;
+        }
+      };
+      img.onerror = () => {};
+      img.src = 'assets/frames/' + k + '_' + i + '.png';
+      BASE_FRAMES[k].push(img);
+    }
+  }
+}
+
+function loadAccessory(charId) {
+  if (ACC_IMGS[charId] !== undefined || typeof Image === 'undefined') return;
+  const img = new Image();
+  ACC_IMGS[charId] = null;
+  img.onload = () => { ACC_IMGS[charId] = img; };
+  img.src = 'assets/acc/' + charId + '.png';
+}
+
+function loadFx(name) {
+  if (FX_IMGS[name] !== undefined || typeof Image === 'undefined') return;
+  const img = new Image();
+  FX_IMGS[name] = null;
+  img.onload = () => { FX_IMGS[name] = img; };
+  img.src = 'assets/fx/' + name + '.png';
+}
+
+/* 依玩家當下狀態選幀 */
+function pickFrame(p) {
+  const t = G.time;
+  const ok = (k, i) => BASE_FRAMES[k] && BASE_FRAMES[k][i] && BASE_FRAMES[k][i].complete && BASE_FRAMES[k][i].naturalWidth > 0;
+  function pick(k, i) { return ok(k, i) ? BASE_FRAMES[k][i] : (ok('idle', 0) ? BASE_FRAMES.idle[0] : null); }
+  if (p.dead) return pick('ko', 0);
+  if (p.hurtT > 0) return pick('hurt', p.hurtT > 0.15 ? 0 : 1);
+  if (p.dashState) return pick('dash', Math.floor(t * 10) % 2);
+  if (p.grabState) return pick('grab', p.grabState.mode === 'hold' && p.stillHold > 0.2 ? 1 : 0);
+  if (p.pose && p.pose.prio >= 0 && p.pose.type !== 'stomp') {
+    const k = Math.min(0.999, p.pose.t / p.pose.dur);
+    return pick('punch', Math.floor(k * 3));
+  }
+  if (p.moveTime > 0.05) return pick('walk', Math.floor((p.walkAnim / Math.PI) * 2) % 4);
+  return pick('idle', Math.floor(t * 1.6) % 2);
+}
+
+/* 全幀模式的玩家繪製：幀圖＋配件＋既有狀態特效（呼叫端已 translate 到玩家位置） */
+const FRAME_H = 46;   // 幀在世界座標的顯示高度
+function drawPlayerFramed(p, c) {
+  const img = pickFrame(p);
+  if (!img) return false;
+  const w = FRAME_H * (img.width / img.height);
+  ctx.save();
+  if (p.face < 0) ctx.scale(-1, 1);
+  if (p.iframe > 0 && Math.floor(G.time * 20) % 2 === 0) ctx.filter = 'brightness(2.2)';
+  ctx.drawImage(img, -w / 2, -FRAME_H * 0.62, w, FRAME_H);
+  // 配件：疊在頭部（基底幀構圖固定，錨點統一）
+  const acc = ACC_IMGS[c.id];
+  if (acc) {
+    const aw = FRAME_H * 0.62;
+    const ah = aw * (acc.height / acc.width);
+    ctx.drawImage(acc, -aw / 2 + FRAME_H * 0.06, -FRAME_H * 0.62 - ah * 0.18, aw, ah);
+  }
+  ctx.filter = 'none';
+  ctx.restore();
+  return true;
+}
+
+/* ---------- 部件骨架（備援層） ----------
+   部件圖（body/head/wing/foot/extra）掛在程式骨架的關節上，
+   動作全部由既有的 pose 系統驅動——換皮不換動作。
+   部件缺席時自動退回向量繪製，量產期不破圖。
+*/
+const PARTS = {};          // charId -> { body: Image|null, head, wing, foot, extra, ready }
+const PART_NAMES = ['body', 'head', 'wing', 'foot', 'extra'];
+/* 部件錨點與尺寸（世界單位）：全企鵝共用——規格書強制同構圖，所以一張表打天下。
+   size=部件在遊戲內的顯示寬度；ax/ay=旋轉錨點在圖內的相對位置(0~1) */
+const PART_SPEC = {
+  body: { size: 30, ax: 0.5, ay: 0.5 },
+  head: { size: 34, ax: 0.5, ay: 0.62 },   // 錨在頸部
+  wing: { size: 17, ax: 0.5, ay: 0.14 },   // 錨在翅根
+  foot: { size: 11, ax: 0.5, ay: 0.2 },    // 錨在腳踝
+  extra: { size: 18, ax: 0.5, ay: 0.5 },
+};
+
+function loadParts(charId) {
+  if (PARTS[charId] || typeof Image === 'undefined') return;
+  const set = { ready: false, count: 0 };
+  PARTS[charId] = set;
+  PART_NAMES.forEach(name => {
+    const img = new Image();
+    img.onload = () => {
+      set[name] = img;
+      set.count++;
+      // body/head/wing/foot 四件到齊就啟用部件模式（extra 選配）
+      set.ready = ['body', 'head', 'wing', 'foot'].every(n => set[n]);
+    };
+    img.onerror = () => { set[name] = null; };
+    img.src = 'assets/parts/' + charId + '/' + name + '.png';
+  });
+}
+
+function drawPart(c, set, name, x, y, rot, opts) {
+  const img = set[name];
+  if (!img) return;
+  const spec = PART_SPEC[name];
+  const w = spec.size * ((opts && opts.scale) || 1);
+  const h = w * (img.height / img.width);
+  c.save();
+  c.translate(x, y);
+  c.rotate(rot || 0);
+  if (opts && opts.flip) c.scale(-1, 1);
+  c.drawImage(img, -w * spec.ax, -h * spec.ay, w, h);
+  c.restore();
+}
+
+/* 部件骨架版格鬥家：沿用 STANCES 與 attackPose 的角度輸出 */
+function drawFighterParts(c, charDef, set, opts) {
+  const st = STANCES[charDef.id] || STANCES.boxer;
+  const t = opts.time || 0;
+  const face = opts.face || 1;
+  const walk = opts.walk || 0;
+  const pose = opts.pose ? attackPose(opts.pose) : null;
+
+  const crouch = st.crouch + (pose && (pose.kick || pose.knee) ? 1.5 : 0);
+  const bob = Math.sin(t * 3.1) * st.bounce * 0.9 + Math.sin(walk) * 2.0;
+  const lean = (st.lean + (pose ? (pose.lean || 0) : 0)) * face + Math.sin(walk) * 0.05;
+  const hipY = -8 + crouch * 0.5;
+
+  c.save();
+  c.rotate(lean);
+  c.translate(0, bob * 0.4);
+  if (opts.flash) c.filter = 'brightness(2.2)';
+  const fw = face < 0;
+
+  // 腳（後→前）：走路擺動或踢擊
+  const legSw = Math.sin(walk) * 0.5;
+  let footFrontRot = legSw, footBackRot = -legSw;
+  if (pose && pose.kick) footFrontRot = -1.5 * pose.kick;
+  if (pose && pose.knee) footFrontRot = -1.9 * pose.knee;
+  drawPart(c, set, 'foot', -4 * face, hipY + 12, footBackRot * face, { flip: fw });
+  // 後翅
+  let bArmRot = (st.bArm[0] - 1.2) * 0.7;
+  if (pose && pose.bArm) bArmRot = (pose.bArm[0] - 1.2) * 0.9;
+  if (st.cloud) bArmRot = Math.sin(t * 1.6 + Math.PI * 0.9) * 0.55;
+  drawPart(c, set, 'wing', -7.5 * face, hipY - 4, (bArmRot + 0.25) * face, { flip: !fw });
+  // 軀幹
+  drawPart(c, set, 'body', 0, hipY, 0, {});
+  // 前腳
+  drawPart(c, set, 'foot', 4 * face, hipY + 12, footFrontRot * face, { flip: fw });
+  // 頭（點頭與出拳前傾）
+  const headBob = (pose && pose.punch ? -1.2 : 0) + Math.sin(t * 3.1) * 0.6;
+  drawPart(c, set, 'head', 1.5 * face, hipY - 13 + headBob, lean * 0.4, { flip: fw });
+  // 前翅（主攻擊臂）
+  let fArmRot = (st.fArm[0] - 1.2) * 0.7;
+  if (pose && pose.fArm) fArmRot = (pose.fArm[0] - 1.6) * 1.1;
+  if (st.cloud) fArmRot = Math.sin(t * 1.6) * 0.55;
+  drawPart(c, set, 'wing', 7.5 * face, hipY - 4, (fArmRot - 0.25) * face, { flip: fw });
+  // 配件（武器類跟著前翅角度）
+  if (set.extra) {
+    drawPart(c, set, 'extra', 10 * face, hipY - 2, fArmRot * face * 0.8, { flip: fw });
+  }
+  if (opts.flash) c.filter = 'none';
+  c.restore();
+}
+
 /* ---------- 格鬥家骨架 ----------
    每個職業有自己的站架（idle 姿勢），出招時蓋上出招姿勢。
    角度定義：手臂從肩膀出發，0＝垂直向下，正值＝朝面向方向抬起。
@@ -401,6 +588,37 @@ function drawPlayer() {
   ctx.ellipse(0, p.r * 0.85, p.r * 0.9, p.r * 0.34, 0, 0, Math.PI * 2);
   ctx.fill();
 
+  // 頭上連段提示：目前拍列＋奧義就緒閃光——玩家不用看角落也知道連段打到哪
+  {
+    const ready = ougiReady();
+    const bl = p.beatLog;
+    const y0 = -34;
+    if (ready) {
+      ctx.font = 'bold 9px ' + FONT;
+      ctx.textAlign = 'center';
+      ctx.lineWidth = 3; ctx.strokeStyle = INK;
+      ctx.globalAlpha = 0.75 + Math.sin(G.time * 12) * 0.25;
+      ctx.strokeText('奧義就緒！', 0, y0 - 3);
+      ctx.fillStyle = '#ffd44a';
+      ctx.fillText('奧義就緒！', 0, y0 - 3);
+      ctx.globalAlpha = 1;
+      ctx.textAlign = 'left';
+    } else if (bl.length) {
+      const bw = 9, gap = 2;
+      const total = 3 * bw + 2 * gap;
+      for (let i = 0; i < 3; i++) {
+        const bx = -total / 2 + i * (bw + gap);
+        const beat = bl[i];
+        ctx.fillStyle = 'rgba(10,12,16,0.7)';
+        ctx.fillRect(bx, y0 - 8, bw, 8);
+        if (beat) {
+          ctx.fillStyle = beat === 'S' ? '#e8964a' : (beat === 'D' ? '#ffd44a' : '#8fd4e0');
+          ctx.fillRect(bx + 1, y0 - 7, bw - 2, 6);
+        }
+      }
+    }
+  }
+
   // 爆發光環
   if (p.burst > 0) {
     ctx.strokeStyle = '#ffd44a';
@@ -468,10 +686,15 @@ function drawPlayer() {
     }
   }
 
-  const flash = p.iframe > 0 && Math.floor(G.time * 20) % 2 === 0;
-  drawFighter(ctx, c, {
-    time: G.time, face: p.face, walk: p.walkAnim, flash, pose: p.pose,
-  });
+  // 全幀動畫模式優先（三傑先行），缺圖退回程序繪製
+  loadBaseFrames();
+  loadAccessory(c.id);
+  if (!(BASE_FRAMES.ready && drawPlayerFramed(p, c))) {
+    const flash = p.iframe > 0 && Math.floor(G.time * 20) % 2 === 0;
+    drawFighter(ctx, c, {
+      time: G.time, face: p.face, walk: p.walkAnim, flash, pose: p.pose,
+    });
+  }
   ctx.restore();
 }
 
@@ -826,11 +1049,48 @@ function drawBoss(e, col, flash) {
   }
 }
 
+/* 武器類別 → 特效貼圖（招式差異的本體：同一套動畫，不同的靈氣） */
+function fxForWeapon(w) {
+  if (w.klass === '刃') return 'fx_slash';
+  if (w.klass === '摔技' || w.klass === '掌' || w.klass === '相撲') return 'fx_chop';
+  return 'fx_punch';
+}
+
 /* ---------- 攻擊實體：看得見的拳頭與刀光 ---------- */
 function drawStrikes() {
   const p = G.player;
   for (const s of G.strikes) {
     const w = s.w;
+    // 特效貼圖模式：黑底發光圖用加法混合疊上去
+    const fxName = fxForWeapon(w);
+    loadFx(fxName); loadFx('fx_impact');
+    const fxImg = FX_IMGS[fxName];
+    if (fxImg) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const kLife = s.kind === 'thrust'
+        ? 1 - s.traveled / s.maxDist
+        : 1 - Math.min(1, s.t / (s.dur || 0.2));
+      ctx.globalAlpha = 0.55 + 0.45 * kLife;
+      if (s.kind === 'thrust') {
+        const sz = 34;
+        ctx.translate(s.x, s.y);
+        ctx.rotate(s.ang);
+        ctx.drawImage(fxImg, -sz / 2, -sz / 2, sz, sz);
+      } else if (s.kind === 'sweep' || s.kind === 'orbit') {
+        const sz = s.reach * 1.15;
+        ctx.translate(p.x, p.y);
+        ctx.rotate(s.cur);
+        ctx.drawImage(fxImg, -sz * 0.1, -sz / 2, sz, sz);
+      } else if (s.kind === 'slam') {
+        const k = Math.min(1, s.t / s.delay);
+        const sz = s.reach * 2 * k;
+        ctx.translate(p.x, p.y);
+        ctx.drawImage(fxImg, -sz / 2, -sz / 2, sz, sz);
+      }
+      ctx.restore();
+      continue;
+    }
     ctx.save();
     if (s.kind === 'thrust') {
       // 飛行拳影／掌風
@@ -1021,7 +1281,19 @@ function drawFxOver() {
       ctx.beginPath(); ctx.arc(f.x, f.y, f.size * k, 0, Math.PI * 2); ctx.stroke();
       ctx.restore();
     } else if (f.type === 'spark') {
-      // 命中火花：沿受擊方向放射短線
+      // 命中火花：有貼圖用星爆貼圖（加法混合），否則放射短線
+      const impactImg = FX_IMGS['fx_impact'];
+      if (impactImg) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 1 - k;
+        const sz = 26 + k * 26;
+        ctx.translate(f.x, f.y);
+        ctx.rotate(f.angle || 0);
+        ctx.drawImage(impactImg, -sz / 2, -sz / 2, sz, sz);
+        ctx.restore();
+        continue;
+      }
       ctx.save();
       ctx.globalAlpha = 1 - k;
       ctx.strokeStyle = f.color;
@@ -1217,7 +1489,7 @@ function drawHud() {
     ctx.textAlign = 'center';
     ctx.font = 'bold 11px ' + FONT;
     ctx.fillStyle = ready ? '#ffd44a' : '#6d7583';
-    const seqStr = o.seq.map(b => b === 'S' ? '站' : '移').join('·') + '＋衝';
+    const seqStr = o.seq.map(b => b === 'S' ? '站' : (b === 'D' ? '衝' : '移')).join('·') + '→按衝刺';
     ctx.fillText((ready ? '奧義就緒！' : o.name + '　') + seqStr, baseX + (3 * (TS + 8) - 8) / 2, beatY - 12);
     // 目前已敲出的節拍
     for (let i = 0; i < 3; i++) {
@@ -1231,9 +1503,9 @@ function drawHud() {
       ctx.lineWidth = 1.6;
       roundRect(ctx, bx, beatY, 26, 18, 4); ctx.stroke();
       if (beat) {
-        ctx.fillStyle = beat === 'S' ? '#e8964a' : '#8fd4e0';
+        ctx.fillStyle = beat === 'S' ? '#e8964a' : (beat === 'D' ? '#ffd44a' : '#8fd4e0');
         ctx.font = 'bold 12px ' + FONT;
-        ctx.fillText(beat === 'S' ? '站' : '移', bx + 13, beatY + 14);
+        ctx.fillText(beat === 'S' ? '站' : (beat === 'D' ? '衝' : '移'), bx + 13, beatY + 14);
       }
     }
     ctx.textAlign = 'left';

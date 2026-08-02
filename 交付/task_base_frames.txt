@@ -1,0 +1,34 @@
+You are the art engineer for "Penguin Can Fight". Use your IMAGE GENERATION capability to create the SHARED BASE ANIMATION FRAMES for a kung-fu penguin game character.
+
+CRITICAL CONCEPT: ONE base penguin is shared by all 16 classes (Brotato-style resource saving). Class identity comes from overlay effects, NOT from these frames. So these frames must be a NEUTRAL standard black-and-white penguin with NO accessories, NO headband, NO weapon.
+
+ART STYLE (every frame):
+- Cute sticker-style flat illustration, thick dark-brown outline
+- Chibi: big head (~55% of height), big sparkling eyes, small orange beak, round body, tiny flippers and orange webbed feet
+- Plain pure white background, 1024x1024, PNG, no text/watermark
+- The penguin ALWAYS faces RIGHT (three-quarter view), same size and same position in every frame (centered, ~70% of canvas height). Frame-to-frame consistency is THE top priority: same penguin, same proportions, same outline weight.
+
+WORKFLOW (mandatory):
+1. First create idle_1.png (calm standing pose, flippers relaxed). This is the ANCHOR.
+2. For EVERY other frame, attach idle_1.png as the style/character reference and only change the POSE as described.
+
+FRames to deliver in folder base_frames/ under current working directory:
+
+idle_1.png    standing calm, slight smile
+idle_2.png    same but body slightly squashed down (breathing)
+walk_1.png    waddling, left foot forward, body tilted left
+walk_2.png    mid-step, both feet together, body bounced up
+walk_3.png    right foot forward, body tilted right
+walk_4.png    mid-step again (like walk_2)
+punch_1.png   wind-up: body twisted back, one flipper pulled back
+punch_2.png   strike: flipper fully extended forward, body lunging, determined face
+punch_3.png   recover: flipper half retracted
+grab_1.png    both flippers reaching forward wide open, leaning forward
+grab_2.png    both flippers raised overhead as if lifting something heavy, straining cute face
+hurt_1.png    flinching: eyes squeezed shut, body squashed, small stars around head
+hurt_2.png    knocked back: leaning far back, flippers flailing
+dash_1.png    belly-slide pose: lying forward on belly, flippers back, motion-ready
+dash_2.png    belly-slide at full speed: same but more stretched, speed feeling
+ko_1.png      dizzy sitting on ground, swirl eyes, still cute
+
+After finishing all 16, report each file path and size.

@@ -91,7 +91,7 @@ function createPlayer(charDef) {
     focusStacks: 0, focusT: 0, breathAcc: 0, lastMoveX: 1, lastMoveY: 0,
     flashHasteT: 0, staggerT: 0,
     // 節拍與奧義
-    beatLog: [], beatT: 0, beatState: null,
+    beatLog: [], beatT: 0, beatState: null, beatCd: 0, triCd: 0, stillHold: 0,
     burstMulti: null, rushMulti: null, kneeChain: null, ougiField: 0,
     // 裝備觸發狀態
     jawUsed: false, killHasteT: 0, stillT: 0, bellPlateCd: 0, hitCount: 0,
@@ -196,7 +196,7 @@ function startWave(w) {
   const P = G.player;
   P.grabState = null; P.dashState = null; P.flurry = null;
   P.burstMulti = null; P.rushMulti = null; P.kneeChain = null; P.ougiField = 0;
-  P.beatLog = []; P.beatT = 0; P.beatState = null;
+  P.beatLog = []; P.beatT = 0; P.beatState = null; P.beatCd = 0; P.triCd = 0; P.stillHold = 0;
   P.dashCd = 0; P.moveTechTimer = 0; P.stillTechTimer = 0; P.counterProcCd = 0;
   P.focusStacks = 0; P.focusT = 0; P.breathAcc = 0;
   P.flashHasteT = 0; P.staggerT = 0; P.pose = null;
@@ -423,6 +423,7 @@ function hurtPlayer(amount, source) {
   const counterStance = p.moves.still === 'counter_stance' && stillActive() && p.counterProcCd <= 0;
   if (counterField || counterStance) {
     if (!counterField) p.counterProcCd = 1.2;
+    addBeat('S');
     addDmgNum(p.x, p.y - 30, '化勁', '#5a8ac9');
     sfx('throw_hit');
     if (sp === 'counter_master') healPlayer(5);
@@ -459,6 +460,7 @@ function hurtPlayer(amount, source) {
     if (hasItem('swallow_step')) p.guaranteedCrit = true;
     if (swaying && source && !source.dead && source.name) {
       hurtEnemy(source, autoDmg(12), { crit: chance(0.3) });
+      addBeat('M');
     }
     p.iframe = 0.25;
     return;
@@ -500,6 +502,7 @@ function hurtPlayer(amount, source) {
     G.stats.dmgTaken += dmg;
     noteDmg(source && source.name ? source.name : '其他', dmg);
     sfx('hit_blunt', { pitch: 0.75, vol: 0.7 });
+    p.hurtT = 0.3;   // 受擊動畫幀
     addDmgNum(p.x, p.y - 18, '-' + Math.round(dmg), '#ff6b6b', true);
     G.screenShake = Math.max(G.screenShake, 5 + dmg * 0.25);
     spawnFx('hurt', p.x, p.y, '#ff6b6b', 20);
@@ -624,6 +627,13 @@ function castDash() {
       ok = dashGeneric(d, 'roll');
       if (ok) p.iframe = Math.max(p.iframe, d.dashDur + 0.12);   // 全程無敵
       break;
+    case 'suplex_grab': ok = dashGeneric(d, 'suplex'); break;
+    case 'iai_slash': ok = dashGeneric(d, 'iai'); break;
+    case 'shadow_dash':
+      ok = dashGeneric(d, 'shadow');
+      if (ok) p.iframe = Math.max(p.iframe, d.dashDur + 0.15);   // 全程無敵、穿人、零傷害
+      break;
+    case 'sumo_press': ok = techSumoPress(d); break;
   }
   if (ok) {
     sfx(id === 'flash_step' ? 'flash' : 'dash');
@@ -678,6 +688,31 @@ function dashGeneric(d, kind) {
   return true;
 }
 
+/* 相撲：橫綱推壓——短衝＋周遭一圈撞飛 */
+function techSumoPress(d) {
+  const p = G.player;
+  const dir = dashDir();
+  p.x = Math.max(p.r, Math.min(ARENA.w - p.r, p.x + dir.x * d.lunge));
+  p.y = Math.max(p.r, Math.min(ARENA.h - p.r, p.y + dir.y * d.lunge));
+  spawnFx('shock', p.x, p.y, '#c9576b', 130);
+  G.screenShake = Math.max(G.screenShake, 8);
+  let hitAny = false;
+  for (const e of G.enemies) {
+    if (e.dead || e.grabbed || e.thrown) continue;
+    if (dist2(e.x, e.y, p.x, p.y) < (130 + e.r) * (130 + e.r)) {
+      hitAny = true;
+      hurtEnemy(e, techDmg(12), { trueDmg: true });
+      if (!e.dead) {
+        const a = Math.atan2(e.y - p.y, e.x - p.x);
+        const kb = e.boss ? 50 : 300;
+        e.knockX += Math.cos(a) * kb; e.knockY += Math.sin(a) * kb;
+      }
+    }
+  }
+  if (hitAny) addBeat('D');
+  return true;
+}
+
 /* 招式更換：同槽位循環切換已學的招 */
 function cycleMoveSlot(slot) {
   const p = G.player;
@@ -692,6 +727,7 @@ function cycleMoveSlot(slot) {
 function startGrab(e, d) {
   const p = G.player;
   sfx('grab');
+  addBeat('D');
   e.grabbed = true;
   e.stun = 99;
   p.grabState = {
@@ -704,6 +740,7 @@ function startGrab(e, d) {
 /* 站樁技：震腳脈衝 */
 function quakePulse(d) {
   const p = G.player;
+  let hitAny = false;
   sfx('quake', { vol: 0.7 });
   spawnFx('shock', p.x, p.y, '#8c6239', d.radius);
   G.screenShake = Math.max(G.screenShake, 7);
@@ -711,6 +748,7 @@ function quakePulse(d) {
   for (const e of G.enemies) {
     if (e.dead) continue;
     if (dist2(e.x, e.y, p.x, p.y) < d.radius * d.radius) {
+      hitAny = true;
       hurtEnemy(e, autoDmg(14), { trueDmg: true });
       if (!e.dead) {
         e.stun = Math.max(e.stun, e.boss ? 0.25 : 0.6);
@@ -719,16 +757,19 @@ function quakePulse(d) {
       }
     }
   }
+  if (hitAny) addBeat('S');
 }
 
 /* 移動技：旋風掃腿 */
 function cycloneSweep(d) {
   const p = G.player;
+  let hitAny = false;
   spawnFx('swing', p.x, p.y, '#c9d96a', d.radius, { angle: 0, arc: 360, type: 'spin' });
   p.pose = { type: 'kick', ang: 0, t: 0, dur: 0.3, prio: 1 };
   for (const e of G.enemies) {
     if (e.dead) continue;
     if (dist2(e.x, e.y, p.x, p.y) < (d.radius + e.r) * (d.radius + e.r)) {
+      hitAny = true;
       hurtEnemy(e, autoDmg(9), { trueDmg: true });
       if (!e.dead) {
         const a = Math.atan2(e.y - p.y, e.x - p.x);
@@ -736,6 +777,7 @@ function cycloneSweep(d) {
       }
     }
   }
+  if (hitAny) addBeat('M');
 }
 
 /* 移動技：曳尾勁——掃傷身後 */
@@ -756,7 +798,7 @@ function tailWake() {
       }
     }
   }
-  if (hit) spawnFx('swing', bx, by, '#8fa89a', 46, { angle: 0, arc: 360, type: 'spin' });
+  if (hit) { spawnFx('swing', bx, by, '#8fa89a', 46, { angle: 0, arc: 360, type: 'spin' }); addBeat('M'); }
 }
 
 /* 移動技：威壓步——移動中的碰撞氣場（累積結算避免傷害數字洗版） */
@@ -770,6 +812,7 @@ function phantomPress(dt) {
       if (e.pressAcc >= 4) {
         const dmg = e.pressAcc; e.pressAcc = 0;
         hurtEnemy(e, dmg, { trueDmg: true });
+        addBeat('M');
       }
       if (!e.dead) {
         const a = Math.atan2(e.y - p.y, e.x - p.x);
@@ -783,6 +826,7 @@ function phantomPress(dt) {
 /* 衝刺技落點效果 */
 function kneeImpact() {
   const p = G.player;
+  addBeat('D');
   spawnFx('explode', p.x, p.y, '#d97a5a', 95);
   G.screenShake = Math.max(G.screenShake, 8);
   for (const e of G.enemies) {
@@ -795,6 +839,7 @@ function kneeImpact() {
 }
 function rollSweep() {
   const p = G.player;
+  addBeat('D');
   spawnFx('swing', p.x, p.y, '#d9a441', 95, { angle: 0, arc: 360, type: 'spin' });
   for (const e of G.enemies) {
     if (e.dead) continue;
@@ -882,23 +927,11 @@ function updateTechniques(dt) {
   if (p.flashHasteT > 0) p.flashHasteT -= dt;
   if (p.counterProcCd > 0) p.counterProcCd -= dt;
   if (p.ougiField > 0) p.ougiField -= dt;
+  if (p.hurtT > 0) p.hurtT -= dt;
 
-  // ---- 節拍記錄：走位就是搓招 ----
-  // 站定滿 0.7 秒記一個 S 拍、持續移動滿 0.7 秒記一個 M 拍，最多記三拍。
-  let curBeat = null;
-  if (!p.dashState && !p.grabState) {
-    if (p.stillT > 0.05) curBeat = 'S';
-    else if (p.moveTime > 0.05) curBeat = 'M';
-  }
-  if (curBeat !== p.beatState) { p.beatState = curBeat; p.beatT = 0; }
-  else if (curBeat) {
-    p.beatT += dt;
-    if (p.beatT >= 0.7) {
-      p.beatT = 0;
-      p.beatLog.push(curBeat);
-      if (p.beatLog.length > 3) p.beatLog.shift();
-    }
-  }
+  // ---- 節拍冷卻（節拍本體改由「命中」記錄，見 addBeat） ----
+  if (p.beatCd > 0) p.beatCd -= dt;
+  if (p.triCd > 0) p.triCd -= dt;
 
   // ---- 站樁技 ----
   const stillId = p.moves.still;
@@ -958,6 +991,7 @@ function updateTechniques(dt) {
         const ea = Math.atan2(e.y - p.y, e.x - p.x);
         if (Math.abs(angDiff(ea, ang)) > 1.05) continue;
         hurtEnemy(e, autoDmg(9), { fromAngle: ang });
+        addBeat('S');
         if (!e.dead) {
           const kb = e.boss ? 25 : 140;
           e.knockX += Math.cos(ea) * kb; e.knockY += Math.sin(ea) * kb;
@@ -1034,8 +1068,76 @@ function updateTechniques(dt) {
     }
   }
 
+  // ---- 擒抱持有：移動＝掄甩、站定＝炸彈摔 ----
+  if (p.grabState && p.grabState.mode === 'hold') {
+    const g = p.grabState;
+    const e = g.e;
+    if (e.dead) { p.grabState = null; }
+    else {
+      g.t += dt;
+      const moving = p.moveTime > 0.1;
+      if (moving) {
+        // 掄著他甩打周遭（移動拍）
+        p.stillHold = 0;
+        g.ang += g.spinSpd * dt;
+        e.x = p.x + Math.cos(g.ang) * g.orbitR;
+        e.y = p.y + Math.sin(g.ang) * g.orbitR;
+        g.tick -= dt;
+        if (g.tick <= 0) {
+          g.tick = 0.14;
+          let hitAny = false;
+          for (const o of G.enemies) {
+            if (o.dead || o === e) continue;
+            const rr = o.r + e.r + 4;
+            if (dist2(o.x, o.y, e.x, e.y) < rr * rr) {
+              hitAny = true;
+              hurtEnemy(o, throwDmg(4 + e.maxHp * 0.035), { trueDmg: true });
+              if (!o.dead) {
+                const a = Math.atan2(o.y - e.y, o.x - e.x);
+                o.knockX += Math.cos(a) * 140; o.knockY += Math.sin(a) * 140;
+              }
+            }
+          }
+          if (hitAny) addBeat('M');
+          hurtEnemy(e, throwDmg(2), { trueDmg: true, noLifesteal: true });
+        }
+      } else {
+        // 站定醞釀炸彈摔（站樁拍）
+        e.x = p.x + p.face * (p.r + e.r - 2);
+        e.y = p.y - 6;
+        p.stillHold += dt;
+        if (p.stillHold >= 0.5) {
+          sfx('throw_hit');
+          addHitstop(0.1, true);
+          addBeat('S');
+          spawnFx('explode', p.x, p.y, '#b07a4a', 120);
+          G.screenShake = Math.max(G.screenShake, 13);
+          hurtEnemy(e, throwDmg(20 + e.maxHp * 0.30), { trueDmg: true });
+          if (!e.dead) { e.grabbed = false; e.stun = 1.2; }
+          for (const o of G.enemies) {
+            if (o.dead || o === e) continue;
+            if (dist2(o.x, o.y, p.x, p.y) < 120 * 120) {
+              hurtEnemy(o, throwDmg(18), { trueDmg: true });
+              if (!o.dead) o.stun = Math.max(o.stun, 0.8);
+            }
+          }
+          p.grabState = null; p.stillHold = 0;
+        }
+      }
+      // 持有超時：自動炸彈摔（避免無限扣人質）
+      if (p.grabState && g.t >= g.dur) {
+        p.stillHold = 0;
+        e.grabbed = false;
+        e.thrown = { vx: Math.cos(g.ang) * 700, vy: Math.sin(g.ang) * 700, t: 0.5 };
+        hurtEnemy(e, throwDmg(12 + e.maxHp * 0.15), { trueDmg: true });
+        p.grabState = null;
+      }
+      e.x = Math.max(e.r, Math.min(ARENA.w - e.r, e.x));
+      e.y = Math.max(e.r, Math.min(ARENA.h - e.r, e.y));
+    }
+  }
   // ---- 迴旋抓摔：掄人 ----
-  if (p.grabState) {
+  else if (p.grabState) {
     const g = p.grabState;
     const e = g.e;
     if (e.dead) { p.grabState = null; }
@@ -1112,10 +1214,35 @@ function updateTechniques(dt) {
     // 沿路碰撞
     for (const e of G.enemies) {
       if (e.dead || e === c || e.thrown || e.grabbed) continue;
+      if (s.id === 'shadow') break;   // 影遁：穿過所有人，零互動
       const rr = p.r + e.r + 4;
       if (dist2(e.x, e.y, p.x, p.y) < rr * rr) {
-        if (s.id === 'tackle' && !c && !e.boss) {
-          // 擒抱：第一個撞上的非頭目扛著走
+        if (s.id === 'suplex') {
+          // 擒抱：抓住第一個非頭目，進入「持有」——之後移動＝掄甩、站定＝炸彈摔
+          if (!e.boss) {
+            sfx('grab');
+            addBeat('D');
+            e.grabbed = true; e.stun = 99;
+            p.grabState = { e, mode: 'hold', t: 0, dur: MOVE_MAP.suplex_grab.holdDur,
+              ang: Math.atan2(e.y - p.y, e.x - p.x), orbitR: 46, spinSpd: 8.5, tick: 0 };
+            p.dashState = null;
+          } else {
+            addBeat('D');
+            hurtEnemy(e, throwDmg(24) * (s.boost || 1), { trueDmg: true });
+            e.stun = Math.max(e.stun, 0.6);
+            p.dashState = null;
+          }
+          break;
+        } else if (s.id === 'iai') {
+          // 拔刀斬：路徑上全部斬過，高爆擊
+          if (!e.hitByDash) {
+            e.hitByDash = true; s.hitAny = true;
+            addBeat('D');
+            hurtEnemy(e, techDmg(30) * (s.boost || 1), { crit: chance(0.5), fromAngle: Math.atan2(s.dy, s.dx) });
+            sfx('hit_blade');
+          }
+        } else if (s.id === 'tackle' && !c && !e.boss) {
+          // 擒抱衝刺：第一個撞上的非頭目扛著走
           s.carried = e; s.hitAny = true;
           e.grabbed = true; e.stun = 99;
         } else if (s.id === 'grab_spin') {
@@ -1131,6 +1258,7 @@ function updateTechniques(dt) {
           break;
         } else if (!e.hitByDash) {
           e.hitByDash = true; s.hitAny = true;
+          addBeat('D');
           hurtEnemy(e, techDmg(s.id === 'tackle' ? 20 : 8) * (s.boost || 1), { trueDmg: true });
           if (!e.dead) {
             const a = Math.atan2(e.y - p.y, e.x - p.x);
@@ -1175,11 +1303,59 @@ function updateTechniques(dt) {
         kneeImpact();
       } else if (s.id === 'roll') {
         rollSweep();
+      } else if (s.id === 'iai') {
+        // 收刀硬直：拔刀術的合約，斬沒斬中都要付
+        p.staggerT = 0.5;
+        addDmgNum(p.x, p.y - 24, '收刀', '#9aa4b2');
+        sfx('flash', { vol: 0.6 });
       }
       G.enemies.forEach(e => { e.hitByDash = false; });
       p.dashState = null;
     }
   }
+}
+
+/* ---------- 節拍：命中才算數 ----------
+   拍子不是靠站著或走路的時間，是靠「在那個狀態下打中敵人」：
+   S＝原地打中、M＝移動中打中、D＝衝刺技打中。
+   光走不打、光站不打，都不會累積——連段是打出來的。
+*/
+function addBeat(type) {
+  const p = G.player;
+  if (p.dead || p.beatCd > 0) return;
+  p.beatCd = 0.4;   // 同一瞬間的多段命中只記一拍
+  p.beatLog.push(type);
+  if (p.beatLog.length > 3) p.beatLog.shift();
+  // 三段勁：最近三拍湊齊 站、移、衝 各一（順序不拘）→ 自動爆出一圈氣勁小招
+  if (p.triCd <= 0 && p.beatLog.length === 3) {
+    const s = [...p.beatLog].sort().join('');
+    if (s === 'DMS') {
+      p.triCd = 6;
+      spawnFx('shock', p.x, p.y, '#ffd44a', 115);
+      addDmgNum(p.x, p.y - 40, '三段勁', '#ffd44a', true);
+      addHitstop(0.06, true);
+      sfx('wind');
+      for (const e of G.enemies) {
+        if (e.dead) continue;
+        if (dist2(e.x, e.y, p.x, p.y) < 115 * 115) {
+          hurtEnemy(e, techDmg(18), { trueDmg: true });
+          if (!e.dead) {
+            const a = Math.atan2(e.y - p.y, e.x - p.x);
+            e.knockX += Math.cos(a) * 140; e.knockY += Math.sin(a) * 140;
+          }
+        }
+      }
+    }
+  }
+}
+
+/* 依玩家當下的行動狀態決定這次武器命中算哪一拍 */
+function beatFromState() {
+  const p = G.player;
+  if (p.dashState) return 'D';
+  if (stillActive()) return 'S';
+  if (movingActive()) return 'M';
+  return null;
 }
 
 /* ---------- 奧義 ----------
@@ -1593,6 +1769,12 @@ function applyWeaponHit(w, e, reach, mulOverride, isEcho) {
   const dealt = hurtEnemy(e, base, {
     crit, fromAngle: w.angle, weaponLifesteal: w.lifesteal,
   });
+
+  // 記拍：這一下是在什麼狀態打中的
+  if (!isEcho) {
+    const b = beatFromState();
+    if (b) addBeat(b);
+  }
 
   // 命中音：依武器類與力度分層
   if (!isEcho) {

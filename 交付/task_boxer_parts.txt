@@ -1,0 +1,23 @@
+You are the art engineer for the game "Penguin Can Fight". Use your IMAGE GENERATION capability (not code-drawn graphics) to create body-part images for a cute kung-fu penguin character rig.
+
+ART STYLE (mandatory for every image):
+- Cute sticker-style flat illustration, thick dark-brown outlines, white sticker border
+- Chibi proportions, big sparkling eyes, round shapes
+- Plain pure white background, light source top-left
+- 1024x1024 or larger, PNG
+- NO text, NO watermark, NO gradients-heavy shading (simple two-tone shading allowed)
+- Do NOT imitate any famous penguin IP design
+
+CHARACTER: "boxer" — a classic black-and-white penguin boxer.
+
+Create exactly 5 files in the folder penguin_parts/boxer/ under the current working directory:
+
+1. body.png — egg-shaped penguin torso ONLY (black back, white belly). NO head, NO wings, NO feet. Centered, fills ~60% of canvas.
+2. head.png — penguin head ONLY: big round head, huge sparkling eyes, small orange beak pointing RIGHT, wearing a RED HEADBAND. Centered, fills ~70% of canvas.
+3. wing.png — ONE penguin flipper/wing ONLY, hanging naturally downward (wing root at top, tip at bottom), black outside. Centered, fills ~50% of canvas.
+4. foot.png — ONE orange webbed foot ONLY, ankle at top. Centered, fills ~35% of canvas.
+5. extra.png — ONE red boxing glove ONLY. Centered, fills ~50% of canvas.
+
+Every part must be drawn SEPARATELY (one object per image). Consistent outline thickness and palette across all 5 images so they can be assembled into one character.
+
+After finishing, report each file path and its size.

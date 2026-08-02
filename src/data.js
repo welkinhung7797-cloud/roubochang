@@ -38,8 +38,8 @@ function blankStats() {
 */
 const MOVES = [
   /* ---- 衝刺技 ---- */
-  { id: 'tackle', name: '擒抱衝刺', short: '擒', slot: 'dash', color: '#c2703c', cd: 8, price: 42,
-    desc: '低身衝刺，擒住撞上的第一個敵人，一路扛到牆上撞碎並震盪周圍。衝刺中受傷加重六成，撞空會踉蹌。',
+  { id: 'tackle', name: '衝撞', short: '撞', slot: 'dash', color: '#c2703c', cd: 8, price: 42,
+    desc: '低身衝刺，撞上的第一個敵人被一路推到牆上撞碎並震盪周圍。衝刺中受傷加重六成，撞空會踉蹌。',
     dashSpd: 860, dashDur: 0.5 },
   { id: 'grab_spin', name: '迴旋抓摔', short: '抓', slot: 'dash', color: '#b07a4a', cd: 9, price: 44,
     desc: '衝刺抓住碰到的第一個敵人，當武器掄一圈半再扔出去撞牆。抓不動頭目，但能絆他一跤。',
@@ -55,6 +55,18 @@ const MOVES = [
   { id: 'drunk_roll', name: '醉步翻滾', short: '醉', slot: 'dash', color: '#d9a441', cd: 6, price: 38,
     desc: '看似跌倒的翻滾衝刺，全程無敵，滾完甩尾掃倒周圍一圈。',
     dashSpd: 850, dashDur: 0.26 },
+  { id: 'suplex_grab', name: '擒抱', short: '擒', slot: 'dash', color: '#b07a4a', cd: 9, price: 46,
+    desc: '滑行擒抱住撞到的第一個敵人。抓住之後：移動＝掄著他甩打周遭；站定＝炸彈摔砸出範圍重擊。抓不住頭目。',
+    dashSpd: 800, dashDur: 0.35, holdDur: 3.5 },
+  { id: 'iai_slash', name: '拔刀斬', short: '拔', slot: 'dash', color: '#4f5d75', cd: 6, price: 42,
+    desc: '極速拔刀衝斬，路徑上的敵人全部挨一刀且極易爆擊。代價：無論有沒有斬中，收刀都會硬直半秒。',
+    dashSpd: 900, dashDur: 0.22 },
+  { id: 'shadow_dash', name: '影遁', short: '影', slot: 'dash', color: '#33384a', cd: 5, price: 38,
+    desc: '所有衝刺技裡距離最遠的瞬身，全程無敵、穿過敵人——但不造成任何傷害。純機動，換位神技。',
+    dashSpd: 1300, dashDur: 0.4 },
+  { id: 'sumo_press', name: '橫綱推壓', short: '推', slot: 'dash', color: '#c9576b', cd: 6, price: 40,
+    desc: '短距離衝壓，把周遭一整圈的敵人撞飛震傷。人群管理的答案。',
+    lunge: 130 },
 
   /* ---- 移動技 ---- */
   { id: 'cyclone_kick', name: '旋風連腿', short: '旋', slot: 'move', color: '#c9d96a', interval: 2.2, price: 38,
@@ -92,9 +104,10 @@ const SLOT_NAME = { dash: '衝刺技', move: '移動技', still: '站樁技' };
 const SLOT_KEY = { dash: 'Space 衝刺', move: '移動中自動', still: '站定時自動' };
 
 /* ---------- 奧義 ----------
-   遊戲的醍醐味：走位本身就是搓招。
-   站定滿 0.7 秒記一個「站」拍、持續移動滿 0.7 秒記一個「移」拍，
-   湊齊自家指令後按 Space，衝刺技會變成奧義。
+   遊戲的醍醐味：連段是「打」出來的。
+   原地打中敵人記 S 拍、移動中打中記 M 拍、衝刺技打中記 D 拍——
+   光走不打不算數。湊齊自家指令後按 Space，衝刺技會變成奧義。
+   另外任意湊齊 S、M、D 各一拍，會自動爆出通用小招「三段勁」。
    奧義綁職業（不可換），是每隻功夫貓的身份。
    seq 由畫面下方的節拍條顯示，S＝站、M＝移。
    kind 決定引擎用哪個效果模板，數值在 params。
@@ -103,49 +116,49 @@ const OUGI = {
   boxer:     { name: '無影連打', seq: ['M', 'M', 'S'],
     kind: 'burst_multi', params: { hits: 10, dmg: 14, arc: 100, range: 130 },
     desc: '衝進去之後原地爆發十連拳，快到只剩殘影。' },
-  wrestler:  { name: '巨螺旋墜擊', seq: ['S', 'S', 'S'],
+  wrestler:  { name: '巨螺旋墜擊', seq: ['S', 'S', 'D'],
     kind: 'grab_super', params: { spins: 3, dmg: 30 },
     desc: '擒抱衝刺的完成型：抓住敵人掄三大圈，扔出去的瞬間砸出全場震盪。' },
   karate:    { name: '一擊必倒', seq: ['S', 'S', 'S'],
     kind: 'burst_single', params: { dmg: 110 },
     desc: '縮地貼身，正拳灌進要害。一擊，必倒。' },
-  kenshi:    { name: '拔刀燕返', seq: ['S', 'S', 'M'],
+  kenshi:    { name: '拔刀燕返', seq: ['S', 'M', 'D'],
     kind: 'line_pierce', params: { dmg: 45, width: 70, len: 520 },
     desc: '瞬身掠過一直線，刀光過處全部挨一斬，收刀才聽見聲音。' },
   judo:      { name: '巴投連環', seq: ['M', 'S', 'M'],
     kind: 'throw_chain', params: { count: 5, dmg: 35 },
     desc: '連續過肩摔周圍最多五個敵人，一個接一個砸在地上。' },
-  sumo:      { name: '橫綱張手', seq: ['S', 'S', 'M'],
+  sumo:      { name: '橫綱張手', seq: ['D', 'S', 'S'],
     kind: 'aoe_push', params: { dmg: 40, radius: 220, knock: 420 },
     desc: '雙掌齊出的超大張手，把整個場面推回去，撞牆的另外再痛一次。' },
-  muaythai:  { name: '箍頸膝蓮', seq: ['M', 'M', 'S'],
+  muaythai:  { name: '箍頸膝蓮', seq: ['M', 'M', 'D'],
     kind: 'throw_chain', params: { count: 1, dmg: 22, hits: 6 },
     desc: '箍住最近敵人的頸，六連膝直到放手。' },
-  monk:      { name: '百八掌', seq: ['S', 'S', 'S'],
+  monk:      { name: '百八掌', seq: ['S', 'M', 'S'],
     kind: 'burst_multi', params: { hits: 12, dmg: 12, arc: 360, range: 150 },
     desc: '周身開掌，每個方向都是掌影，數不清就對了。' },
   ninja:     { name: '分身亂舞', seq: ['M', 'M', 'M'],
     kind: 'rush_multi', params: { count: 6, dmg: 40 },
     desc: '殘影同時出現在六個敵人背後，全部斬完才落地。' },
-  thug:      { name: '垃圾場亂鬥', seq: ['M', 'S', 'M'],
+  thug:      { name: '垃圾場亂鬥', seq: ['M', 'S', 'D'],
     kind: 'burst_multi', params: { hits: 8, dmg: 15, arc: 360, range: 140, loot: true },
     desc: '沒有章法的一頓亂毆，打完地上多了一堆素材。' },
   nunchaku:  { name: '旋棍風暴', seq: ['M', 'M', 'S'],
     kind: 'spin_storm', params: { dur: 2.0, dmg: 8, radius: 120 },
     desc: '雙節棍轉成一圈風暴，靠近的都被捲進去。' },
-  ironhead:  { name: '隕石頭槌', seq: ['S', 'M', 'M'],
+  ironhead:  { name: '隕石頭槌', seq: ['D', 'D', 'D'],
     kind: 'line_pierce', params: { dmg: 55, width: 90, len: 640 },
     desc: '頭最硬的貓化身砲彈，貫穿全場一直線。' },
   taichi:    { name: '大迴環', seq: ['S', 'S', 'M'],
     kind: 'vortex', params: { dmg: 30, radius: 200 },
     desc: '把周圍的敵人全部牽進圓裡，轉一圈，再一起甩出去。' },
-  berserker: { name: '血祭', seq: ['M', 'M', 'M'],
+  berserker: { name: '血祭', seq: ['D', 'M', 'D'],
     kind: 'aoe_blast', params: { dmg: 60, radius: 190, hpCost: 0.12 },
     desc: '割開自己一成二的血當祭品，換全場一次狂暴爆發。' },
-  strongman: { name: '大地粉碎', seq: ['S', 'S', 'S'],
+  strongman: { name: '大地粉碎', seq: ['S', 'S', 'D'],
     kind: 'aoe_blast', params: { dmg: 50, radius: 230, stun: 1.5 },
     desc: '跳起、落下、大地裂開。全場定身。' },
-  aikido:    { name: '圓相返技', seq: ['S', 'M', 'S'],
+  aikido:    { name: '圓相返技', seq: ['S', 'D', 'S'],
     kind: 'counter_field', params: { dur: 3.0 },
     desc: '三秒的完全化勁領域：期間打你的每一個敵人都會被自動摔飛。' },
 };
@@ -227,7 +240,7 @@ const CHARACTERS = [
     stats: { maxHp: 30, dmg: 15, armor: 3, speed: -10, atkSpd: -20 },
     weapon: 'suplex', slots: 6,
     special: 'grab_master',
-    moves: { dash: 'tackle', move: 'phantom_press', still: 'counter_stance' },
+    moves: { dash: 'suplex_grab', move: 'phantom_press', still: 'counter_stance' },
     desc: '厚實但遲鈍。所有抓取類武器的定身時間延長 50%，抓取傷害 +25%。',
   },
   {
@@ -245,7 +258,7 @@ const CHARACTERS = [
     stats: { dmg: 30, range: 15, atkSpd: -25, maxHp: -15 },
     weapon: 'katana', slots: 6,
     special: 'iai',
-    moves: { dash: 'flash_step', move: 'gale_step', still: 'focus_strike' },
+    moves: { dash: 'iai_slash', move: 'gale_step', still: 'focus_strike' },
     desc: '一刀勝過十拳。爆擊時觸發居合追斬，對同一目標再補一次 70% 傷害。',
   },
   {
@@ -263,7 +276,7 @@ const CHARACTERS = [
     stats: { maxHp: 90, armor: 8, speed: -28, range: -15, atkSpd: -10 },
     weapon: 'harite', slots: 6,
     special: 'body_check',
-    moves: { dash: 'tackle', move: 'phantom_press', still: 'palm_flurry' },
+    moves: { dash: 'sumo_press', move: 'phantom_press', still: 'palm_flurry' },
     desc: '走得慢，但撞上去就是傷害。與敵人接觸時每秒造成 12 點碰撞傷害並推開對方。',
   },
   {
@@ -290,7 +303,7 @@ const CHARACTERS = [
     stats: { speed: 28, dodge: 20, crit: 5, maxHp: -35, armor: -4 },
     weapon: 'tanto', slots: 6,
     special: 'move_haste',
-    moves: { dash: 'flash_step', move: 'gale_step', still: 'focus_strike' },
+    moves: { dash: 'shadow_dash', move: 'gale_step', still: 'focus_strike' },
     desc: '一被抓到就死。移動中每秒累積攻速，最高 +40%，停下來立刻歸零。',
   },
   {

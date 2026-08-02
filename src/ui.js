@@ -72,7 +72,7 @@ function updateCharDetail(ch) {
     '<span class="d-combo">' + moveNames + '</span>　' +
     '<span class="d-weapon">起手武器「' + w.name + '」</span><br>' +
     (o ? '<span class="d-combo">奧義「' + o.name + '」＝' +
-      o.seq.map(b => b === 'S' ? '站' : '移').join('·') + '＋衝刺　—　' + o.desc + '</span><br>' : '') +
+      o.seq.map(b => b === 'S' ? '站' : (b === 'D' ? '衝' : '移')).join('·') + '＋衝刺　—　' + o.desc + '</span><br>' : '') +
     '<span class="d-desc">' + ch.desc + '</span>';
   el.classList.remove('hidden');
 }
@@ -246,7 +246,7 @@ function renderLoadout() {
   const tTitle = document.createElement('div');
   tTitle.className = 'sec-title';
   tTitle.textContent = '招式（點擊換裝）　·　招式庫 ' + p.knownMoves.length + ' 式' +
-    (ougi ? '　·　奧義「' + ougi.name + '」＝' + ougi.seq.map(b => b === 'S' ? '站' : '移').join('·') + '＋衝' : '');
+    (ougi ? '　·　奧義「' + ougi.name + '」＝' + ougi.seq.map(b => b === 'S' ? '站' : (b === 'D' ? '衝' : '移')).join('·') + '＋衝' : '');
   wrap.appendChild(tTitle);
   const tRow = document.createElement('div');
   tRow.className = 'loadout-row combo-row';
@@ -450,6 +450,14 @@ function botDash() {
     case 'mountain_bash': go = near(130) >= 2; break;
     case 'knee_dash': go = near(240) >= 3; break;
     case 'drunk_roll': go = near(130) >= 3 || (p.hp < p.maxHp * 0.4 && near(110) >= 1); break;
+    case 'suplex_grab': go = near(160) >= 1 && G.enemies.length >= 2; break;
+    case 'iai_slash': go = near(260) >= 2; break;
+    case 'shadow_dash': {
+      const e2 = nearestEnemy(p.x, p.y, 400);
+      go = (p.hp < p.maxHp * 0.45 && near(120) >= 2) || !e2;
+      break;
+    }
+    case 'sumo_press': go = near(140) >= 3; break;
   }
   if (go) castDash();
 }

@@ -1,0 +1,22 @@
+You are the art engineer for "Penguin Can Fight". Use your IMAGE GENERATION capability for two batches.
+
+BATCH 1 — ATTACK EFFECT SPRITES (the class-identity layer)
+Style: video-game energy effect on PURE BLACK background (will be additively blended in-engine, so black = transparent). Vivid glowing colors, clean silhouette, slight anime-style energy feel, thick readable shapes. 1024x1024 PNG, no text.
+Deliver into folder fx/ under current working directory:
+
+1. fx_punch.png   a glowing golden-orange fist-shaped energy blast, facing right, with speed trail behind
+2. fx_chop.png    a glowing crescent-moon shaped chop wave (knife-hand slash arc), vertical crescent opening left, cyan-white
+3. fx_slash.png   a katana slash light arc: thin sharp curved blade光 crescent, diagonal, ice-blue with white core
+4. fx_impact.png  a star-burst impact flash, radial spikes, yellow-white
+5. fx_grab.png    a circular grappling wind ring, orange spiral swirl
+6. fx_slam.png    a ground-slam shockwave ring seen from slightly above (ellipse), dusty orange
+
+BATCH 2 — CLASS ACCESSORIES (head gear overlays for the shared base penguin)
+Style: same sticker style as before — flat colors, thick dark-brown outline, PURE WHITE background. Each accessory alone, centered, sized as if for a big round penguin head (fills ~60% of canvas). 1024x1024 PNG.
+Deliver into folder acc/ under current working directory:
+
+7. acc_karate.png    a white karate headband tied around (band shape with knot and two flowing tails on the right)
+8. acc_wrestler.png  a red-blue luchador wrestling mask top piece (covers top of head, eye holes, cute)
+9. acc_kenshi.png    a samurai topknot hairpiece with small navy ribbon
+
+Report each file path and size when done.
