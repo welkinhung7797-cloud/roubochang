@@ -75,6 +75,11 @@ function createPlayer(charDef) {
     armorBuff: 0,
     walkAnim: 0,
     dead: false,
+    // 絕技狀態
+    techs: [makeTech(charDef.startTech || null), null],
+    grabState: null, dashState: null, flurry: null,
+    counterT: 0, swayT: 0, cycloneT: 0, cycloneTick: 0,
+    limitT: 0, limitSlowT: 0, bellT: 0, flashHasteT: 0, staggerT: 0,
   };
   p.perm.maxHp = 30;   // 全職業共同基礎值之外的起始生命由此決定
   for (const k in charDef.stats) p.perm[k] += charDef.stats[k];
@@ -120,6 +125,7 @@ function liveDamageMult() {
   if (sp === 'rage') m += Math.floor(missing * 10) * 0.10;
   if (hasItem('berserk_mask')) m += Math.floor(missing * 10) * 0.06 * itemCount('berserk_mask');
   if (hasItem('flash_step')) m += (p.stats.speed / 10) * 0.03;
+  if (p.limitT > 0) m += 0.40;
   return Math.max(0.1, m);
 }
 function liveAtkSpdMult() {
@@ -129,12 +135,17 @@ function liveAtkSpdMult() {
   if (sp === 'move_haste') m += Math.min(0.40, p.moveTime * 0.20);
   if (sp === 'rage') m += Math.floor((1 - p.hp / p.maxHp) * 10) * 0.05;
   if (sp === 'scrap_rush') m += Math.min(0.60, p.scrapStacks * 0.06);
+  if (p.limitT > 0) m += 0.25;
+  if (p.flashHasteT > 0) m += 0.30;
   return Math.max(0.2, m);
 }
 function liveSpeedMult() {
   const p = G.player;
   let m = 1 + p.stats.speed / 100;
   m += p.momentum / 100 * 0.10;
+  if (p.limitT > 0) m += 0.15;
+  if (p.limitSlowT > 0) m -= 0.20;
+  if (p.bellT > 0) m -= 0.10;
   return Math.max(0.25, m);
 }
 function liveRangeMult() { return Math.max(0.4, 1 + G.player.stats.range / 100); }
@@ -165,6 +176,12 @@ function startWave(w) {
   G.player.x = ARENA.w / 2; G.player.y = ARENA.h / 2;
   G.player.iframe = 1.0;
   G.player.momentum = 0; G.player.burst = 0;
+  // 絕技狀態不跨波：波開始一律乾淨，冷卻歸零當開波紅利
+  const P = G.player;
+  P.grabState = null; P.dashState = null; P.flurry = null;
+  P.counterT = 0; P.swayT = 0; P.cycloneT = 0;
+  P.limitT = 0; P.limitSlowT = 0; P.bellT = 0; P.flashHasteT = 0; P.staggerT = 0;
+  P.techs.forEach(t => { if (t) t.cdLeft = 0; });
   G.spawnBudget = waveBudget(w, G.danger);
   G.spawnBudgetTotal = G.spawnBudget;
   G.spawnTimer = 0;
@@ -357,10 +374,44 @@ function hurtPlayer(amount, source) {
   if (p.iframe > 0 || p.dead) return;
   const sp = G.char.special;
 
-  // 閃避
-  if (rng() * 100 < p.stats.dodge) {
+  // 借力化勁：架式中挨的每一下都化為零，攻擊者被過肩摔到身後
+  if (p.counterT > 0) {
+    addDmgNum(p.x, p.y - 30, '化勁', '#5a8ac9');
+    const tech = p.techs.find(t => t && t.id === 'counter_throw');
+    if (tech) tech.cdLeft = Math.max(0, tech.cdLeft - 4);
+    if (sp === 'counter_master') healPlayer(5);
+    if (source && !source.dead && source.name) {
+      if (source.boss) {
+        hurtEnemy(source, throwDmg(20), { trueDmg: true });
+        source.stun = Math.max(source.stun || 0, 0.5);
+      } else {
+        // 摔到玩家背後，落地砸傷周圍
+        const a = Math.atan2(source.y - p.y, source.x - p.x) + Math.PI;
+        source.x = Math.max(source.r, Math.min(ARENA.w - source.r, p.x + Math.cos(a) * 90));
+        source.y = Math.max(source.r, Math.min(ARENA.h - source.r, p.y + Math.sin(a) * 90));
+        hurtEnemy(source, throwDmg(18), { trueDmg: true });
+        if (!source.dead) source.stun = Math.max(source.stun, 1.2);
+        spawnFx('shock', source.x, source.y, '#5a8ac9', 80);
+        for (const o of G.enemies) {
+          if (o.dead || o === source) continue;
+          if (dist2(o.x, o.y, source.x, source.y) < 80 * 80) {
+            hurtEnemy(o, throwDmg(9), { trueDmg: true });
+          }
+        }
+      }
+    }
+    p.iframe = 0.2;
+    return;
+  }
+
+  // 閃避（搖擺身法期間 +35%，閃掉就回敬刺拳）
+  const dodgeBonus = p.swayT > 0 ? 35 : 0;
+  if (rng() * 100 < Math.min(75, p.stats.dodge + dodgeBonus)) {
     addDmgNum(p.x, p.y - 30, '閃避', '#79d9c0');
     if (sp === 'dodge_momentum') { addMomentum(15); p.guaranteedCrit = true; }
+    if (p.swayT > 0 && source && !source.dead && source.name) {
+      hurtEnemy(source, techDmg(12), { crit: chance(0.3) });
+    }
     p.iframe = 0.25;
     return;
   }
@@ -380,13 +431,15 @@ function hurtPlayer(amount, source) {
     }
   }
 
-  dmg *= (1 - armorCut(p.stats.armor + p.armorBuff));
+  if (G.player.dashState) dmg *= 1.6;   // 長矛衝撞的風險
+  dmg *= (1 - armorCut(p.stats.armor + p.armorBuff + (p.bellT > 0 ? 25 : 0)));
   dmg = Math.max(0, dmg);
 
   // 反傷
   let thornMul = 0;
   if (sp === 'thorns' && !blocked) thornMul += 1.5;
   if (hasItem('spike_armor')) thornMul += 0.8 * itemCount('spike_armor');
+  if (p.bellT > 0) thornMul += 1.0;   // 金鐘罩氣勁反震
   if (thornMul > 0 && source && !source.dead) {
     hurtEnemy(source, amount * thornMul, { trueDmg: true, noLifesteal: true });
   }
@@ -418,6 +471,356 @@ function addMomentum(n) {
     p.momentum = 100;
     G.screenShake = Math.max(G.screenShake, 8);
     spawnFx('burst_start', p.x, p.y, '#ffd44a', 60);
+  }
+}
+
+/* ============================================================
+   絕技系統
+   任何職業都能裝任何絕技（最多兩招），Space／E 施放。
+   傷害統一乘 liveDamageMult 與波次係數 techWaveScale，
+   讓絕技整局都有存在感而不是前期玩具。
+   ============================================================ */
+function makeTech(id) {
+  return id ? { id, def: TECH_MAP[id], cdLeft: 0 } : null;
+}
+function techWaveScale() { return 1 + (G.wave - 1) * 0.08; }
+function techDmg(base) { return base * liveDamageMult() * techWaveScale(); }
+function grabMaster() { return G.char.special === 'grab_master'; }
+
+/* 統一的「摔投傷害」入口：摔角手與合氣道師範的加成都收在這 */
+function throwDmg(base) {
+  let m = 1;
+  if (grabMaster()) m *= 1.25;
+  if (G.char.special === 'counter_master') m *= 1.5;
+  return techDmg(base) * m;
+}
+
+function castTech(slot) {
+  const p = G.player;
+  const t = p.techs[slot];
+  if (!t || t.cdLeft > 0 || p.dead) return false;
+  if (p.grabState || p.dashState || p.staggerT > 0) return false;
+  const d = t.def;
+  let ok = false;
+  switch (t.id) {
+    case 'grab_spin': ok = techGrabSpin(d); break;
+    case 'spear_rush': ok = techSpearRush(d); break;
+    case 'palm_flurry': ok = techPalmFlurry(d); break;
+    case 'counter_throw': p.counterT = d.stance; ok = true; break;
+    case 'flash_step': ok = techFlashStep(d); break;
+    case 'limit_release':
+      p.limitT = d.dur; ok = true;
+      spawnFx('burst_start', p.x, p.y, '#d9564f', 50);
+      break;
+    case 'quake_stomp': ok = techQuakeStomp(d); break;
+    case 'cyclone_kick': p.cycloneT = d.dur; ok = true; break;
+    case 'mountain_bash': ok = techMountainBash(d); break;
+    case 'iron_bell':
+      p.bellT = d.dur; ok = true;
+      spawnFx('shock', p.x, p.y, '#d9b06a', 60);
+      break;
+    case 'sway_step': p.swayT = d.dur; ok = true; break;
+  }
+  if (ok) {
+    let cd = d.cd;
+    if (t.id === 'counter_throw' && G.char.special === 'counter_master') cd *= 0.7;
+    t.cdLeft = cd;
+  }
+  return ok;
+}
+
+function techGrabSpin(d) {
+  const p = G.player;
+  let best = null, bd = 110 * 110;
+  for (const e of G.enemies) {
+    if (e.dead || e.thrown) continue;
+    const dd = dist2(p.x, p.y, e.x, e.y);
+    if (dd < bd) { bd = dd; best = e; }
+  }
+  if (!best) return false;
+  if (best.boss) {
+    // 抓不動頭目：絆倒代替
+    hurtEnemy(best, throwDmg(30), { trueDmg: true });
+    best.stun = Math.max(best.stun, 0.8 * (grabMaster() ? 1.5 : 1));
+    spawnFx('shock', best.x, best.y, '#c2703c', 70);
+    return true;
+  }
+  best.grabbed = true;
+  best.stun = 99;
+  p.grabState = {
+    e: best, t: 0, dur: d.dur * (grabMaster() ? 1.25 : 1),
+    ang: Math.atan2(best.y - p.y, best.x - p.x),
+    orbitR: d.orbitR, spinSpd: d.spinSpd, tick: 0,
+  };
+  return true;
+}
+
+function techSpearRush(d) {
+  const p = G.player;
+  const tgt = nearestEnemy(p.x, p.y, 600);
+  let dx = p.face, dy = 0;
+  if (tgt) {
+    const dd = Math.hypot(tgt.x - p.x, tgt.y - p.y) || 1;
+    dx = (tgt.x - p.x) / dd; dy = (tgt.y - p.y) / dd;
+  }
+  p.dashState = { dx, dy, t: d.dashDur, spd: d.dashSpd, carried: null, hitAny: false };
+  p.iframe = Math.max(p.iframe, 0.1);
+  return true;
+}
+
+function techPalmFlurry() {
+  const p = G.player;
+  p.flurry = { t: 0.7, tick: 0, n: 0 };
+  return true;
+}
+
+function techFlashStep() {
+  const p = G.player;
+  const tgt = nearestEnemy(p.x, p.y, 320);
+  if (!tgt) return false;
+  const a = Math.atan2(tgt.y - p.y, tgt.x - p.x);
+  p.x = Math.max(p.r, Math.min(ARENA.w - p.r, tgt.x + Math.cos(a) * (tgt.r + 26)));
+  p.y = Math.max(p.r, Math.min(ARENA.h - p.r, tgt.y + Math.sin(a) * (tgt.r + 26)));
+  p.iframe = Math.max(p.iframe, 0.4);
+  p.guaranteedCrit = true;
+  p.flashHasteT = 2;
+  spawnFx('burst', p.x, p.y, '#79d9c0', 20);
+  return true;
+}
+
+function techQuakeStomp(d) {
+  const p = G.player;
+  spawnFx('shock', p.x, p.y, '#8c6239', d.radius);
+  G.screenShake = Math.max(G.screenShake, 10);
+  let hit = false;
+  for (const e of G.enemies) {
+    if (e.dead) continue;
+    if (dist2(e.x, e.y, p.x, p.y) < d.radius * d.radius) {
+      hit = true;
+      hurtEnemy(e, techDmg(22), { trueDmg: true });
+      if (!e.dead) {
+        e.stun = Math.max(e.stun, e.boss ? 0.4 : 1.0);
+        const a = Math.atan2(e.y - p.y, e.x - p.x);
+        e.knockX += Math.cos(a) * 60; e.knockY += Math.sin(a) * 60;
+      }
+    }
+  }
+  return true;  // 踏空也算施放，這是面技的代價
+}
+
+function techMountainBash() {
+  const p = G.player;
+  const tgt = nearestEnemy(p.x, p.y, 400);
+  let dx = p.face, dy = 0;
+  if (tgt) {
+    const dd = Math.hypot(tgt.x - p.x, tgt.y - p.y) || 1;
+    dx = (tgt.x - p.x) / dd; dy = (tgt.y - p.y) / dd;
+  }
+  p.x = Math.max(p.r, Math.min(ARENA.w - p.r, p.x + dx * 130));
+  p.y = Math.max(p.r, Math.min(ARENA.h - p.r, p.y + dy * 130));
+  const ang = Math.atan2(dy, dx);
+  spawnFx('swing', p.x, p.y, '#8a8f99', 110, { angle: ang, arc: 100, type: 'arc' });
+  for (const e of G.enemies) {
+    if (e.dead) continue;
+    const dd = Math.hypot(e.x - p.x, e.y - p.y);
+    if (dd > 110 + e.r) continue;
+    const ea = Math.atan2(e.y - p.y, e.x - p.x);
+    if (Math.abs(angDiff(ea, ang)) > 0.9) continue;
+    hurtEnemy(e, techDmg(16), { fromAngle: ang });
+    if (!e.dead) {
+      const kb = e.boss ? 40 : 260;
+      e.knockX += Math.cos(ea) * kb; e.knockY += Math.sin(ea) * kb;
+    }
+  }
+  p.armorBuff = Math.max(p.armorBuff, 6);
+  p.armorBuffT = 2;
+  return true;
+}
+
+/* 每 tick 更新進行中的絕技狀態，在 updatePlayer 開頭呼叫 */
+function updateTechniques(dt) {
+  const p = G.player;
+  p.techs.forEach(t => {
+    if (t && t.cdLeft > 0) t.cdLeft -= dt * (1 + Math.max(0, p.stats.atkSpd) / 200);
+  });
+  if (p.staggerT > 0) p.staggerT -= dt;
+  if (p.counterT > 0) p.counterT -= dt;
+  if (p.swayT > 0) p.swayT -= dt;
+  if (p.flashHasteT > 0) p.flashHasteT -= dt;
+
+  if (p.limitT > 0) {
+    p.limitT -= dt;
+    if (p.limitT <= 0) {
+      // 反噬：至少留 1 血，這是解縛的合約
+      p.hp = Math.max(1, p.hp - p.maxHp * 0.08);
+      addDmgNum(p.x, p.y - 20, '反噬', '#d9564f', true);
+      p.limitSlowT = 2;
+    }
+  }
+  if (p.limitSlowT > 0) p.limitSlowT -= dt;
+
+  if (p.bellT > 0) {
+    p.bellT -= dt;
+  }
+
+  // 千手張打：連續推掌
+  if (p.flurry) {
+    const f = p.flurry;
+    f.t -= dt; f.tick -= dt;
+    if (f.tick <= 0 && f.n < 6) {
+      f.tick = 0.115; f.n++;
+      const tgt = nearestEnemy(p.x, p.y, 200);
+      const ang = tgt ? Math.atan2(tgt.y - p.y, tgt.x - p.x) : (p.face > 0 ? 0 : Math.PI);
+      spawnFx('swing', p.x, p.y, '#c9576b', 110, { angle: ang, arc: 120, type: 'arc' });
+      for (const e of G.enemies) {
+        if (e.dead) continue;
+        const dd = Math.hypot(e.x - p.x, e.y - p.y);
+        if (dd > 110 + e.r) continue;
+        const ea = Math.atan2(e.y - p.y, e.x - p.x);
+        if (Math.abs(angDiff(ea, ang)) > 1.05) continue;
+        hurtEnemy(e, techDmg(8), { fromAngle: ang });
+        if (!e.dead) {
+          const kb = e.boss ? 25 : 130;
+          e.knockX += Math.cos(ea) * kb; e.knockY += Math.sin(ea) * kb;
+        }
+      }
+    }
+    if (f.t <= 0) p.flurry = null;
+  }
+
+  // 旋風連腿：移動掃擊
+  if (p.cycloneT > 0) {
+    p.cycloneT -= dt;
+    p.cycloneTick = (p.cycloneTick || 0) - dt;
+    if (p.cycloneTick <= 0) {
+      p.cycloneTick = 0.12;
+      spawnFx('swing', p.x, p.y, '#c9d96a', 100, { angle: G.time * 9 % (Math.PI * 2), arc: 360, type: 'spin' });
+      for (const e of G.enemies) {
+        if (e.dead) continue;
+        if (dist2(e.x, e.y, p.x, p.y) < (100 + e.r) * (100 + e.r)) {
+          hurtEnemy(e, techDmg(7), { trueDmg: true });
+          if (!e.dead) {
+            const a = Math.atan2(e.y - p.y, e.x - p.x);
+            e.knockX += Math.cos(a) * 40; e.knockY += Math.sin(a) * 40;
+          }
+        }
+      }
+    }
+  }
+
+  // 迴旋抓摔：掄人
+  if (p.grabState) {
+    const g = p.grabState;
+    const e = g.e;
+    if (e.dead) { p.grabState = null; }
+    else {
+      g.t += dt;
+      g.ang += g.spinSpd * dt;
+      e.x = p.x + Math.cos(g.ang) * g.orbitR;
+      e.y = p.y + Math.sin(g.ang) * g.orbitR;
+      e.x = Math.max(e.r, Math.min(ARENA.w - e.r, e.x));
+      e.y = Math.max(e.r, Math.min(ARENA.h - e.r, e.y));
+      g.tick -= dt;
+      if (g.tick <= 0) {
+        g.tick = 0.12;
+        // 被掄的人是武器：傷害看他的體重（最大生命）
+        for (const o of G.enemies) {
+          if (o.dead || o === e) continue;
+          const rr = o.r + e.r + 4;
+          if (dist2(o.x, o.y, e.x, e.y) < rr * rr) {
+            hurtEnemy(o, throwDmg(4 + e.maxHp * 0.04), { trueDmg: true });
+            if (!o.dead) {
+              const a = Math.atan2(o.y - e.y, o.x - e.x);
+              o.knockX += Math.cos(a) * 150; o.knockY += Math.sin(a) * 150;
+            }
+          }
+        }
+        hurtEnemy(e, throwDmg(3), { trueDmg: true, noLifesteal: true });
+        if (e.dead) { p.grabState = null; return; }
+      }
+      if (g.t >= g.dur) {
+        // 扔出去：朝最近的其他敵人，沒有就順著旋轉方向
+        e.grabbed = false; e.stun = 0;
+        let tx = Math.cos(g.ang + 1.2), ty = Math.sin(g.ang + 1.2);
+        let best = null, bd = 1e18;
+        for (const o of G.enemies) {
+          if (o.dead || o === e) continue;
+          const dd = dist2(o.x, o.y, p.x, p.y);
+          if (dd < bd) { bd = dd; best = o; }
+        }
+        if (best) {
+          const dd = Math.hypot(best.x - e.x, best.y - e.y) || 1;
+          tx = (best.x - e.x) / dd; ty = (best.y - e.y) / dd;
+        }
+        e.thrown = { vx: tx * 720, vy: ty * 720, t: 0.55 };
+        hurtEnemy(e, throwDmg(10 + e.maxHp * 0.10), { trueDmg: true });
+        p.grabState = null;
+      }
+    }
+  }
+
+  // 長矛衝撞
+  if (p.dashState) {
+    const s = p.dashState;
+    s.t -= dt;
+    p.x += s.dx * s.spd * dt;
+    p.y += s.dy * s.spd * dt;
+    const c = s.carried;
+    if (c && !c.dead) {
+      c.x = p.x + s.dx * (p.r + c.r + 2);
+      c.y = p.y + s.dy * (p.r + c.r + 2);
+    }
+    // 沿路撞到的人
+    for (const e of G.enemies) {
+      if (e.dead || e === c || e.thrown) continue;
+      const rr = p.r + e.r + 4;
+      if (dist2(e.x, e.y, p.x, p.y) < rr * rr) {
+        if (!c && !e.boss && !s.hitCd) {
+          // 第一個撞上的非頭目：扛著走
+          s.carried = e; s.hitAny = true;
+          e.grabbed = true; e.stun = 99;
+        } else if (!e.hitByDash) {
+          e.hitByDash = true; s.hitAny = true;
+          hurtEnemy(e, techDmg(20), { trueDmg: true });
+          if (!e.dead) {
+            const a = Math.atan2(e.y - p.y, e.x - p.x);
+            e.knockX += Math.cos(a) * 220; e.knockY += Math.sin(a) * 220;
+          }
+        }
+      }
+    }
+    // 撞牆判定
+    const wallHit = p.x <= p.r + 4 || p.x >= ARENA.w - p.r - 4 || p.y <= p.r + 4 || p.y >= ARENA.h - p.r - 4;
+    p.x = Math.max(p.r, Math.min(ARENA.w - p.r, p.x));
+    p.y = Math.max(p.r, Math.min(ARENA.h - p.r, p.y));
+    if (wallHit || s.t <= 0) {
+      if (c && !c.dead) {
+        c.grabbed = false; c.stun = 0;
+        if (wallHit) {
+          // 撞碎在牆上：吃自身三成生命的傷 + 周圍震盪
+          hurtEnemy(c, throwDmg(20 + c.maxHp * 0.30), { trueDmg: true });
+          if (!c.dead) c.stun = 1.2 * (grabMaster() ? 1.5 : 1);
+          spawnFx('explode', c.x, c.y, '#a33c3c', 120);
+          G.screenShake = Math.max(G.screenShake, 12);
+          for (const o of G.enemies) {
+            if (o.dead || o === c) continue;
+            if (dist2(o.x, o.y, c.x, c.y) < 130 * 130) {
+              hurtEnemy(o, techDmg(22), { trueDmg: true });
+              if (!o.dead) o.stun = Math.max(o.stun, 1.0);
+            }
+          }
+        } else {
+          hurtEnemy(c, throwDmg(15), { trueDmg: true });
+          if (!c.dead) c.stun = 0.6;
+        }
+      }
+      if (!s.hitAny) {
+        p.staggerT = 0.6;   // 撞空的代價
+        addDmgNum(p.x, p.y - 24, '撞空', '#9aa4b2');
+      }
+      G.enemies.forEach(e => { e.hitByDash = false; });
+      p.dashState = null;
+    }
   }
 }
 
@@ -557,6 +960,16 @@ function applyWeaponHit(w, e, reach, mulOverride, isEcho) {
   }
   if (w.selfArmor) { p.armorBuff = Math.max(p.armorBuff, w.selfArmor); p.armorBuffT = 1.2; }
 
+  // 落地波及（破碎落下）
+  if (w.splash > 0 && !isEcho) {
+    for (const o of G.enemies) {
+      if (o.dead || o === e) continue;
+      if (dist2(o.x, o.y, e.x, e.y) < w.splash * w.splash) {
+        hurtEnemy(o, base * 0.5, { trueDmg: true });
+      }
+    }
+  }
+
   // 刺蝟反傷：近戰打它會受傷，但有自己的冷卻，否則高攻速武器等於自殺
   if (e.def && e.def.thorns && !isEcho && (e.thornCd || 0) <= 0) {
     e.thornCd = 0.6;
@@ -588,17 +1001,23 @@ function applyWeaponHit(w, e, reach, mulOverride, isEcho) {
 function updatePlayer(dt) {
   const p = G.player;
   if (p.dead) return;
+  updateTechniques(dt);
+  if (p.dead) return;   // 解縛反噬等絕技效果可能剛好歸零生命
   const k = G.keys;
   let mx = 0, my = 0;
   if (k['a'] || k['arrowleft']) mx -= 1;
   if (k['d'] || k['arrowright']) mx += 1;
   if (k['w'] || k['arrowup']) my -= 1;
   if (k['s'] || k['arrowdown']) my += 1;
+  // 衝刺中身體不歸自己管；踉蹌時腿軟
+  if (p.dashState || p.staggerT > 0) { mx = 0; my = 0; }
   const len = Math.hypot(mx, my);
   const moving = len > 0;
   if (moving) { mx /= len; my /= len; if (mx !== 0) p.face = mx > 0 ? 1 : -1; }
 
-  const spd = BASE_SPEED * liveSpeedMult();
+  let spd = BASE_SPEED * liveSpeedMult();
+  if (p.counterT > 0) spd *= 0.35;      // 架式站樁
+  if (p.grabState) spd *= 0.7;          // 掄著人跑比較慢
   p.vx = mx * spd; p.vy = my * spd;
   p.x += p.vx * dt; p.y += p.vy * dt;
   p.x = Math.max(p.r, Math.min(ARENA.w - p.r, p.x));
@@ -664,6 +1083,42 @@ function updateEnemies(dt) {
       e.dotTime -= dt;
       hurtEnemy(e, e.dot * dt, { noLifesteal: true, trueDmg: true });
       if (e.dead) continue;
+    }
+
+    // 被抓住＝身體歸玩家管，AI 完全停擺
+    if (e.grabbed) continue;
+
+    // 被扔出去：飛行中撞傷沿路的敵人，撞牆自己再吃一次
+    if (e.thrown) {
+      const th = e.thrown;
+      th.t -= dt;
+      e.x += th.vx * dt; e.y += th.vy * dt;
+      th.vx *= Math.pow(0.05, dt); th.vy *= Math.pow(0.05, dt);
+      for (const o of G.enemies) {
+        if (o.dead || o === e || o.thrown || o.grabbed || o.hitByThrow) continue;
+        const rr = o.r + e.r + 2;
+        if (dist2(o.x, o.y, e.x, e.y) < rr * rr) {
+          o.hitByThrow = true;
+          hurtEnemy(o, throwDmg(12), { trueDmg: true });
+          if (!o.dead) {
+            const a = Math.atan2(o.y - e.y, o.x - e.x);
+            o.knockX += Math.cos(a) * 180; o.knockY += Math.sin(a) * 180;
+          }
+        }
+      }
+      const hitWall = e.x <= e.r + 2 || e.x >= ARENA.w - e.r - 2 || e.y <= e.r + 2 || e.y >= ARENA.h - e.r - 2;
+      clampEnemy(e);
+      if (hitWall) {
+        hurtEnemy(e, throwDmg(8 + e.maxHp * 0.12), { trueDmg: true });
+        if (!e.dead) e.stun = Math.max(e.stun, 0.8);
+        spawnFx('explode', e.x, e.y, '#c2703c', 70);
+        e.thrown = null;
+      } else if (th.t <= 0) {
+        if (!e.dead) e.stun = Math.max(e.stun, 0.5);
+        e.thrown = null;
+      }
+      if (!e.thrown) G.enemies.forEach(o => { o.hitByThrow = false; });
+      continue;
     }
 
     // 擊退位移
@@ -1025,6 +1480,18 @@ function rollItem(maxTier) {
 
 function rollShopEntry() {
   const maxT = tierUnlock(G.wave);
+  // 絕技：第 2 波起出現，還沒學過的才會上架
+  const owned = G.player.techs.filter(Boolean).map(t => t.id);
+  const techPool = TECHNIQUES.filter(t => !owned.includes(t.id));
+  if (G.wave >= 2 && techPool.length && chance(0.16)) {
+    const t = pick(techPool);
+    return {
+      kind: 'tech', id: t.id, tier: 2,
+      name: t.name, color: t.color, icon: 'tech',
+      price: Math.round(t.price * shopInflation(G.wave)),
+      locked: false, sold: false,
+    };
+  }
   const wantWeapon = chance(0.42);
   if (wantWeapon) {
     const luck = G.player.stats.luck;
@@ -1078,11 +1545,22 @@ function shopReroll() {
   return true;
 }
 
-function shopBuy(idx) {
+function shopBuy(idx, replaceSlot) {
   const s = G.shop, e = s.entries[idx];
   if (!e || e.sold) return { ok: false, msg: '' };
   if (G.materials < e.price) return { ok: false, msg: '素材不足' };
   const p = G.player;
+  if (e.kind === 'tech') {
+    let slot = p.techs[0] ? (p.techs[1] ? -1 : 1) : 0;
+    if (slot < 0) {
+      if (replaceSlot === undefined) return { ok: false, msg: '絕技欄已滿，點卡片上的替換' };
+      slot = replaceSlot;
+    }
+    G.materials -= e.price;
+    p.techs[slot] = makeTech(e.id);
+    e.sold = true;
+    return { ok: true, msg: '習得 ' + e.name };
+  }
   if (e.kind === 'weapon') {
     const same = p.weapons.find(w => w.id === e.id && w.tier === e.tier && e.tier < 4);
     if (!same && p.weapons.length >= p.slots) return { ok: false, msg: '武器欄已滿' };

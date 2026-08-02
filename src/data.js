@@ -29,9 +29,52 @@ function blankStats() {
   return o;
 }
 
+/* ---------- 絕技 ----------
+   主動技能，Space＝絕技一、E＝絕技二，最多裝兩招，商店可買可換。
+   任何職業都能裝任何絕技——「流派自由組合」是整個系統的核心。
+   命名一律用真實武術通用詞，不用任何作品的專有招式名。
+   short 是戰鬥介面上的單字圖示。
+*/
+const TECHNIQUES = [
+  { id: 'grab_spin', name: '迴旋抓摔', short: '抓', color: '#c2703c', cd: 8, price: 42,
+    desc: '抓住面前的敵人當武器掄一圈半，甩到的都受傷，最後扔出去撞牆。抓不動頭目，但能絆他一跤。',
+    dur: 1.5, orbitR: 64, spinSpd: 7.5 },
+  { id: 'spear_rush', name: '長矛衝撞', short: '矛', color: '#a33c3c', cd: 8, price: 42,
+    desc: '低身衝刺，撞上的第一個敵人被你一路推到牆上撞碎。衝刺中受傷加重六成，撞空會踉蹌。',
+    dashSpd: 860, dashDur: 0.5 },
+  { id: 'palm_flurry', name: '千手張打', short: '掌', color: '#c9576b', cd: 6, price: 36,
+    desc: '相撲的連環張手，正面連推六掌，把人群整片推開。' },
+  { id: 'counter_throw', name: '借力化勁', short: '化', color: '#5a8ac9', cd: 10, price: 45,
+    desc: '擺出架式一秒半，期間挨的每一下都化為零，並把攻擊者過肩摔到身後砸傷別人。摔成功縮短冷卻。',
+    stance: 1.5 },
+  { id: 'flash_step', name: '縮地', short: '縮', color: '#79d9c0', cd: 6, price: 36,
+    desc: '一步踏到最近敵人的背後，下一擊必定爆擊，短暫加快出手。' },
+  { id: 'limit_release', name: '解縛', short: '解', color: '#d9564f', cd: 16, price: 50,
+    desc: '解開身體的枷鎖六秒：傷害與攻速大漲。代價是結束時反噬一口血、腳步變沉。',
+    dur: 6 },
+  { id: 'quake_stomp', name: '震腳', short: '震', color: '#8c6239', cd: 8, price: 40,
+    desc: '全力踏地，震波掀翻周圍所有敵人並定身一秒。腿功的面攻擊解。',
+    radius: 140 },
+  { id: 'cyclone_kick', name: '旋風連腿', short: '旋', color: '#c9d96a', cd: 7, price: 38,
+    desc: '邊移動邊連環掃腿零點八秒，腿到之處全部命中。腿功就是近戰裡的射程。',
+    dur: 0.8, radius: 100 },
+  { id: 'mountain_bash', name: '鐵山靠', short: '靠', color: '#8a8f99', cd: 5, price: 32,
+    desc: '貼身肩撞，把正面的敵人整排撞飛，並短暫硬化自身護甲。',
+    lunge: 130 },
+  { id: 'iron_bell', name: '金鐘罩', short: '罩', color: '#d9b06a', cd: 14, price: 48,
+    desc: '運氣硬撐三秒：護甲大增，打你的人全部被氣勁反震。',
+    dur: 3 },
+  { id: 'sway_step', name: '搖擺身法', short: '搖', color: '#e0a458', cd: 9, price: 38,
+    desc: '上身搖擺兩秒半，大幅提升閃避，每閃掉一下就自動回敬一記刺拳。',
+    dur: 2.5 },
+];
+const TECH_MAP = {};
+TECHNIQUES.forEach(t => TECH_MAP[t.id] = t);
+function techPrice(id) { return TECH_MAP[id].price; }
+
 /* ---------- 職業 ----------
    設計原則：每個職業都有明顯的正面與負面，逼出不同 build 路線。
-   special 為引擎讀取的機制旗標。
+   special 為引擎讀取的機制旗標。startTech 為起手絕技（絕技一）。
 */
 const CHARACTERS = [
   {
@@ -40,6 +83,7 @@ const CHARACTERS = [
     stats: { atkSpd: 30, crit: 8, range: -25, maxHp: -5 },
     weapon: 'jab', slots: 6,
     special: 'combo_boxer',
+    startTech: 'sway_step',
     desc: '出手極快但打不遠。連續命中同一個敵人時，每段追加 8% 傷害，最多五段。',
   },
   {
@@ -48,6 +92,7 @@ const CHARACTERS = [
     stats: { maxHp: 30, dmg: 15, armor: 3, speed: -10, atkSpd: -20 },
     weapon: 'suplex', slots: 6,
     special: 'grab_master',
+    startTech: 'grab_spin',
     desc: '厚實但遲鈍。所有抓取類武器的定身時間延長 50%，抓取傷害 +25%。',
   },
   {
@@ -56,6 +101,7 @@ const CHARACTERS = [
     stats: { crit: 15, dmg: 10, maxHp: -20, armor: -2 },
     weapon: 'reverse_punch', slots: 6,
     special: 'crit_shock',
+    startTech: 'quake_stomp',
     desc: '紙糊的身體，致命的拳。爆擊時對周圍 90 範圍內所有敵人追加一次半傷震盪。',
   },
   {
@@ -64,6 +110,7 @@ const CHARACTERS = [
     stats: { dmg: 30, range: 15, atkSpd: -25, maxHp: -15 },
     weapon: 'katana', slots: 6,
     special: 'iai',
+    startTech: 'flash_step',
     desc: '一刀勝過十拳。爆擊時觸發居合追斬，對同一目標再補一次 70% 傷害。',
   },
   {
@@ -72,6 +119,7 @@ const CHARACTERS = [
     stats: { dodge: 18, block: 12, dmg: -15, maxHp: 10 },
     weapon: 'shoulder_throw', slots: 6,
     special: 'dodge_momentum',
+    startTech: 'counter_throw',
     desc: '不硬碰硬。每次閃避成功立刻回復 15 點氣勢，並讓下一擊必定爆擊。',
   },
   {
@@ -80,6 +128,7 @@ const CHARACTERS = [
     stats: { maxHp: 90, armor: 8, speed: -28, range: -15, atkSpd: -10 },
     weapon: 'harite', slots: 6,
     special: 'body_check',
+    startTech: 'palm_flurry',
     desc: '走得慢，但撞上去就是傷害。與敵人接觸時每秒造成 12 點碰撞傷害並推開對方。',
   },
   {
@@ -88,6 +137,7 @@ const CHARACTERS = [
     stats: { lifesteal: 10, atkSpd: 12, dmg: 5, armor: -3, maxHp: -10 },
     weapon: 'elbow', slots: 6,
     special: 'no_regen',
+    startTech: 'cyclone_kick',
     desc: '完全不會自然回血，只能靠打人回血。吸血量額外 +50%。',
   },
   {
@@ -96,6 +146,7 @@ const CHARACTERS = [
     stats: { regen: 5, luck: 20, dmg: -10, maxHp: 15 },
     weapon: 'palm', slots: 6,
     special: 'fast_momentum',
+    startTech: 'iron_bell',
     desc: '氣勢累積速度加倍，爆發狀態延長 3 秒。修得慢，但氣一起來就停不下。',
   },
   {
@@ -104,6 +155,7 @@ const CHARACTERS = [
     stats: { speed: 28, dodge: 20, crit: 5, maxHp: -35, armor: -4 },
     weapon: 'tanto', slots: 6,
     special: 'move_haste',
+    startTech: 'flash_step',
     desc: '一被抓到就死。移動中每秒累積攻速，最高 +40%，停下來立刻歸零。',
   },
   {
@@ -112,6 +164,7 @@ const CHARACTERS = [
     stats: { harvest: 5, luck: 30, dmg: -20, maxHp: 10 },
     weapon: 'pipe', slots: 6,
     special: 'scrap_rush',
+    startTech: 'mountain_bash',
     desc: '每撿一份素材，攻速 +6% 持續 3 秒，可疊到 +60%。錢比拳頭重要。',
   },
   {
@@ -120,6 +173,7 @@ const CHARACTERS = [
     stats: { atkSpd: 45, range: 10, dmg: -28, maxHp: -5 },
     weapon: 'nunchaku', slots: 6,
     special: 'flurry',
+    startTech: 'cyclone_kick',
     desc: '單發很軟，但每一擊都會多打一次影子攻擊（40% 傷害）。',
   },
   {
@@ -128,6 +182,7 @@ const CHARACTERS = [
     stats: { armor: 12, block: 22, maxHp: 25, atkSpd: -28, speed: -8 },
     weapon: 'headbutt', slots: 6,
     special: 'thorns',
+    startTech: 'spear_rush',
     desc: '受到的每次傷害都會反彈 150% 給攻擊者，格擋成功時反彈翻倍。',
   },
   {
@@ -136,6 +191,7 @@ const CHARACTERS = [
     stats: { block: 30, armor: 4, dmg: -12, speed: -8, maxHp: 15 },
     weapon: 'pushhand', slots: 6,
     special: 'reflect_master',
+    startTech: 'mountain_bash',
     desc: '格擋成功時完全免傷，並把 250% 傷害反彈回去。',
   },
   {
@@ -144,6 +200,7 @@ const CHARACTERS = [
     stats: { dmg: 10, atkSpd: 10, armor: -4, maxHp: 10 },
     weapon: 'cleaver', slots: 6,
     special: 'rage',
+    startTech: 'limit_release',
     desc: '每失去 10% 生命，傷害 +10%、攻速 +5%。生命永遠不會自然回復。',
   },
   {
@@ -152,7 +209,17 @@ const CHARACTERS = [
     stats: { dmg: 60, maxHp: 25, atkSpd: -15, speed: -12 },
     weapon: 'sledge', slots: 2,
     special: 'two_slots',
+    startTech: 'quake_stomp',
     desc: '武器欄只有 2 格，換來壓倒性的單發威力。走精不走多。',
+  },
+  {
+    id: 'aikido', name: '合氣道師範', tag: '後發制人',
+    color: '#4a6b8a', skin: '#e0c0a0',
+    stats: { block: 20, dodge: 12, dmg: -25, atkSpd: -10, maxHp: 5 },
+    weapon: 'shoulder_throw', slots: 6,
+    special: 'counter_master',
+    startTech: 'counter_throw',
+    desc: '自己不主動出重手。借力化勁的冷卻縮短三成，摔投成功回復 5 生命且摔擊傷害加五成。',
   },
 ];
 
@@ -240,6 +307,15 @@ const WEAPONS = [
   { id: 'sledge', name: '大鎚', klass: '重械', type: 'slam', icon: 'hammer', color: '#8c6239',
     dmg: 58, cd: 1.9, range: 102, arc: 360, knock: 220, critMult: 2.0, crit: 5, price: 28,
     desc: '慢到令人絕望，但砸下去周圍全部躺平。' },
+  { id: 'lariat', name: '金臂勾', klass: '摔技', type: 'arc', icon: 'fist', color: '#c98a3c',
+    dmg: 24, cd: 0.95, range: 99, arc: 170, knock: 250, critMult: 1.7, crit: 6, price: 22,
+    desc: '整條手臂橫掃出去，把正面一整排掛在臂彎上帶飛。' },
+  { id: 'powerbomb', name: '破碎落下', klass: '摔技', type: 'grab', icon: 'grab', color: '#8a5a3c',
+    dmg: 50, cd: 1.7, range: 88, arc: 50, knock: 60, critMult: 1.9, crit: 6, price: 27,
+    stun: 0.9, splash: 70, desc: '舉起來倒栽砸地，落點周圍的敵人一起遭殃。' },
+  { id: 'meteor', name: '流星錘', klass: '軟兵', type: 'spin', icon: 'meteor', color: '#7a6bb0',
+    dmg: 13, cd: 0.85, range: 215, arc: 360, knock: 80, critMult: 1.6, crit: 4, price: 26,
+    desc: '鎖鏈甩出去畫大圈。全遊戲唯一打得到遠處的武器，僅此一把。' },
   { id: 'chainsaw', name: '鏈鋸', klass: '重械', type: 'spin', icon: 'saw', color: '#c9484a',
     dmg: 6, cd: 0.16, range: 80, arc: 360, knock: 15, critMult: 1.4, crit: 3, price: 30,
     desc: '持續高頻切割，貼著敵人不放就會融化。' },
@@ -260,7 +336,7 @@ function makeWeapon(id, tier) {
     arc: base.arc, knock: base.knock,
     critMult: base.critMult, crit: base.crit,
     pierce: !!base.pierce, stun: base.stun || 0, dot: base.dot || 0,
-    bleed: base.bleed || 0, slow: base.slow || 0,
+    bleed: base.bleed || 0, slow: base.slow || 0, splash: base.splash || 0,
     lifesteal: base.lifesteal || 0, selfArmor: base.selfArmor || 0,
     desc: base.desc,
     cdLeft: 0, angle: 0, swing: 0, swingDir: 1, target: null,
@@ -383,8 +459,8 @@ const DANGER_LEVELS = [
   { lv: 1, name: '危險 1', hp: 1.20, dmg: 1.10, count: 1.12, mat: 1.05 },
   { lv: 2, name: '危險 2', hp: 1.45, dmg: 1.22, count: 1.26, mat: 1.10 },
   { lv: 3, name: '危險 3', hp: 1.75, dmg: 1.35, count: 1.42, mat: 1.15 },
-  { lv: 4, name: '危險 4', hp: 2.10, dmg: 1.50, count: 1.62, mat: 1.20 },
-  { lv: 5, name: '危險 5', hp: 2.55, dmg: 1.68, count: 1.85, mat: 1.25 },
+  { lv: 4, name: '危險 4', hp: 2.25, dmg: 1.52, count: 1.66, mat: 1.20 },
+  { lv: 5, name: '危險 5', hp: 2.80, dmg: 1.72, count: 1.92, mat: 1.25 },
 ];
 
 function waveDuration(w) { return 20 + (w - 1) * 1.5; }

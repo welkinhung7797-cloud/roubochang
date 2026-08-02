@@ -145,6 +145,50 @@ function drawPlayer() {
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
+  // 絕技狀態視覺
+  if (p.counterT > 0) {   // 借力化勁：藍色架式圈
+    ctx.strokeStyle = '#5a8ac9';
+    ctx.lineWidth = 2.5;
+    ctx.globalAlpha = 0.7 + Math.sin(G.time * 10) * 0.2;
+    ctx.beginPath(); ctx.arc(0, 0, p.r + 7, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  if (p.limitT > 0) {     // 解縛：紅色蒸氣線
+    ctx.strokeStyle = '#d9564f';
+    ctx.globalAlpha = 0.6;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) {
+      const ox = Math.sin(G.time * 7 + i * 2.1) * 6;
+      ctx.beginPath();
+      ctx.moveTo(ox - 6 + i * 6, -20);
+      ctx.lineTo(ox - 3 + i * 6, -30 - (G.time * 40 + i * 9) % 8);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+  if (p.bellT > 0) {      // 金鐘罩：金色鐘形罩
+    ctx.strokeStyle = '#d9b06a';
+    ctx.lineWidth = 3;
+    ctx.globalAlpha = 0.5;
+    ctx.beginPath(); ctx.arc(0, -4, p.r + 12, Math.PI * 0.95, Math.PI * 2.05); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  if (p.swayT > 0) {      // 搖擺身法：殘影
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = G.char.color;
+    const sw = Math.sin(G.time * 16) * 8;
+    ctx.beginPath(); ctx.arc(sw, -4, p.r * 0.8, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  if (p.staggerT > 0) {   // 踉蹌：頭上冒星
+    ctx.fillStyle = '#e0c341';
+    for (let i = 0; i < 3; i++) {
+      const a = G.time * 5 + i * 2.1;
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * 12, -26 + Math.sin(a) * 3, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 
   ctx.rotate(lean);
   ctx.translate(0, bob);
@@ -282,6 +326,23 @@ function drawWeaponShape(c, w, reach, swing) {
       c.fillStyle = w.color;
       roundRect(c, push + L - 4, -10, 16, 20, 3); c.fill(); c.stroke();
       break;
+    case 'meteor': {
+      c.strokeStyle = '#9aa4b2'; c.lineWidth = 2;
+      c.beginPath();
+      for (let i = 0; i < 5; i++) {
+        c.moveTo(push + i * 7 + 2, Math.sin(i * 1.7) * 2);
+        c.arc(push + i * 7 + 4, Math.sin(i * 1.7) * 2, 2.4, 0, Math.PI * 2);
+      }
+      c.stroke();
+      c.fillStyle = w.color; c.strokeStyle = INK; c.lineWidth = 2.5;
+      c.beginPath(); c.arc(push + 40, 0, 7.5, 0, Math.PI * 2); c.fill(); c.stroke();
+      c.fillStyle = shade(w.color, -50);
+      for (let i = 0; i < 4; i++) {
+        const a = i * Math.PI / 2 + 0.4;
+        c.beginPath(); c.arc(push + 40 + Math.cos(a) * 6, Math.sin(a) * 6, 1.6, 0, Math.PI * 2); c.fill();
+      }
+      break;
+    }
     case 'saw':
       roundRect(c, push, -4, 16, 8, 2); c.fillStyle = '#4a4f5a'; c.fill(); c.stroke();
       c.fillStyle = w.color;
@@ -423,6 +484,32 @@ function drawEnemies() {
         break;
     }
 
+    // 被抓住：畫出抓握的手臂連線
+    if (e.grabbed) {
+      ctx.strokeStyle = '#c2703c';
+      ctx.lineWidth = 3.5;
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(G.player.x - e.x, G.player.y - e.y);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    // 被扔出去：速度線
+    if (e.thrown) {
+      ctx.strokeStyle = '#e8e4dc';
+      ctx.globalAlpha = 0.5;
+      ctx.lineWidth = 2;
+      const vx = e.thrown.vx, vy = e.thrown.vy;
+      const vl = Math.hypot(vx, vy) || 1;
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath();
+        ctx.moveTo(-vx / vl * e.r * 1.5 + i * 5, -vy / vl * e.r * 1.5 + i * 5);
+        ctx.lineTo(-vx / vl * e.r * 3.2 + i * 5, -vy / vl * e.r * 3.2 + i * 5);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
     // 精英王冠
     if (e.elite) {
       ctx.fillStyle = '#e0c341'; ctx.strokeStyle = INK; ctx.lineWidth = 2;
@@ -736,6 +823,51 @@ function drawHud() {
     }
   });
 
+  // 絕技冷卻（右下）
+  const TS = 54;
+  p.techs.forEach((t, i) => {
+    const x = VIEW.w - 24 - (2 - i) * (TS + 8);
+    const y = VIEW.h - TS - 30;
+    ctx.fillStyle = 'rgba(10,12,16,0.82)';
+    roundRect(ctx, x, y, TS, TS, 6); ctx.fill();
+    if (t) {
+      const ready = t.cdLeft <= 0;
+      ctx.strokeStyle = ready ? t.def.color : '#3a4050';
+      ctx.lineWidth = ready ? 3 : 2;
+      roundRect(ctx, x, y, TS, TS, 6); ctx.stroke();
+      ctx.fillStyle = ready ? t.def.color : '#5f6878';
+      ctx.font = 'bold 26px ' + FONT;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(t.def.short, x + TS / 2, y + TS / 2 + 1);
+      ctx.textBaseline = 'alphabetic';
+      if (!ready) {
+        const k = t.cdLeft / t.def.cd;
+        ctx.fillStyle = 'rgba(0,0,0,0.65)';
+        ctx.fillRect(x, y, TS, TS * Math.min(1, k));
+        ctx.fillStyle = '#e8e4dc';
+        ctx.font = 'bold 15px ' + FONT;
+        ctx.fillText(Math.ceil(t.cdLeft), x + TS / 2, y + TS / 2 + 5);
+      }
+      ctx.fillStyle = '#6d7583';
+      ctx.font = 'bold 10px ' + FONT;
+      ctx.fillText(i === 0 ? 'SPACE' : 'E', x + TS / 2, y + TS + 12);
+      ctx.fillStyle = ready ? '#c8ccd6' : '#5f6878';
+      ctx.font = 'bold 11px ' + FONT;
+      ctx.fillText(t.def.name, x + TS / 2, y - 5);
+    } else {
+      ctx.strokeStyle = '#262b36'; ctx.lineWidth = 2;
+      roundRect(ctx, x, y, TS, TS, 6); ctx.stroke();
+      ctx.fillStyle = '#3a4050';
+      ctx.font = 'bold 20px ' + FONT;
+      ctx.textAlign = 'center';
+      ctx.fillText('—', x + TS / 2, y + TS / 2 + 7);
+      ctx.fillStyle = '#6d7583';
+      ctx.font = 'bold 10px ' + FONT;
+      ctx.fillText(i === 0 ? 'SPACE' : 'E', x + TS / 2, y + TS + 12);
+    }
+  });
+  ctx.textAlign = 'left';
+
   // 波末提示
   if (G.waveEnding > 0) {
     ctx.textAlign = 'center';
@@ -754,6 +886,17 @@ function drawIconTo(canvasEl, kind, id, tier) {
   c.clearRect(0, 0, canvasEl.width, canvasEl.height);
   c.save();
   c.translate(canvasEl.width / 2, canvasEl.height / 2);
+  if (kind === 'tech') {
+    const t = TECH_MAP[id];
+    c.strokeStyle = t.color; c.lineWidth = 3;
+    c.beginPath(); c.arc(0, 0, 20, 0, Math.PI * 2); c.stroke();
+    c.fillStyle = t.color;
+    c.font = 'bold 22px ' + FONT;
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(t.short, 0, 1);
+    c.restore();
+    return;
+  }
   if (kind === 'weapon') {
     const base = WEAPON_MAP[id];
     const fake = { icon: base.icon, color: base.color, tier: tier || 1 };
@@ -796,8 +939,8 @@ function drawCharPortraitTo(canvasEl, charId) {
   const ch = CHARACTERS.find(x => x.id === charId);
   c.clearRect(0, 0, canvasEl.width, canvasEl.height);
   c.save();
-  c.translate(canvasEl.width / 2, canvasEl.height / 2 + 4);
-  c.scale(1.14, 1.14);
+  c.translate(canvasEl.width / 2, canvasEl.height / 2 + 3);
+  c.scale(0.95, 0.95);
   c.strokeStyle = INK; c.lineWidth = 3;
   // 腿
   c.lineCap = 'round';
