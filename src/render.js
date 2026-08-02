@@ -60,6 +60,7 @@ function drawGame() {
   drawEnemies();
   if (G.player) drawPlayer();
   if (G.player) drawWeaponsFront();
+  if (G.player) drawStrikes();
   drawProjectiles();
   drawFxOver();
   drawDamageNums();
@@ -183,9 +184,9 @@ function drawFighter(c, charDef, opts) {
   c.rotate(lean);
   c.translate(0, bob * 0.4);
 
-  // ---- 腿（兩節：髖→膝→腳） ----
+  // ---- 腿（兩節：髖→膝→腳）——Q 版短腿 ----
   const legSw = Math.sin(walk) * 0.55;
-  const legLen = 8 - crouch * 0.35;
+  const legLen = 6 - crouch * 0.3;
   c.strokeStyle = INK; c.lineWidth = 5; c.lineCap = 'round';
   function leg(side, liftAng) {
     const hx = side * 4 * (st.spread ? 1.6 : 1);
@@ -226,16 +227,16 @@ function drawFighter(c, charDef, opts) {
     tbx - face * 11, tby - 10 + tw * 8 - (charDef.id === 'ninja' ? -8 : 0));
   c.stroke();
 
-  // ---- 軀幹 ----
+  // ---- 軀幹（Q 版圓短身） ----
   c.fillStyle = cloth;
   c.strokeStyle = INK; c.lineWidth = 3;
-  roundRect(c, -10, hipY - 10, 20, 19, 5);
+  roundRect(c, -9, hipY - 7, 18, 16, 6);
   c.fill(); c.stroke();
   c.fillStyle = opts.flash ? '#ffffff' : shade(charDef.color, -45);
-  c.fillRect(-10, hipY + 4, 20, 4);
+  c.fillRect(-9, hipY + 5, 18, 3.6);
 
-  // ---- 手臂（兩節：肩→肘→拳） ----
-  const armLen = 7.5;
+  // ---- 手臂（兩節：肩→肘→拳）——短粗 ----
+  const armLen = 6.2;
   const idleSway = Math.sin(t * 3.1) * 0.12;
   function arm(front) {
     const side = front ? face : -face;
@@ -270,90 +271,106 @@ function drawFighter(c, charDef, opts) {
   }
   arm(false);   // 後臂先畫（被身體壓住的層次）
 
-  // ---- 貓頭 ----
-  const headY = hipY - 15 + (pose && pose.punch ? -0.6 : 0);
+  // ---- 貓頭（Q 版大頭：頭比身體大，可愛的核心） ----
+  const headY = hipY - 16 + (pose && pose.punch ? -0.6 : 0);
+  const HR = 12;   // 頭半徑：跟軀幹同寬級距，頭身比 1:1
   const id = charDef.id;
 
   // 耳朵（畫在頭圓前面才不會被蓋掉輪廓）
   function ear(side) {
     c.fillStyle = skin;
-    c.strokeStyle = INK; c.lineWidth = 2;
+    c.strokeStyle = INK; c.lineWidth = 2.2;
     c.beginPath();
-    c.moveTo(side * 2.2, headY - 6.5);
-    c.lineTo(side * 7.5, headY - 13.5);
-    c.lineTo(side * 8, headY - 5);
+    c.moveTo(side * 3.5, headY - HR + 2);
+    c.lineTo(side * 11, headY - HR - 7);
+    c.lineTo(side * 11.5, headY - HR + 5.5);
     c.closePath(); c.fill(); c.stroke();
-    c.fillStyle = opts.flash ? '#ffffff' : '#d98a92';
+    c.fillStyle = opts.flash ? '#ffffff' : '#e8a0a8';
     c.beginPath();
-    c.moveTo(side * 4.2, headY - 7);
-    c.lineTo(side * 6.8, headY - 11);
-    c.lineTo(side * 7, headY - 6.5);
+    c.moveTo(side * 6.2, headY - HR + 2.2);
+    c.lineTo(side * 10, headY - HR - 3.5);
+    c.lineTo(side * 10.2, headY - HR + 3.6);
     c.closePath(); c.fill();
   }
   ear(-1); ear(1);
 
   c.fillStyle = skin;
   c.strokeStyle = INK; c.lineWidth = 3;
-  c.beginPath(); c.arc(0, headY, 8, 0, Math.PI * 2);
+  c.beginPath();
+  c.ellipse(0, headY, HR + 1.5, HR, 0, 0, Math.PI * 2);
   c.fill(); c.stroke();
+
+  // 大眼睛：白底＋大瞳＋高光（低眼位＝幼態）
+  function eye(ex) {
+    c.fillStyle = '#ffffff';
+    c.beginPath(); c.ellipse(ex, headY + 1.5, 3.4, 4.1, 0, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#3a2a20';
+    c.beginPath(); c.ellipse(ex + face * 0.5, headY + 2, 2.5, 3.2, 0, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#ffffff';
+    c.beginPath(); c.arc(ex + face * 0.5 - 1, headY + 0.8, 1.1, 0, Math.PI * 2); c.fill();
+  }
+  const eyeGap = 5.2;
+  if (id !== 'ninja') { eye(face * 1.5 - eyeGap); eye(face * 1.5 + eyeGap); }
 
   // 吻部與鼻子
   c.fillStyle = opts.flash ? '#ffffff' : shade(charDef.skin, 30);
-  c.beginPath(); c.ellipse(face * 2.6, headY + 3, 4.2, 3.1, 0, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.ellipse(face * 1.5, headY + 6.5, 4.6, 3.2, 0, 0, Math.PI * 2); c.fill();
   c.fillStyle = '#c05a6a';
   c.beginPath();
-  c.moveTo(face * 2.6 - 1.5, headY + 1.6);
-  c.lineTo(face * 2.6 + 1.5, headY + 1.6);
-  c.lineTo(face * 2.6, headY + 3.2);
+  c.moveTo(face * 1.5 - 1.6, headY + 5.2);
+  c.lineTo(face * 1.5 + 1.6, headY + 5.2);
+  c.lineTo(face * 1.5, headY + 6.9);
   c.closePath(); c.fill();
+  // 腮紅
+  c.fillStyle = 'rgba(232,120,130,0.4)';
+  c.beginPath(); c.ellipse(-HR + 3.5, headY + 5, 2.4, 1.5, 0, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.ellipse(HR - 3.5, headY + 5, 2.4, 1.5, 0, 0, Math.PI * 2); c.fill();
 
-  // 鬍鬚：小尺寸下辨識「這是貓」的關鍵
-  c.strokeStyle = 'rgba(255,255,255,0.8)';
+  // 鬍鬚
+  c.strokeStyle = 'rgba(255,255,255,0.85)';
   c.lineWidth = 1;
   for (let i = 0; i < 3; i++) {
     c.beginPath();
-    c.moveTo(face * 5, headY + 2 + i);
-    c.lineTo(face * 12.5, headY - 0.5 + i * 2.4);
+    c.moveTo(face * 7, headY + 4.5 + i * 1.4);
+    c.lineTo(face * 16, headY + 1.5 + i * 3);
     c.stroke();
     c.beginPath();
-    c.moveTo(-face * 3, headY + 2 + i);
-    c.lineTo(-face * 9, headY + 0.5 + i * 2.2);
+    c.moveTo(-face * 5, headY + 4.5 + i * 1.4);
+    c.lineTo(-face * 13, headY + 2.5 + i * 2.6);
     c.stroke();
   }
 
-  // 頭部配件（流派辨識）
+  // 頭部配件（流派辨識，跟著大頭比例）
   c.fillStyle = INK;
   if (id === 'ninja') {
-    c.fillStyle = '#1e222c'; c.fillRect(-8, headY - 3, 16, 5);   // 蒙面
+    c.fillStyle = '#1e222c'; c.fillRect(-HR - 1, headY - 1.5, (HR + 1) * 2, 7);   // 蒙面
     c.fillStyle = '#ffe08a';
-    c.fillRect(face * 1, headY - 2, 3, 2); c.fillRect(face * 5 - 1, headY - 2, 3, 2);
+    c.fillRect(face * 1.5 - eyeGap - 1.6, headY + 0.6, 3.2, 2.4);
+    c.fillRect(face * 1.5 + eyeGap - 1.6, headY + 0.6, 3.2, 2.4);
   }
-  else if (id === 'boxer' || id === 'muaythai') { c.fillStyle = id === 'boxer' ? '#c03a3a' : '#3a5aa0'; c.fillRect(-8, headY - 6, 16, 3.4); }
-  else if (id === 'sumo') { c.fillStyle = INK; c.beginPath(); c.arc(0, headY - 9, 3.6, 0, Math.PI * 2); c.fill(); }
-  else if (id === 'monk') { c.fillStyle = '#c9803c'; c.fillRect(-2, headY - 9, 4, 3); }
-  else if (id === 'thug') { c.fillStyle = '#3a5a2a'; c.fillRect(-8, headY - 7, 16, 3.4); }
-  else if (id === 'aikido') { c.fillStyle = '#2b3a4a'; c.fillRect(-8, headY + 5.5, 16, 2.6); }
+  else if (id === 'boxer' || id === 'muaythai') {
+    c.fillStyle = id === 'boxer' ? '#c03a3a' : '#3a5aa0';
+    c.fillRect(-HR - 1, headY - 8.5, (HR + 1) * 2, 4.4);
+  }
+  else if (id === 'sumo') { c.fillStyle = INK; c.beginPath(); c.arc(0, headY - HR - 1.5, 4.4, 0, Math.PI * 2); c.fill(); }
+  else if (id === 'monk') { c.fillStyle = '#c9803c'; c.fillRect(-2.5, headY - HR - 2, 5, 3.6); }
+  else if (id === 'thug') { c.fillStyle = '#3a5a2a'; c.fillRect(-HR - 1, headY - 9.5, (HR + 1) * 2, 4.4); }
+  else if (id === 'aikido') { c.fillStyle = '#2b3a4a'; c.fillRect(-HR + 1, headY + 9.5, (HR - 1) * 2, 2.8); }
   if (id === 'karate' || id === 'judo' || id === 'kenshi') {
-    c.strokeStyle = '#e8e4dc'; c.lineWidth = 3;
-    c.beginPath(); c.moveTo(-8.5, headY - 4.5); c.lineTo(8.5, headY - 4.5); c.stroke();
+    c.strokeStyle = '#e8e4dc'; c.lineWidth = 3.6;
+    c.beginPath(); c.moveTo(-HR - 0.5, headY - 6.5); c.lineTo(HR + 0.5, headY - 6.5); c.stroke();
     c.strokeStyle = INK;
   }
   if (id === 'ironhead') {
-    c.strokeStyle = '#c9cdd6'; c.lineWidth = 3;
-    c.beginPath(); c.arc(0, headY - 1, 8.6, Math.PI * 1.05, Math.PI * 1.95); c.stroke();
+    c.strokeStyle = '#c9cdd6'; c.lineWidth = 3.6;
+    c.beginPath(); c.arc(0, headY - 1, HR + 1, Math.PI * 1.08, Math.PI * 1.92); c.stroke();
     c.strokeStyle = INK;
   }
   if (id === 'berserker') {   // 狂貓：炸毛
-    c.strokeStyle = INK; c.lineWidth = 1.6;
+    c.strokeStyle = INK; c.lineWidth = 1.8;
     for (let i = -2; i <= 2; i++) {
-      c.beginPath(); c.moveTo(i * 3, headY - 7.5); c.lineTo(i * 3.8, headY - 10.5); c.stroke();
+      c.beginPath(); c.moveTo(i * 4.2, headY - HR + 0.5); c.lineTo(i * 5, headY - HR - 4); c.stroke();
     }
-  }
-  // 眼睛（忍者蒙面版已畫過）
-  if (id !== 'ninja') {
-    c.fillStyle = INK;
-    c.fillRect(face * 4.6 - 1.2, headY - 2.6, 2.4, 3.2);
-    c.fillRect(-face * 1.4 - 1.2, headY - 2.6, 2.4, 3.2);
   }
 
   arm(true);   // 前臂最後畫（在最上層，出招看得最清楚）
@@ -592,6 +609,11 @@ function drawEnemies() {
     const col = flash ? '#ffffff' : e.color;
     const bob = Math.sin(e.anim) * (e.r * 0.09);
     ctx.translate(0, bob);
+    // 受擊壓扁回彈
+    if (e.hitSquash > 0) {
+      const k = e.hitSquash / 0.16;
+      ctx.scale(1 + 0.28 * k, 1 - 0.28 * k);
+    }
     ctx.strokeStyle = INK;
     ctx.lineWidth = Math.max(2, e.r * 0.18);
     ctx.fillStyle = col;
@@ -804,6 +826,81 @@ function drawBoss(e, col, flash) {
   }
 }
 
+/* ---------- 攻擊實體：看得見的拳頭與刀光 ---------- */
+function drawStrikes() {
+  const p = G.player;
+  for (const s of G.strikes) {
+    const w = s.w;
+    ctx.save();
+    if (s.kind === 'thrust') {
+      // 飛行拳影／掌風
+      ctx.translate(s.x, s.y);
+      ctx.rotate(s.ang);
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = w.color;
+      ctx.strokeStyle = INK; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(0, 0, 11, 6.5, 0, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+      ctx.globalAlpha = 0.45;
+      ctx.strokeStyle = w.color; ctx.lineWidth = 2.5;
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath();
+        ctx.moveTo(-14, i * 4.5);
+        ctx.lineTo(-30 - Math.min(20, s.traveled * 0.3), i * 4.5);
+        ctx.stroke();
+      }
+    } else if (s.kind === 'sweep') {
+      // 刀路殘弧：從起點掃到當前角度
+      ctx.translate(p.x, p.y);
+      ctx.globalAlpha = 0.75;
+      ctx.strokeStyle = w.color;
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.arc(0, 0, s.reach * 0.8, s.ang0, s.cur, s.ang1 < s.ang0);
+      ctx.stroke();
+      ctx.globalAlpha = 0.35;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, 0, s.reach * 0.55, s.ang0, s.cur, s.ang1 < s.ang0);
+      ctx.stroke();
+      // 刀鋒亮點
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(Math.cos(s.cur) * s.reach * 0.8, Math.sin(s.cur) * s.reach * 0.8, 4, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (s.kind === 'orbit') {
+      // 旋轉的錘頭／棍端實體
+      const hx = p.x + Math.cos(s.cur) * s.reach * 0.85;
+      const hy = p.y + Math.sin(s.cur) * s.reach * 0.85;
+      ctx.globalAlpha = 0.4;
+      ctx.strokeStyle = w.color; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(hx, hy); ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = w.color;
+      ctx.strokeStyle = INK; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(hx, hy, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.globalAlpha = 0.5;
+      ctx.strokeStyle = w.color; ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, s.reach * 0.85, s.cur - 0.9 * Math.sign(s.spd), s.cur, s.spd < 0);
+      ctx.stroke();
+    } else if (s.kind === 'slam') {
+      // 預兆圈：脹大到爆發
+      const k = Math.min(1, s.t / s.delay);
+      ctx.translate(p.x, p.y);
+      ctx.globalAlpha = 0.5;
+      ctx.strokeStyle = w.color;
+      ctx.setLineDash([6, 6]);
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, s.reach * k, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+
 /* ---------- 投射物 ---------- */
 function drawProjectiles() {
   for (const b of G.projectiles) {
@@ -922,6 +1019,22 @@ function drawFxOver() {
       ctx.strokeStyle = f.color;
       ctx.lineWidth = 5;
       ctx.beginPath(); ctx.arc(f.x, f.y, f.size * k, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    } else if (f.type === 'spark') {
+      // 命中火花：沿受擊方向放射短線
+      ctx.save();
+      ctx.globalAlpha = 1 - k;
+      ctx.strokeStyle = f.color;
+      ctx.lineWidth = 2.5;
+      for (let i = 0; i < 5; i++) {
+        const a = f.angle + (i - 2) * 0.5 + Math.sin(f.x * 7 + i * 13) * 0.2;
+        const d0 = f.size * 0.4 + k * 16;
+        const d1 = d0 + 7 * (1 - k);
+        ctx.beginPath();
+        ctx.moveTo(f.x + Math.cos(a) * d0, f.y + Math.sin(a) * d0);
+        ctx.lineTo(f.x + Math.cos(a) * d1, f.y + Math.sin(a) * d1);
+        ctx.stroke();
+      }
       ctx.restore();
     } else if (f.type === 'hurt') {
       ctx.save();

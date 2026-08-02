@@ -41,7 +41,8 @@ function buildCharSelect() {
     el.dataset.char = ch.id;
     const best = SAVE.best[ch.id];
     el.innerHTML =
-      '<canvas class="portrait" width="60" height="60"></canvas>' +
+      '<img class="portrait" src="assets/portraits/' + ch.id + '.png" alt="' + ch.name + '"' +
+        ' onerror="this.style.display=\'none\'">' +
       '<div class="char-name">' + ch.name + '</div>' +
       '<div class="char-tag">' + ch.tag + '</div>' +
       '<div class="char-combo">' + ['dash', 'move', 'still'].map(slot => {
@@ -55,7 +56,6 @@ function buildCharSelect() {
     el.title = ch.desc;
     el.onclick = () => { selectedChar = ch.id; buildCharSelect(); updateStartBtn(); updateCharDetail(ch); };
     wrap.appendChild(el);
-    drawCharPortraitTo(el.querySelector('.portrait'), ch.id);
   });
 }
 
@@ -384,6 +384,9 @@ function initInput() {
     if (k === 'escape' && G.mode === 'playing') G.paused = !G.paused;
     if (G.mode === 'playing' && !G.paused) {
       if (k === ' ') castDash();
+    }
+    if (k === 'm' && typeof sfxToggleMute === 'function') {
+      toast(sfxToggleMute() ? '靜音' : '音效開');
     }
     if (G.mode === 'levelup' && ['1', '2', '3', '4'].includes(k)) {
       const i = parseInt(k) - 1;

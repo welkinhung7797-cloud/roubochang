@@ -2,6 +2,11 @@
    肉搏場 — 遊戲引擎
    ============================================================ */
 
+/* 音效空殼替身：瀏覽器端由 audio.js 覆寫成真實引擎；Node 模擬環境維持無聲 */
+if (typeof window === 'undefined' || !window.AudioContext) {
+  var sfx = function () {};
+}
+
 /* ---------- 亂數（可設種子，方便自動化測試重現） ---------- */
 let _seed = (Math.random() * 1e9) | 0;
 function setSeed(s) { _seed = s | 0; }
@@ -44,6 +49,8 @@ const G = {
   spawnTimer: 0,
   spawnPool: [],
   screenShake: 0,
+  strikes: [],      // 實體化的攻擊：拳影／刀光／掌風，碰到敵人那一幀才結算
+  hitstop: 0,       // 頓幀：命中瞬間的全場凍結（秒），打擊感的靈魂
   kills: 0,
   stats: { dmgDealt: 0, dmgTaken: 0, src: {} },
   paused: false,
@@ -180,7 +187,8 @@ function startWave(w) {
   G.waveTime = 0;
   G.waveDur = waveDuration(w);
   G.waveEnding = 0;
-  G.enemies = []; G.projectiles = []; G.fx = [];
+  G.enemies = []; G.projectiles = []; G.fx = []; G.strikes = [];
+  G.hitstop = 0; G.hitstopCd = 0;
   G.player.x = ARENA.w / 2; G.player.y = ARENA.h / 2;
   G.player.iframe = 1.0;
   G.player.momentum = 0; G.player.burst = 0;
@@ -329,6 +337,14 @@ function hurtEnemy(e, amount, opts) {
   }
   e.hp -= dmg;
   e.hitFlash = 0.12;
+  // 打擊感：壓扁回彈＋火花＋頓幀分級（微量持續傷不觸發）
+  if (dmg >= 3) {
+    e.hitSquash = 0.16;
+    spawnFx('spark', e.x, e.y, opts.crit ? '#ffd44a' : '#ffffff', e.r,
+      { angle: opts.fromAngle !== undefined ? opts.fromAngle : rng() * Math.PI * 2 });
+    const heavy = opts.crit || dmg >= e.maxHp * 0.3;
+    addHitstop(heavy ? 0.07 : 0.035, heavy);
+  }
   G.stats.dmgDealt += dmg;
   addDmgNum(e.x, e.y - e.r, Math.round(dmg).toString(), opts.crit ? '#ffd44a' : '#ffffff', opts.crit);
 
@@ -347,6 +363,7 @@ function killEnemy(e) {
   if (e.dead) return;
   e.dead = true;
   G.kills++;
+  addHitstop(e.elite || e.boss ? 0.10 : 0.05, true);
   if (hasItem('swift_tabi')) G.player.killHasteT = 2;
   G.screenShake = Math.max(G.screenShake, e.boss ? 20 : (e.elite ? 6 : 2));
   spawnFx('burst', e.x, e.y, e.color, e.r);
@@ -407,6 +424,7 @@ function hurtPlayer(amount, source) {
   if (counterField || counterStance) {
     if (!counterField) p.counterProcCd = 1.2;
     addDmgNum(p.x, p.y - 30, '化勁', '#5a8ac9');
+    sfx('throw_hit');
     if (sp === 'counter_master') healPlayer(5);
     if (source && !source.dead && source.name) {
       if (source.boss) {
@@ -481,6 +499,7 @@ function hurtPlayer(amount, source) {
     p.hp -= dmg;
     G.stats.dmgTaken += dmg;
     noteDmg(source && source.name ? source.name : '其他', dmg);
+    sfx('hit_blunt', { pitch: 0.75, vol: 0.7 });
     addDmgNum(p.x, p.y - 18, '-' + Math.round(dmg), '#ff6b6b', true);
     G.screenShake = Math.max(G.screenShake, 5 + dmg * 0.25);
     spawnFx('hurt', p.x, p.y, '#ff6b6b', 20);
@@ -580,6 +599,9 @@ function castDash() {
       p.dashCd = d.cd * 1.25 * (hasItem('master_obi') ? 0.8 : 1);
       G.ougiBanner = { name: o.name, t: 1.3 };
       G.screenShake = Math.max(G.screenShake, 10);
+      addHitstop(0.12, true);
+      sfx('ougi_cast');
+      sfx('ougi_hit');
       if (hasItem('fist_wrap')) p.guaranteedCrit = true;
       return true;
     }
@@ -604,6 +626,7 @@ function castDash() {
       break;
   }
   if (ok) {
+    sfx(id === 'flash_step' ? 'flash' : 'dash');
     p.dashCd = d.cd * cdMul * (hasItem('master_obi') ? 0.8 : 1);
     if (p.dashState) p.dashState.boost = boost;
     p.beatLog = []; p.beatT = 0;   // 每次衝刺後重新演奏
@@ -668,6 +691,7 @@ function cycleMoveSlot(slot) {
 /* 抓住一個敵人開始掄圈（由衝刺技轉入） */
 function startGrab(e, d) {
   const p = G.player;
+  sfx('grab');
   e.grabbed = true;
   e.stun = 99;
   p.grabState = {
@@ -680,6 +704,7 @@ function startGrab(e, d) {
 /* 站樁技：震腳脈衝 */
 function quakePulse(d) {
   const p = G.player;
+  sfx('quake', { vol: 0.7 });
   spawnFx('shock', p.x, p.y, '#8c6239', d.radius);
   G.screenShake = Math.max(G.screenShake, 7);
   p.pose = { type: 'stomp', ang: 0, t: 0, dur: 0.3, prio: 1 };
@@ -1054,6 +1079,8 @@ function updateTechniques(dt) {
           tx = (best.x - e.x) / dd; ty = (best.y - e.y) / dd;
         }
         e.thrown = { vx: tx * (g.super ? 900 : 720), vy: ty * (g.super ? 900 : 720), t: 0.55 };
+        sfx('throw_hit');
+        addHitstop(0.09, true);
         hurtEnemy(e, throwDmg((g.super ? 25 : 10) + e.maxHp * (g.super ? 0.25 : 0.10)), { trueDmg: true });
         if (g.super) {
           spawnFx('explode', e.x, e.y, '#c2703c', 150);
@@ -1379,6 +1406,8 @@ function updateWeapons(dt) {
   });
 }
 
+/* 攻擊實體化：拳頭／刀光／掌風是真的飛出去的東西，碰到敵人那一幀才有傷害。
+   grab 類維持貼身即時（抓抱沒有彈道可言）。 */
 function fireWeapon(w, reach) {
   const p = G.player;
   w.swing = 1;
@@ -1387,37 +1416,131 @@ function fireWeapon(w, reach) {
   if (!p.pose || p.pose.prio !== 1) {
     p.pose = { type: 'swing', ang: w.angle, t: 0, dur: 0.2, prio: 0 };
   }
-  const halfArc = (w.arc * Math.PI / 180) / 2;
-  const hits = [];
-  for (const e of G.enemies) {
-    if (e.dead) continue;
-    const dx = e.x - p.x, dy = e.y - p.y;
-    const d = Math.sqrt(dx * dx + dy * dy);
-    if (d > reach + e.r) continue;
-    if (w.arc < 360) {
+
+  if (w.type === 'grab') {
+    const halfArc = (w.arc * Math.PI / 180) / 2;
+    let best = null, bd = 1e18;
+    for (const e of G.enemies) {
+      if (e.dead || e.grabbed || e.thrown) continue;
+      const dx = e.x - p.x, dy = e.y - p.y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d > reach + e.r) continue;
       const a = Math.atan2(dy, dx);
-      const allow = halfArc + Math.atan2(e.r, Math.max(20, d));
-      if (Math.abs(angDiff(a, w.angle)) > allow) continue;
+      if (Math.abs(angDiff(a, w.angle)) > halfArc + Math.atan2(e.r, Math.max(20, d))) continue;
+      if (d < bd) { bd = d; best = e; }
     }
-    hits.push({ e, d });
+    if (best) {
+      spawnFx('swing', p.x, p.y, w.color, reach, { angle: w.angle, arc: w.arc, type: w.type });
+      applyWeaponHit(w, best, reach);
+      if (G.char.special === 'flurry' && !best.dead) applyWeaponHit(w, best, reach, 0.4, true);
+    }
+    return;
   }
-  if (!hits.length) return;
-  hits.sort((a, b) => a.d - b.d);
+  spawnStrike(w, reach);
+}
 
-  let targets = hits;
-  if (w.type === 'grab') targets = hits.slice(0, 1);
-  else if (w.type === 'thrust' && !w.pierce) targets = hits.slice(0, 1);
-
-  spawnFx('swing', p.x, p.y, w.color, reach, { angle: w.angle, arc: w.arc, type: w.type });
-
-  targets.forEach(h => applyWeaponHit(w, h.e, reach));
-
-  // 雙節棍手：影子攻擊
-  if (G.char.special === 'flurry') {
-    targets.forEach(h => {
-      if (!h.e.dead) applyWeaponHit(w, h.e, reach, 0.4, true);
-    });
+function spawnStrike(w, reach) {
+  const p = G.player;
+  const s = { w, reach, t: 0, hit: [] };
+  if (w.type === 'thrust') {
+    s.kind = 'thrust';
+    s.x = p.x + Math.cos(w.angle) * 14;
+    s.y = p.y + Math.sin(w.angle) * 14;
+    s.ang = w.angle;
+    s.speed = 820;
+    s.maxDist = reach + 14;
+    s.traveled = 0;
+  } else if (w.type === 'arc') {
+    s.kind = 'sweep';
+    const half = (w.arc * Math.PI / 180) / 2;
+    s.ang0 = w.angle - half * w.swingDir;
+    s.ang1 = w.angle + half * w.swingDir;
+    s.cur = s.ang0;
+    s.dur = 0.13;
+  } else if (w.type === 'spin') {
+    s.kind = 'orbit';
+    s.cur = w.angle;
+    s.dur = 0.42;
+    s.spd = (Math.PI * 2 / 0.42) * (w.swingDir > 0 ? 1 : -1);
+  } else {   // slam：延遲爆發，先給預兆
+    s.kind = 'slam';
+    s.delay = 0.12;
   }
+  G.strikes.push(s);
+  if (G.strikes.length > 40) G.strikes.shift();
+  // 揮擊風聲
+  if (w.klass === '刃') sfx('swing_blade');
+  else if (w.klass === '腿') sfx('swing_leg');
+  else sfx('swing');
+}
+
+function strikeHit(s, e) {
+  if (e.dead || s.hit.includes(e)) return;
+  s.hit.push(e);
+  applyWeaponHit(s.w, e, s.reach);
+  if (G.char.special === 'flurry' && !e.dead) applyWeaponHit(s.w, e, s.reach, 0.4, true);
+}
+
+function updateStrikes(dt) {
+  const p = G.player;
+  for (const s of G.strikes) {
+    s.t += dt;
+    if (s.kind === 'thrust') {
+      const step = s.speed * dt;
+      s.x += Math.cos(s.ang) * step;
+      s.y += Math.sin(s.ang) * step;
+      s.traveled += step;
+      for (const e of G.enemies) {
+        if (e.dead || e.grabbed || e.thrown || s.hit.includes(e)) continue;
+        const rr = 13 + e.r;
+        if (dist2(e.x, e.y, s.x, s.y) < rr * rr) {
+          strikeHit(s, e);
+          if (!s.w.pierce) { s.dead = true; break; }
+        }
+      }
+      if (s.traveled >= s.maxDist) s.dead = true;
+    } else if (s.kind === 'sweep' || s.kind === 'orbit') {
+      const k = Math.min(1, s.t / s.dur);
+      const prev = s.cur;
+      s.cur = s.kind === 'sweep'
+        ? s.ang0 + (s.ang1 - s.ang0) * k
+        : s.cur + s.spd * dt;
+      // 掃掠帶：上一幀角度到這一幀角度之間的扇區都算刀路
+      for (const e of G.enemies) {
+        if (e.dead || e.grabbed || e.thrown || s.hit.includes(e)) continue;
+        const d = Math.hypot(e.x - p.x, e.y - p.y);
+        if (d > s.reach + e.r) continue;
+        const ea = Math.atan2(e.y - p.y, e.x - p.x);
+        const tol = Math.atan2(e.r, Math.max(24, d)) + 0.12;
+        const inBand = Math.abs(angDiff(ea, s.cur)) < tol ||
+          (Math.abs(angDiff(ea, prev)) + Math.abs(angDiff(ea, s.cur)) <
+           Math.abs(angDiff(prev, s.cur)) + tol * 2);
+        if (inBand) strikeHit(s, e);
+      }
+      if (s.t >= s.dur) s.dead = true;
+    } else if (s.kind === 'slam') {
+      if (s.t >= s.delay && !s.boomed) {
+        s.boomed = true;
+        spawnFx('shock', p.x, p.y, s.w.color, s.reach);
+        G.screenShake = Math.max(G.screenShake, 5);
+        for (const e of G.enemies) {
+          if (e.dead || e.grabbed || e.thrown) continue;
+          if (dist2(e.x, e.y, p.x, p.y) < (s.reach + e.r) * (s.reach + e.r)) strikeHit(s, e);
+        }
+        s.dead = true;
+      }
+    }
+  }
+  G.strikes = G.strikes.filter(s => !s.dead);
+}
+
+/* 頓幀：打擊感的靈魂。輕命中共用一次（0.12 秒內不重複），重擊與奧義無視冷卻。 */
+function addHitstop(sec, heavy) {
+  if (!heavy) {
+    if (G.hitstopCd > 0) return;
+    G.hitstopCd = 0.12;
+  }
+  G.hitstop = Math.max(G.hitstop, sec);
 }
 
 function applyWeaponHit(w, e, reach, mulOverride, isEcho) {
@@ -1471,6 +1594,16 @@ function applyWeaponHit(w, e, reach, mulOverride, isEcho) {
     crit, fromAngle: w.angle, weaponLifesteal: w.lifesteal,
   });
 
+  // 命中音：依武器類與力度分層
+  if (!isEcho) {
+    if (w.klass === '刃') sfx('hit_blade');
+    else if (w.klass === '腿') sfx('hit_kick');
+    else if (w.klass === '棍' || w.klass === '重械' || w.klass === '軟兵') sfx('hit_blunt');
+    else if (crit || base >= e.maxHp * 0.3) sfx('hit_heavy');
+    else if (base >= 20) sfx('hit_mid');
+    else sfx('hit_light');
+  }
+
   if (!isEcho) addMomentum(w.type === 'grab' ? 6 : 3);
   if (p.burst > 0) healPlayer(1);
 
@@ -1481,6 +1614,14 @@ function applyWeaponHit(w, e, reach, mulOverride, isEcho) {
     const kb = w.knock * reboundMul * (e.boss ? 0.12 : (e.elite ? 0.4 : 1)) / (1 + e.r * 0.03);
     e.knockX += Math.cos(a) * kb;
     e.knockY += Math.sin(a) * kb;
+  }
+  // 受擊硬直：被打會頓，連段才鎖得住人。連續硬直太久觸發霸體（防無限壓制），頭目免疫輕硬直。
+  if (!e.dead && !e.boss) {
+    if ((e.hyperArmorT || 0) <= 0) {
+      e.stun = Math.max(e.stun, 0.14);
+      e.stunAcc = (e.stunAcc || 0) + 0.14;
+      if (e.stunAcc > 1.6) { e.hyperArmorT = 2.5; e.stunAcc = 0; }
+    }
   }
   // 狀態
   if (!e.dead) {
@@ -1606,6 +1747,9 @@ function updateEnemies(dt) {
     if (e.dead) continue;
     e.anim += dt * 6;
     if (e.hitFlash > 0) e.hitFlash -= dt;
+    if (e.hitSquash > 0) e.hitSquash -= dt;
+    if (e.hyperArmorT > 0) e.hyperArmorT -= dt;
+    if (e.stunAcc > 0) e.stunAcc -= dt * 0.5;
     if (e.slow > 0) e.slow -= dt;
     if (e.thornCd > 0) e.thornCd -= dt;
     if (e.bleedTime > 0) {
@@ -1903,6 +2047,7 @@ function collectPickup(it) {
       p.scrapTimer = 3;
     }
   } else if (it.type === 'heal') {
+    sfx('heal');
     healPlayer(Math.max(5, p.maxHp * 0.1));
   } else if (it.type === 'crate') {
     const item = rollItem(tierUnlock(G.wave));
@@ -1957,6 +2102,7 @@ function openLevelUp() {
 function chooseLevelUp(idx) {
   const g = G.levelChoices[idx];
   G.player.items.push(GEAR_MAP[g.id]);
+  sfx('levelup');
   // 裝備為主、屬性為輔：每級附贈小額基礎成長，曲線才追得上敵人
   G.player.perm.maxHp += LEVELUP_HP_BONUS;
   G.player.perm.dmg += 2;
@@ -2135,6 +2281,7 @@ function spawnFx(type, x, y, color, size, extra) {
   const f = { type, x, y, color, size: size || 20, t: 0, life: 0.4 };
   if (extra) Object.assign(f, extra);
   if (type === 'swing') f.life = 0.22;
+  if (type === 'spark') f.life = 0.2;
   if (type === 'explode') f.life = 0.5;
   if (type === 'shock') f.life = 0.45;
   if (type === 'burst_start') f.life = 0.6;
@@ -2159,11 +2306,19 @@ function updateFx(dt) {
 /* ---------- 主更新 ---------- */
 function updateGame(dt) {
   if (G.mode !== 'playing') return;
+  if (G.hitstopCd > 0) G.hitstopCd -= dt;
+  // 頓幀：世界凍住一瞬，只有特效以慢速繼續——這一下就是「打中了」
+  if (G.hitstop > 0) {
+    G.hitstop -= dt;
+    updateFx(dt * 0.3);
+    return;
+  }
   G.time += dt;
   updateWave(dt);
   updateSpawning(dt);
   updatePlayer(dt);
   updateWeapons(dt);
+  updateStrikes(dt);
   updateEnemies(dt);
   updateProjectiles(dt);
   updatePickups(dt);

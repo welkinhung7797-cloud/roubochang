@@ -56,9 +56,9 @@ button:disabled{cursor:not-allowed;opacity:.45}
   display:flex;flex-direction:column;align-items:center;text-align:center}
 .char-card:hover{border-color:#4a5568}
 .char-card.active{border-color:var(--accent);background:#20242e}
-.char-card .portrait{width:40px;height:40px;image-rendering:auto}
-.char-name{font-size:15px;font-weight:800;letter-spacing:.06em}
-.char-tag{font-size:10px;color:var(--accent);letter-spacing:.02em;margin-bottom:4px;text-align:center}
+.char-card .portrait{height:56px;width:auto;max-width:72px;object-fit:contain;image-rendering:auto}
+.char-name{font-size:14px;font-weight:800;letter-spacing:.04em;line-height:1.25}
+.char-tag{font-size:9.5px;color:var(--accent);letter-spacing:.02em;margin-bottom:3px;text-align:center;line-height:1.2}
 .char-tag i{font-style:normal;color:#7d8698}
 .char-stats{display:flex;flex-wrap:wrap;gap:2px;justify-content:center;margin-bottom:4px}
 .char-stats span{font-size:9.5px;padding:0 3px;border:1px solid;line-height:1.45}
@@ -139,7 +139,7 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .combo-arrow{font-size:20px;font-weight:900;color:#5f6878;padding:0 2px}
 .tech-slot.clickable{cursor:pointer}
 .tech-slot.clickable:hover{background:#242a36}
-.char-combo{display:flex;align-items:center;gap:2px;font-size:15px;font-weight:900;margin-bottom:4px}
+.char-combo{display:flex;align-items:center;gap:2px;font-size:14px;font-weight:900;margin-bottom:3px;line-height:1.2}
 .char-combo i{font-style:normal;color:#4f5766;font-size:11px}
 #char-detail{position:absolute;left:50%;transform:translateX(-50%);bottom:76px;
   width:calc(100% - 52px);max-width:1200px;background:#141821;
@@ -262,6 +262,7 @@ button:disabled{cursor:not-allowed;opacity:.45}
 
 <script src="src/data.js"></script>
 <script src="src/engine.js"></script>
+<script src="src/audio.js"></script>
 <script src="src/render.js"></script>
 <script src="src/ui.js"></script>
 <script>

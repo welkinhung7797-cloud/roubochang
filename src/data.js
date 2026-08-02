@@ -602,13 +602,14 @@ function waveDuration(w) { return 20 + (w - 1) * 1.5; }
 function isBossWave(w) { return w === 10 || w === 20; }
 function bossOfWave(w) { return w === 10 ? 'champ' : 'yokozuna'; }
 
-/* 敵人成長：血量走指數、傷害走線性，避免後期一擊必殺
-   指數底數是全域難度的主旋鈕；玩家整局輸出成長約 25 至 30 倍，
-   所以血量成長壓在 18 倍上下才留得住build的成就感。 */
+/* 敵人成長：「前期格鬥、後期割草」的成長曲線。
+   基礎血量拉高 2.2 倍讓前期單怪扛得住一整套連段（有東西可以 COMBO），
+   成長指數壓到 1.065——玩家 build 成型的速度遠快於此，
+   後期相對輾壓，割草的爽感是「配好了」的獎勵而不是開場白。 */
 function enemyScale(wave, danger) {
   const d = DANGER_LEVELS[danger];
   return {
-    hp: Math.pow(1.10, wave - 1) * d.hp,
+    hp: 2.2 * Math.pow(1.065, wave - 1) * d.hp,
     dmg: (1 + (wave - 1) * 0.10) * d.dmg,
     speed: 1 + (wave - 1) * 0.010,
   };
