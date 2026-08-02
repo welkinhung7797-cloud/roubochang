@@ -196,6 +196,28 @@ function loadBaseFrames() {
   }
 }
 
+/* 三傑專屬幀：整套自己花色的動畫（含面罩／髮髻／道帶畫進幀內），
+   到貨自動覆蓋共用基底、頭部配件自動退場——遊戲內造型從此貼近立繪 */
+const CHAR_FRAMES = {};
+function loadCharFrames(charId) {
+  if (CHAR_FRAMES[charId] || typeof Image === 'undefined') return;
+  const set = { loaded: 0, ready: false };
+  CHAR_FRAMES[charId] = set;
+  for (const k in FRAME_DEFS) {
+    set[k] = [];
+    for (let i = 1; i <= FRAME_DEFS[k]; i++) {
+      const img = new Image();
+      img.onload = () => {
+        set.loaded++;
+        if (set.loaded >= 6) set.ready = true;
+      };
+      img.onerror = () => {};
+      img.src = 'assets/frames_' + charId + '/' + k + '_' + i + '.png';
+      set[k].push(img);
+    }
+  }
+}
+
 function loadAccessory(charId) {
   if (ACC_IMGS[charId] !== undefined || typeof Image === 'undefined') return;
   const img = new Image();
@@ -212,11 +234,17 @@ function loadFx(name) {
   img.src = 'assets/fx/' + name + '.png';
 }
 
-/* 依玩家當下狀態選幀 */
+/* 依玩家當下狀態選幀（專屬幀優先，缺幀退回共用基底） */
 function pickFrame(p) {
   const t = G.time;
-  const ok = (k, i) => BASE_FRAMES[k] && BASE_FRAMES[k][i] && BASE_FRAMES[k][i].complete && BASE_FRAMES[k][i].naturalWidth > 0;
-  function pick(k, i) { return ok(k, i) ? BASE_FRAMES[k][i] : (ok('idle', 0) ? BASE_FRAMES.idle[0] : null); }
+  const cf = CHAR_FRAMES[G.char.id];
+  const src = (cf && cf.ready) ? cf : BASE_FRAMES;
+  const ok = (S, k, i) => S[k] && S[k][i] && S[k][i].complete && S[k][i].naturalWidth > 0;
+  function pick(k, i) {
+    if (ok(src, k, i)) return src[k][i];
+    if (ok(BASE_FRAMES, k, i)) return BASE_FRAMES[k][i];
+    return ok(BASE_FRAMES, 'idle', 0) ? BASE_FRAMES.idle[0] : null;
+  }
   if (p.dead) return pick('ko', 0);
   if (p.hurtT > 0) return pick('hurt', p.hurtT > 0.15 ? 0 : 1);
   if (p.dashState) return pick('dash', Math.floor(t * 10) % 2);
@@ -240,11 +268,15 @@ function drawPlayerFramed(p, c) {
   if (p.iframe > 0 && Math.floor(G.time * 20) % 2 === 0) ctx.filter = 'brightness(2.2)';
   ctx.drawImage(img, -w / 2, -FRAME_H * 0.62, w, FRAME_H);
   // 配件：疊在頭部（基底幀構圖固定，錨點統一）
-  const acc = ACC_IMGS[c.id];
+  const cf = CHAR_FRAMES[c.id];
+  const acc = (cf && cf.ready) ? null : ACC_IMGS[c.id];   // 專屬幀已含配件，不再疊
   if (acc) {
-    const aw = FRAME_H * 0.62;
+    const off = c.id === 'wrestler'
+      ? { s: 0.78, dx: 0.05, dy: 0.10 }   // 面罩要戴在臉上，不是頂在頭上
+      : { s: 0.62, dx: 0.06, dy: -0.0 };
+    const aw = FRAME_H * off.s;
     const ah = aw * (acc.height / acc.width);
-    ctx.drawImage(acc, -aw / 2 + FRAME_H * 0.06, -FRAME_H * 0.62 - ah * 0.18, aw, ah);
+    ctx.drawImage(acc, -aw / 2 + FRAME_H * off.dx, -FRAME_H * 0.62 + FRAME_H * off.dy - ah * 0.18, aw, ah);
   }
   ctx.filter = 'none';
   ctx.restore();
@@ -730,6 +762,7 @@ function drawPlayer() {
 
   // 全幀動畫模式優先（三傑先行），缺圖退回程序繪製
   loadBaseFrames();
+  if (c.id === 'kenshi' || c.id === 'wrestler' || c.id === 'karate') loadCharFrames(c.id);
   loadAccessory(c.id);
   if (!(BASE_FRAMES.ready && drawPlayerFramed(p, c))) {
     const flash = p.iframe > 0 && Math.floor(G.time * 20) % 2 === 0;
@@ -1404,6 +1437,19 @@ function drawFxOver() {
         ctx.lineTo(f.x + Math.cos(a) * d1, f.y + Math.sin(a) * d1);
         ctx.stroke();
       }
+      ctx.restore();
+    } else if (f.type === 'slide') {
+      // 企鵝滑行的冰痕：兩道短平行線淡出
+      ctx.save();
+      ctx.globalAlpha = (1 - k) * 0.5;
+      ctx.strokeStyle = f.color;
+      ctx.lineWidth = 2.5;
+      ctx.translate(f.x, f.y);
+      ctx.rotate(f.angle || 0);
+      ctx.beginPath();
+      ctx.moveTo(-10, -4); ctx.lineTo(8, -4);
+      ctx.moveTo(-10, 4); ctx.lineTo(8, 4);
+      ctx.stroke();
       ctx.restore();
     } else if (f.type === 'hurt') {
       ctx.save();

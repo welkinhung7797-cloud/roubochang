@@ -170,6 +170,7 @@ function liveAtkSpdMult() {
   if (sp === 'scrap_rush') m += Math.min(0.60, p.scrapStacks * 0.06);
   if (p.flashHasteT > 0) m += 0.30;
   if (p.moves.move === 'gale_step' && movingActive()) m += Math.min(0.30, p.moveTime * 0.30);
+  if (p.flowT > 0) m += 0.10;
   if (hasItem('shura_mask') && p.hp < p.maxHp * 0.4) m += 0.30;
   return Math.max(0.2, m) * TUNE.playerAtkSpdMul;
 }
@@ -178,6 +179,7 @@ function liveSpeedMult() {
   let m = 1 + p.stats.speed / 100;
   m += p.momentum / 100 * 0.10;
   if (p.killHasteT > 0) m += 0.40;
+  if (p.flowT > 0) m += 0.15;
   return Math.max(0.25, m);
 }
 function liveRangeMult() { return Math.max(0.4, 1 + G.player.stats.range / 100) * TUNE.playerRangeMul; }
@@ -755,7 +757,10 @@ function castDash() {
       if (ok) p.iframe = Math.max(p.iframe, d.dashDur + 0.12);   // 全程無敵
       break;
     case 'suplex_grab': ok = dashGeneric(d, 'suplex'); break;
-    case 'iai_slash': ok = dashGeneric(d, 'iai'); break;
+    case 'iai_slash':
+      ok = dashGeneric(d, 'iai');
+      if (ok) sfx('draw');
+      break;
     case 'shadow_dash':
       ok = dashGeneric(d, 'shadow');
       if (ok) p.iframe = Math.max(p.iframe, d.dashDur + 0.15);   // 全程無敵、穿人、零傷害
@@ -1055,10 +1060,19 @@ function updateTechniques(dt) {
   if (p.counterProcCd > 0) p.counterProcCd -= dt;
   if (p.ougiField > 0) p.ougiField -= dt;
   if (p.hurtT > 0) p.hurtT -= dt;
+  if (p.sheathing > 0) {
+    p.sheathing -= dt;
+    if (p.sheathing <= 0) {
+      sfx('sheathe');
+      spawnFx('spark', p.x + p.face * 10, p.y - 6, '#ffffff', 8, { angle: 0 });
+    }
+  }
 
   // ---- 節拍冷卻（節拍本體改由「命中」記錄，見 addBeat） ----
   if (p.beatCd > 0) p.beatCd -= dt;
   if (p.triCd > 0) p.triCd -= dt;
+  if (p.resonCd > 0) p.resonCd -= dt;
+  if (p.flowT > 0) p.flowT -= dt;
 
   // ---- 站樁技 ----
   const stillId = p.moves.still;
@@ -1331,8 +1345,18 @@ function updateTechniques(dt) {
   if (p.dashState) {
     const s = p.dashState;
     s.t -= dt;
-    p.x += s.dx * s.spd * dt;
-    p.y += s.dy * s.spd * dt;
+    if (s.dur0 === undefined) s.dur0 = s.t + dt;
+    // 企鵝滑行曲線：起步爆發、後段滑行減速——是「滑」出去不是「閃」過去
+    const slideK = Math.max(0, s.t / s.dur0);
+    const spdNow = s.spd * (0.55 + 0.75 * slideK);
+    p.x += s.dx * spdNow * dt;
+    p.y += s.dy * spdNow * dt;
+    // 冰滑痕
+    s.trailT = (s.trailT || 0) - dt;
+    if (s.trailT <= 0) {
+      s.trailT = 0.03;
+      spawnFx('slide', p.x - s.dx * 10, p.y + 8, '#cfeaf5', 10, { angle: Math.atan2(s.dy, s.dx) });
+    }
     const c = s.carried;
     if (c && !c.dead) {
       c.x = p.x + s.dx * (p.r + c.r + 2);
@@ -1434,8 +1458,8 @@ function updateTechniques(dt) {
       } else if (s.id === 'iai') {
         // 收刀硬直：拔刀術的合約，斬沒斬中都要付
         p.staggerT = 0.5;
+        p.sheathing = 0.5;   // 收刀動作演出
         addDmgNum(p.x, p.y - 24, '收刀', '#9aa4b2');
-        sfx('flash', { vol: 0.6 });
       }
       G.enemies.forEach(e => { e.hitByDash = false; });
       p.dashState = null;
@@ -1454,6 +1478,21 @@ function addBeat(type) {
   p.beatCd = 0.4;   // 同一瞬間的多段命中只記一拍
   p.beatLog.push(type);
   if (p.beatLog.length > 3) p.beatLog.shift();
+  // 同拍共鳴：三拍同型自動觸發輕增益——喜歡「一直移動一直打」的玩家不用搓招也有獎勵
+  if ((p.resonCd || 0) <= 0 && p.beatLog.length === 3) {
+    const rs = p.beatLog.join('');
+    if (rs === 'MMM') {
+      p.resonCd = 5; p.flowT = 4;
+      addDmgNum(p.x, p.y - 40, '行雲', '#8fd4e0', true);
+    } else if (rs === 'SSS') {
+      p.resonCd = 5; p.chargeHits = 3;
+      addDmgNum(p.x, p.y - 40, '蓄勢', '#e8964a', true);
+    } else if (rs === 'DDD') {
+      p.resonCd = 5;
+      p.dashCd = Math.max(0, p.dashCd - 2.5);
+      addDmgNum(p.x, p.y - 40, '連衝', '#ffd44a', true);
+    }
+  }
   // 三段勁：最近三拍湊齊 站、移、衝 各一（順序不拘）→ 自動爆出一圈氣勁小招
   if (p.triCd <= 0 && p.beatLog.length === 3) {
     const s = [...p.beatLog].sort().join('');
@@ -1905,6 +1944,11 @@ function applyWeaponHit(w, e, reach, mulOverride, isEcho) {
     if (p.hitCount === 0) base *= 2;
   }
 
+  // 蓄勢（同拍共鳴）：下三次攻擊 +30%
+  if (!isEcho && (p.chargeHits || 0) > 0) {
+    base *= 1.3;
+    p.chargeHits--;
+  }
   // 寸勁蓄力：站樁存的勁，這一擊全部放出來
   if (!isEcho && p.focusStacks > 0) {
     base *= 1 + p.focusStacks * 0.25;
@@ -2617,6 +2661,7 @@ function spawnFx(type, x, y, color, size, extra) {
   if (extra) Object.assign(f, extra);
   if (type === 'swing') f.life = 0.22;
   if (type === 'spark') f.life = 0.2;
+  if (type === 'slide') f.life = 0.5;
   if (type === 'explode') f.life = 0.5;
   if (type === 'shock') f.life = 0.45;
   if (type === 'burst_start') f.life = 0.6;
