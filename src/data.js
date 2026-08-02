@@ -622,8 +622,8 @@ function bossOfWave(w) { return w === 10 ? 'champ' : 'yokozuna'; }
 function enemyScale(wave, danger) {
   const d = DANGER_LEVELS[danger];
   return {
-    hp: 2.2 * Math.pow(1.065, wave - 1) * d.hp,
-    dmg: (1 + (wave - 1) * 0.10) * d.dmg,
+    hp: 2.5 * Math.pow(1.065, wave - 1) * d.hp,
+    dmg: 1.12 * (1 + (wave - 1) * 0.10) * d.dmg,
     speed: 1 + (wave - 1) * 0.010,
   };
 }

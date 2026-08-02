@@ -1,0 +1,29 @@
+You are the art engineer for "Penguin Can Fight". Use your IMAGE GENERATION capability.
+
+TASK: Create 14 cute Halloween-style monster enemies (ghosts, bats, zombies etc). They fight kung-fu penguins. CRITICAL MOOD RULE: adorable and funny, ZERO horror — no blood, no rot, no scary faces. Round shapes, friendly silliness. Think "cute plush monsters".
+
+STYLE (all 14):
+- Same sticker-style flat illustration as the game: thick dark-brown outline, simple two-tone shading
+- Full body, three-quarter front view facing LEFT (they face the player), centered
+- Plain pure white background, 1024x1024 PNG, no text/watermark
+
+WORKFLOW: First create grunt.png as the anchor, then generate all others with grunt.png attached as style reference.
+
+Deliver into folder enemies/ under the current working directory, exact filenames:
+
+grunt.png       small white bedsheet ghost blob, round, tiny black eyes, cheeky smile, fills ~55% of canvas
+runner.png      small purple bat with big ears and round body, flying pose, fills ~50%
+brute.png       big green derpy zombie with square jaw and a band-aid on forehead, arms stretched forward, fills ~80%
+thrower.png     small blue witch-ghost with pointy hat holding a blue wisp fireball, fills ~60%
+charger.png     translucent ghost-dog leaning forward ready to dash, fills ~60%
+spiker.png      purple round monster covered in soft rubbery spikes, innocent face, fills ~60%
+bomber.png      little orange pumpkin sprite with a tiny flame on top, silly grin, fills ~50%
+splitter.png    light-green translucent slime blob, droplet shape, happy face, fills ~65%
+splitling.png   mini version of the same slime, fills ~40%
+shielder.png    cream-colored chibi skeleton holding a round wooden shield, bones rounded and cute, fills ~65%
+healer.png      warm yellow lantern ghost carrying a glowing paper lantern, gentle smile, fills ~60%
+summoner.png    dark purple owl wizard with a tiny cloak and big round eyes, fills ~65%
+boss_champ.png  big mummy boxer wrapped in clean white bandages wearing boxing gloves, confident grin, fills ~85%
+boss_yokozuna.png  huge white fluffy yeti in a sumo mawashi, gentle dopey face, fills ~90%
+
+Report each file path and size when done.

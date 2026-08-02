@@ -818,7 +818,16 @@ function drawWeaponShape(c, w, reach, swing) {
   }
 }
 
-/* ---------- 敵人 ---------- */
+/* ---------- 敵人（妖怪貼圖模式優先，缺圖退回程序繪製） ---------- */
+const ENEMY_IMGS = {};
+function loadEnemyImg(key) {
+  if (ENEMY_IMGS[key] !== undefined || typeof Image === 'undefined') return;
+  const img = new Image();
+  ENEMY_IMGS[key] = null;
+  img.onload = () => { ENEMY_IMGS[key] = img; };
+  img.src = 'assets/enemies/' + key + '.png';
+}
+
 function drawEnemies() {
   for (const e of G.enemies) {
     ctx.save();
@@ -827,6 +836,52 @@ function drawEnemies() {
     ctx.beginPath();
     ctx.ellipse(0, e.r * 0.82, e.r * 0.85, e.r * 0.3, 0, 0, Math.PI * 2);
     ctx.fill();
+
+    // 妖怪貼圖模式：飄浮＋微透明＝幽靈感
+    const imgKey = e.boss ? 'boss_' + e.id : e.id;
+    loadEnemyImg(imgKey);
+    const eimg = ENEMY_IMGS[imgKey];
+    if (eimg) {
+      const hover = Math.sin(e.anim * 0.9) * e.r * 0.14;
+      const h = e.r * 2.5;
+      const w = h * (eimg.width / eimg.height);
+      if (e.hitSquash > 0) {
+        const k = e.hitSquash / 0.16;
+        ctx.scale(1 + 0.28 * k, 1 - 0.28 * k);
+      }
+      if (e.hitFlash > 0) ctx.filter = 'brightness(2.4)';
+      ctx.globalAlpha = 0.94;
+      if ((e.face || 1) > 0) ctx.scale(-1, 1);   // 圖預設朝左，往右追時鏡像
+      ctx.drawImage(eimg, -w / 2, -h * 0.62 + hover, w, h);
+      ctx.globalAlpha = 1;
+      ctx.filter = 'none';
+      if ((e.face || 1) > 0) ctx.scale(-1, 1);
+      // 精英王冠
+      if (e.elite) {
+        ctx.fillStyle = '#e0c341'; ctx.strokeStyle = INK; ctx.lineWidth = 2;
+        ctx.beginPath();
+        const cw = e.r * 0.8;
+        ctx.moveTo(-cw, -e.r - 6); ctx.lineTo(-cw * 0.5, -e.r - 13); ctx.lineTo(0, -e.r - 6);
+        ctx.lineTo(cw * 0.5, -e.r - 13); ctx.lineTo(cw, -e.r - 6); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+      }
+      if (e.stun > 0 && e.stun < 50) {
+        ctx.strokeStyle = '#ffd44a'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(0, -e.r - 10, 4, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.restore();
+      // 血條
+      if (e.hp < e.maxHp || e.boss || e.elite) {
+        const bw = e.boss ? 64 : Math.max(16, e.r * 1.7);
+        const bh = e.boss ? 3.5 : 2.4;
+        const bx = e.x - bw / 2, by = e.y - e.r - (e.boss ? 15 : 8);
+        ctx.fillStyle = 'rgba(0,0,0,0.65)';
+        ctx.fillRect(bx - 0.8, by - 0.8, bw + 1.6, bh + 1.6);
+        ctx.fillStyle = e.boss ? '#d9564f' : (e.elite ? '#e0c341' : '#c05050');
+        ctx.fillRect(bx, by, bw * Math.max(0, e.hp / e.maxHp), bh);
+      }
+      continue;
+    }
 
     const flash = e.hitFlash > 0;
     const col = flash ? '#ffffff' : e.color;

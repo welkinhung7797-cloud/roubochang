@@ -1,0 +1,33 @@
+You are the art engineer for "Penguin Can Fight". Use your IMAGE GENERATION capability.
+
+TASK: Create 16 class portrait images of kung-fu PENGUINS for the character-select screen, replacing old cat portraits.
+
+STYLE (mandatory, all 16):
+- Cute sticker-style flat illustration, thick dark-brown outline, white sticker border
+- Chibi penguin: big round head ~55% of height, big sparkling eyes, orange beak and webbed feet
+- Full body, three-quarter front view facing right, dynamic martial-arts pose, centered, fills ~70% of canvas
+- Plain pure white background, 1024x1024 PNG, no text/watermark
+- Do NOT imitate any famous penguin IP
+
+WORKFLOW: First create boxer.png as the anchor. Then generate every other portrait with boxer.png attached as the style reference so all 16 look like the same art set.
+
+Deliver into folder portraits_penguin/ under the current working directory. One file per class, exact filenames:
+
+boxer.png      classic black-white penguin, red boxing gloves, red headband, jab pose
+wrestler.png   bulky brown-feathered penguin, championship belt, luchador mask top, arms-spread grapple pose
+karate.png     white-feathered penguin, white gi belt tied on forehead, knife-hand strike pose
+kenshi.png     black penguin with navy sheen, samurai topknot, holding a katana, calm iai stance
+judo.png       gray penguin wearing white judo gi with blue belt, open-palm throwing stance
+sumo.png       extra-large cream penguin, sumo mawashi loincloth, low crouch palms forward
+muaythai.png   slim tan penguin, rope-wrapped flippers, muay-thai headring, knee-raise pose
+monk.png       round penguin with ochre monk robe and prayer beads, palm-strike pose
+ninja.png      dark navy penguin with ninja face mask, crouching sneaky pose with short blade
+thug.png       scruffy brown penguin with green beanie, holding steel pipe, slouching pose
+nunchaku.png   yellow-tinted penguin in yellow jumpsuit, spinning nunchaku
+ironhead.png   silver-gray penguin with a shiny metal helmet plate, headbutt charge pose
+taichi.png     sage-gray elderly penguin with long white eyebrows and wispy beard, silk tang suit, cloud-hands pose
+berserker.png  reddish-brown penguin with wild spiky feathers and crazy grin, holding a cleaver
+strongman.png  huge broad penguin in leopard strongman singlet, sledgehammer over shoulder
+aikido.png     blue-gray penguin wearing black hakama over white gi, serene redirecting-palm pose
+
+Report each file path and size when done.
