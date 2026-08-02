@@ -268,6 +268,21 @@ function drawPlayerFramed(p, c) {
   if (p.iframe > 0 && Math.floor(G.time * 20) % 2 === 0) ctx.filter = 'brightness(2.2)';
   ctx.drawImage(img, -w / 2, -FRAME_H * 0.62, w, FRAME_H);
   // 配件：疊在頭部（基底幀構圖固定，錨點統一）
+  // 武士的腰間刀鞘（專屬幀已畫進去就不疊）
+  const cfK = CHAR_FRAMES[c.id];
+  if (c.id === 'kenshi' && !(cfK && cfK.ready)) {
+    loadWeaponImg('sheath');
+    const sh = WEAPON_IMGS['sheath'];
+    if (sh) {
+      const sw2 = FRAME_H * 0.62;
+      const sh2 = sw2 * (sh.height / sh.width);
+      ctx.save();
+      ctx.translate(-FRAME_H * 0.08, FRAME_H * 0.06);
+      ctx.rotate(0.5);
+      ctx.drawImage(sh, -sw2 * 0.8, -sh2 / 2, sw2, sh2);
+      ctx.restore();
+    }
+  }
   const cf = CHAR_FRAMES[c.id];
   const acc = (cf && cf.ready) ? null : ACC_IMGS[c.id];   // 專屬幀已含配件，不再疊
   if (acc) {
@@ -795,12 +810,32 @@ function drawWeaponSet(behind) {
   });
 }
 
+const WEAPON_IMGS = {};
+function loadWeaponImg(name) {
+  if (WEAPON_IMGS[name] !== undefined || typeof Image === 'undefined') return;
+  const img = new Image();
+  WEAPON_IMGS[name] = null;
+  img.onload = () => { WEAPON_IMGS[name] = img; };
+  img.src = 'assets/weapons/' + name + '.png';
+}
+
 function drawWeaponShape(c, w, reach, swing) {
   const L = Math.min(reach * 0.55, 46);
   c.strokeStyle = INK;
   c.lineWidth = 3;
   c.fillStyle = w.color;
   const push = swing * 8;
+  // 打刀專屬貼圖：真正的武士刀
+  if (w.id === 'katana') {
+    loadWeaponImg('katana');
+    const img = WEAPON_IMGS['katana'];
+    if (img) {
+      const kw = Math.min(reach * 0.62, 56);
+      const kh = kw * (img.height / img.width);
+      c.drawImage(img, push - 8, -kh / 2, kw, kh);
+      return;
+    }
+  }
   switch (w.icon) {
     case 'fist':
       roundRect(c, push, -6, 13, 12, 4); c.fill(); c.stroke();
