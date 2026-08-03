@@ -1019,3 +1019,63 @@ function defaultBoard(clsId) {
   });
   return b;
 }
+
+/* 招式池擴充（總監 2026-08-04：每職 12～15 招才有得挑又不會選擇癱瘓）。
+   kind 全部沿用已經測過的，只換參數與命名——新 kind 要另外驗，這裡不冒那個險。 */
+const EXTRA_FINISHERS = {
+  wrestler: [
+    { name: '斷頭台', kind: 'strike_heavy', home: 'S', tier: 2,
+      params: { dmg: 46, stun: 1.1, radius: 70, cleaveMul: 0.4, pose: 'elbow', lunge: 14 },
+      desc: '夾住脖子往下坐，體重全壓在那一點上。站定收尾的重擊型。' },
+    { name: '獄門固', kind: 'strike_heavy', home: 'M', tier: 2,
+      params: { dmg: 40, stun: 1.6, radius: 60, cleaveMul: 0.3, pose: 'hold', lunge: 26 },
+      desc: '踏進去把手臂反鎖，定身時間特別長，適合把人釘住給下一招。' },
+    { name: '衝角', kind: 'charge_line', home: 'D', tier: 2,
+      params: { dmg: 52, len: 260, width: 78, knock: 120, stun: 0.7, chargeSpd: 900, pose: 'head' },
+      desc: '低頭直線撞穿，撞到誰誰飛。比矛頭衝撞短，但推得更遠。' },
+    { name: '鐵山靠', kind: 'knock_cone', home: 'S', tier: 3,
+      params: { dmg: 58, radius: 96, arc: 150, knock: 300, launch: 520, stun: 0.5, pose: 'slam' },
+      desc: '整個背撞出去，正面一片全被掀飛。' },
+  ],
+  karate: [
+    { name: '掌底', kind: 'strike_heavy', home: 'S', tier: 2,
+      params: { dmg: 44, stun: 0.9, radius: 62, cleaveMul: 0.35, pose: 'jab', lunge: 12, critNext: true },
+      desc: '掌根頂上下巴，打完下一擊必爆。' },
+    { name: '迴し受け', kind: 'sweep_ring', home: 'M', tier: 2,
+      params: { dmg: 38, radius: 128, knock: 90, stun: 0.8, color: '#e8e4dc' },
+      desc: '轉身把貼上來的人一圈撥開，不轟飛只定住。' },
+    { name: '踏込突', kind: 'pierce_line', home: 'D', tier: 2,
+      params: { dmg: 50, len: 240, width: 52, stun: 0.6, pose: 'kekomi' },
+      desc: '踏進去一記直突，貫穿一條線上的人。' },
+    { name: '正拳一閃', kind: 'burst_single', home: 'S', tier: 3,
+      params: { dmg: 128 }, desc: '全身的勁收在一個拳頭上，只打一個人，但那一下很痛。' },
+  ],
+  kenshi: [
+    { name: '逆袈裟', kind: 'sweep_ring', home: 'S', tier: 2,
+      params: { dmg: 40, radius: 138, knock: 60, stun: 0.4, cuts: 1, color: '#e8f2ff' },
+      desc: '由下往上反手斬，留一道斬痕。' },
+    { name: '燕返', kind: 'delayed_cuts', home: 'M', tier: 2,
+      params: { len: 420, width: 58, cuts: 1, delay: 0.24, dmgPerCut: 14, n: 2, stun: 0.3, pose: 'issen' },
+      desc: '一刀揮出去，第二刀在同一條線上晚半拍到。' },
+    { name: '刺突', kind: 'multi_thrust', home: 'D', tier: 2,
+      params: { dmg: 22, n: 3, len: 190, width: 44, cuts: 1, pose: 'issen' },
+      desc: '直線連刺三次，每一次都留痕。' },
+    { name: '真向斬', kind: 'execute_cut', home: 'S', tier: 3,
+      params: { dmg: 96, cutsBonus: 2, pose: 'karatake' },
+      desc: '正上方劈下來的一刀，斬痕夠多就直接斷。' },
+  ],
+};
+(function addExtraFinishers() {
+  const PRICE = [0, 18, 30, 46, 68];
+  for (const cls in EXTRA_FINISHERS) {
+    EXTRA_FINISHERS[cls].forEach((e, i) => {
+      const f = Object.assign({}, e, {
+        id: cls + '_x' + i, cls, price: PRICE[e.tier] || 30,
+      });
+      FINISHER_POOL[cls].push(f);
+      FINISHER_MAP[f.id] = f;
+    });
+  }
+})();
+/* 混拍那排的解鎖波次：前五波先讓玩家把兩排六格玩熟 */
+const BOARD_MX_UNLOCK_WAVE = 6;

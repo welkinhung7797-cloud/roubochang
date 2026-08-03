@@ -444,9 +444,9 @@ function renderLoadout() {
   // ---- 連段表：chip 跟上面的槽位共用同一顆顏色與同一個字 ----
   const cb = document.createElement('div');
   cb.className = 'combo-block';
-  cb.innerHTML = '<div class="combo-head">連段<span>前面幾拍要「打中」才算數，湊到了不會消失</span></div>' +
-    comboLinesHtml(G.char.id);
+  cb.innerHTML = boardHtml();
   wrap.appendChild(cb);
+  bindBoard(cb);
 
   const wTitle = document.createElement('div');
   wTitle.className = 'sec-title';
@@ -1009,6 +1009,10 @@ function botAutoUi() {
           let score = e.price * 0.5;
           if (e.kind === 'tech') {
             score += 130;   // 招式庫是選項不是必需
+          } else if (e.kind === 'fin') {
+            // 收尾招：bot 不會自己組盤，所以只給中等分數，不要讓它把錢全砸在這裡。
+            // ★ 這代表 bot 量到的平衡數字對「連段盤玩得好」這件事是低估的。
+            score += 200;
           } else if (e.kind === 'weapon') {
             const merge = p.weapons.some(w => w.id === e.id && w.tier === e.tier) && e.tier < 4;
             if (merge) score += 1200;
@@ -1099,3 +1103,90 @@ function boot() {
   requestAnimationFrame(loop);
 }
 window.addEventListener('DOMContentLoaded', boot);
+
+/* ---------- 連段盤 UI（總監 2026-08-04：讓大家有組建連段的戰略跟想法） ----------
+   3×3：橫排＝前綴兩拍打在什麼狀態，直行＝第三下你做什麼動作。
+   點任何一格會展開「可以放進這一格的招」，同一招只能上一格。 */
+let openBoardSlot = null;
+
+function boardHtml() {
+  const p = G.player;
+  if (!p || !p.comboBoard) return '';
+  const rows = BOARD_ROWS;
+  const cols = BOARD_COLS;
+  let h = '<div class="combo-head">連段盤' +
+    '<span>前兩下打在什麼狀態決定「哪一排」，第三下你做什麼決定「哪一格」</span></div>';
+  h += '<div class="bd">';
+  h += '<div class="bd-r bd-h"><div class="bd-c bd-lab"></div>' +
+    cols.map(c => '<div class="bd-c bd-hd"><b class="bw bw-' +
+      (c.key === 'S' ? 'still' : c.key === 'M' ? 'move' : 'dash') + '">' + c.name + '</b>' +
+      '<span>' + c.act + '</span></div>').join('') + '</div>';
+  for (const r of rows) {
+    const locked = (p.boardRows || []).indexOf(r.key) < 0;
+    h += '<div class="bd-r' + (locked ? ' locked' : '') + '">';
+    h += '<div class="bd-c bd-lab"><b>' + r.name + '</b><span>' +
+      (locked ? '第 ' + BOARD_MX_UNLOCK_WAVE + ' 波解鎖' : r.hint) + '</span></div>';
+    for (const c of cols) {
+      const key = r.key + '_' + c.key;
+      const f = FINISHER_MAP[p.comboBoard[key]];
+      const pure = (r.key === 'SS' && c.key === 'S') || (r.key === 'MM' && c.key === 'M');
+      const off = f && f.home !== c.key;
+      h += '<div class="bd-c bd-slot' + (locked ? '' : ' on') + (f ? ' filled' : '') +
+        '" data-slot="' + key + '">';
+      if (f) {
+        h += '<b>' + f.name + '</b>';
+        h += '<i>' + (pure ? '基本' : '變體 ×' + BOARD_MIX_MUL) +
+          (off ? '　非本命 ×' + BOARD_OFFHOME_MUL : '') + '</i>';
+      } else {
+        h += '<b class="empty">' + (locked ? '—' : '空格') + '</b>' +
+          '<i>' + (locked ? '' : '只出普攻') + '</i>';
+      }
+      h += '</div>';
+    }
+    h += '</div>';
+    if (!locked && openBoardSlot && openBoardSlot.slice(0, 2) === r.key) h += boardPickHtml();
+  }
+  h += '</div>';
+  return h;
+}
+
+function boardPickHtml() {
+  const p = G.player;
+  const col = openBoardSlot.split('_')[1];
+  const owned = (p.ownedFinishers || []).map(id => FINISHER_MAP[id]).filter(Boolean);
+  const cur = p.comboBoard[openBoardSlot];
+  let h = '<div class="bd-pick"><div class="bd-pick-h">放進「' + openBoardSlot.replace('_', ' → ') + '」</div>';
+  owned.forEach(f => {
+    const at = boardSlotOf(f.id);
+    const off = f.home !== col;
+    h += '<button class="bd-opt' + (f.id === cur ? ' on' : '') + '" data-fin="' + f.id + '">' +
+      '<b>' + f.name + '</b>' +
+      '<em>' + (off ? '非本命 ×' + BOARD_OFFHOME_MUL : '本命') + '</em>' +
+      (at && at !== openBoardSlot ? '<u>目前在 ' + at.replace('_', '→') + '，會搬過來</u>' : '') +
+      '<span>' + (f.desc || '').replace(/^[A-Z]{1,4}：/, '') + '</span></button>';
+  });
+  if (cur) h += '<button class="bd-opt clear" data-fin="">清空這一格（只出普攻）</button>';
+  h += '<div class="bd-pick-foot">同一招只能上一格。放進非本命格效果 ×' +
+    BOARD_OFFHOME_MUL + '，但放得進去。</div></div>';
+  return h;
+}
+
+function bindBoard(root) {
+  root.querySelectorAll('.bd-slot.on').forEach(el => {
+    el.onclick = () => {
+      const k = el.getAttribute('data-slot');
+      openBoardSlot = (openBoardSlot === k) ? null : k;
+      renderLoadout();
+    };
+  });
+  root.querySelectorAll('.bd-opt').forEach(el => {
+    el.onclick = ev => {
+      ev.stopPropagation();
+      const fid = el.getAttribute('data-fin');
+      const [row, col] = openBoardSlot.split('_');
+      setBoardSlot(row, col, fid || null);
+      openBoardSlot = null;
+      renderLoadout();
+    };
+  });
+}

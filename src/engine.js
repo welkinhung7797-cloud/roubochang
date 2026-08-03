@@ -213,6 +213,8 @@ function startRun(charId, danger) {
   // 開局只開「站站」「移移」兩排六格且全部填滿——不要讓玩家一開始就苦惱空格。
   G.player.comboBoard = defaultBoard(charId);
   G.player.boardRows = ['SS', 'MM'];
+  // 擁有池：盤上的六招開局就有，其餘靠商店買。同一招只能上一格，所以要記誰在盤上。
+  G.player.ownedFinishers = Object.keys(G.player.comboBoard).map(k => G.player.comboBoard[k]);
   G.shop = null;
   startWave(1);
 }
@@ -221,6 +223,12 @@ function startWave(w) {
   G.wave = w;
   G.waveTime = 0;
   G.spawnClosed = false;   // 出兵時間到了沒
+  // 混拍那排到第 6 波才開：前五波先讓玩家把兩排六格玩熟（總監：不要一開始就苦惱招式障礙）
+  if (G.player && G.player.boardRows && w >= BOARD_MX_UNLOCK_WAVE
+      && G.player.boardRows.indexOf('MX') < 0) {
+    G.player.boardRows.push('MX');
+    G.boardUnlockT = 3.0;
+  }
   G.waveKills = 0; G.waveMat = 0; G.waveDmg = 0;
   G.tally = null;
   G.waveDur = waveDuration(w);
@@ -4244,6 +4252,18 @@ function rollShopEntry() {
       locked: false, sold: false,
     };
   }
+  // 收尾招：第 2 波起，還沒買過的才上架。這是連段盤的燃料——
+  // 總監要「複雜度放在招式上」，所以它的出現率要跟武器同量級，不是稀有彩蛋。
+  const finPool = (typeof unownedFinishers === 'function') ? unownedFinishers() : [];
+  if (G.wave >= 2 && finPool.length && chance(0.22)) {
+    const f = pick(finPool);
+    return {
+      kind: 'fin', id: f.id, tier: f.tier || 1,
+      name: f.name, color: '#e0c341', icon: 'tech',
+      price: Math.round((f.price || 24) * shopInflation(G.wave)),
+      locked: false, sold: false,
+    };
+  }
   const wantWeapon = chance(0.42);
   if (wantWeapon) {
     const luck = G.player.stats.luck;
@@ -4307,6 +4327,14 @@ function shopBuy(idx, replaceSlot) {
     p.knownMoves.push(e.id);
     e.sold = true;
     return { ok: true, msg: '習得 ' + e.name + '，在連段欄點擊換上' };
+  }
+  if (e.kind === 'fin') {
+    G.materials -= e.price;
+    p.ownedFinishers = p.ownedFinishers || [];
+    if (p.ownedFinishers.indexOf(e.id) < 0) p.ownedFinishers.push(e.id);
+    e.sold = true;
+    // 買下不自動上盤：上哪一格是玩家的決策，那正是這套系統的重點
+    return { ok: true, msg: '學會 ' + e.name + '，到連段盤點一格放上去' };
   }
   if (e.kind === 'weapon') {
     const same = p.weapons.find(w => w.id === e.id && w.tier === e.tier && e.tier < 4);
@@ -4458,4 +4486,36 @@ function maxDangerUnlocked() {
   let m = 0;
   for (let i = 1; i <= 5; i++) if (SAVE.unlocked['danger' + i]) m = i;
   return m;
+}
+
+/* ---------- 連段盤操作（UI 用） ---------- */
+/* 把某招放進某格。同一招只能上一格——放進去之前先把它從別格拔掉。
+   回傳被換下來的招（給 UI 講「換下來的招不會消失」）。 */
+function setBoardSlot(row, col, fid) {
+  const p = G.player;
+  if (!p || !p.comboBoard) return null;
+  if ((p.boardRows || []).indexOf(row) < 0) return null;
+  const key = row + '_' + col;
+  const old = p.comboBoard[key] || null;
+  if (!fid) { delete p.comboBoard[key]; return old; }
+  if (!FINISHER_MAP[fid]) return null;
+  if ((p.ownedFinishers || []).indexOf(fid) < 0) return null;
+  for (const k in p.comboBoard) if (p.comboBoard[k] === fid) delete p.comboBoard[k];
+  p.comboBoard[key] = fid;
+  return old;
+}
+/* 這一招現在在盤上的哪一格（沒有就回 null） */
+function boardSlotOf(fid) {
+  const p = G.player;
+  if (!p || !p.comboBoard) return null;
+  for (const k in p.comboBoard) if (p.comboBoard[k] === fid) return k;
+  return null;
+}
+/* 還沒買的招（商店抽用）：這個職業的池扣掉已擁有的 */
+function unownedFinishers() {
+  const p = G.player;
+  const cls = G.char && G.char.id;
+  if (!cls || !FINISHER_POOL[cls]) return [];
+  const own = p.ownedFinishers || [];
+  return FINISHER_POOL[cls].filter(f => own.indexOf(f.id) < 0);
 }
