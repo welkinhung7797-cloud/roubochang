@@ -172,27 +172,50 @@ const MOVES = [
    沒有 COMBOS 條目的職業自動退回 OUGI 表（同一套語意）。
 */
 const COMBOS = {
+  /* 空手道連段樹：摔角手是位移破壞（把人搬走），空手道是定點破壞（人留原地、動的是力量）。
+     三種形態＝貫通(pierce_line)／震盪擴散(shock_nova)／釘身(全招不給 launch)。
+     釘身讓敵人聚成一團，聚團讓貫通線串更多人、震盪環圈更多人——這是正回饋，
+     轟飛反而會把自己的收益來源打散。 */
   karate: [
     { seq: ['S', 'S', 'S'], name: '貫手', kind: 'strike_heavy',
-      params: { dmg: 40, range: 140, stun: 0.4, critNext: true, pose: 'jab' },
-      desc: '兩拳定住對手，第三下五指併攏直接貫進去——最深的一擊，也是最沒有退路的一擊。' },
+      params: { dmg: 40, range: 140, stun: 0.4, radius: 70, cleaveMul: 0.35, lunge: 14,
+        critNext: true, pose: 'jab' },
+      ext: 'atemi', extName: '當身',
+      desc: 'AAA：兩拳定住對手，第三下五指併攏直接貫進去。馬上按 C＝當身，插進去的那一點從裡面炸開。' },
     { seq: ['S', 'S', 'M'], name: '後迴蹴', kind: 'sweep_ring',
-      params: { dmg: 22, radius: 130, knock: 240, stun: 0.35, color: '#c9d96a' },
-      desc: '站穩兩拳之後踏出去，整個人轉一圈，腳背從背後掃回來——被圍住時唯一的出路。' },
-    { seq: ['S', 'S', 'D'], name: '極正拳', kind: 'burst_single', sig: true,
-      params: { dmg: 110, critNext: true },
-      desc: '不動如山之後的那一步——全身的勁收在一個拳頭上，灌進要害。' },
+      params: { dmg: 22, radius: 130, knock: 240, stun: 0.35, color: '#c9d96a', img: 'fx_geri_arc' },
+      ext: 'empi', extName: '肘當',
+      desc: 'AAB：站穩兩拳之後踏出去，整個人轉一圈，腳背從背後掃回來。馬上按 C＝把掃攏的人用手肘一個一個頂穿。' },
+    { seq: ['M', 'M', 'M'], name: '橫蹴込', kind: 'pierce_line',
+      params: { dmg: 36, len: 230, width: 64, stun: 0.85, pose: 'kick' },
+      ext: 'tobi_ushiro', extName: '飛後迴蹴',
+      desc: 'BBB：跑動兩下之後側身把腳直直踹出去，一條線上的人全部被穿過去釘住。馬上按 C＝跳起來旋身把整圈掃平。' },
+    { seq: ['M', 'M', 'S'], name: '鐵槌打', kind: 'strike_heavy',
+      params: { dmg: 60, range: 140, stun: 1.0, radius: 100, cleaveMul: 0.5, lunge: 10,
+        pose: 'chop', img: 'fx_kime_burst' },
+      ext: 'tettsui_otoshi', extName: '鐵槌落',
+      desc: 'BBA：衝過來急停扎根，拳背當鐵鎚整個人的重量砸下去，地上震開一圈。馬上按 C＝再砸一次，這次連地板一起。' },
   ],
+  /* 劍豪連段樹：刀的破壞是累積的——每一刀留痕，痕滿三道就一刀兩斷，
+     斷開的十字刀光還會把斬痕傳染給旁邊的人。拔刀斬的收刀窗內斬痕加倍。 */
   kenshi: [
     { seq: ['S', 'S', 'S'], name: '袈裟斬', kind: 'strike_heavy',
-      params: { dmg: 45, range: 150, stun: 0.9, radius: 96, cleaveMul: 0.5, charge: 3, img: 'fx_slash_kesa', pose: 'chop' },
-      desc: '站定的第三刀不再試探：刀從肩線斜劈下去，砍中的人整個往下沉。' },
+      params: { dmg: 45, range: 150, stun: 0.9, radius: 96, cleaveMul: 0.5, charge: 3, cuts: 2,
+        img: 'fx_slash_kesa', pose: 'chop' },
+      ext: 'jumonji', extName: '十文字斬',
+      desc: 'AAA：站定的第三刀不再試探，刀從肩線斜劈下去，留下兩道斬痕。馬上按 C＝十文字斬。' },
     { seq: ['S', 'S', 'M'], name: '弧月斬', kind: 'sweep_ring',
-      params: { dmg: 24, radius: 165, knock: 130, stun: 0.3, color: '#b8c6dc', img: 'fx_slash_crescent' },
-      desc: '踏出去的那一步順勢把刀帶成一輪弧月，身邊一圈全部掃開。' },
-    { seq: ['S', 'S', 'D'], name: '十文字斬', kind: 'line_pierce', sig: true,
-      params: { dmg: 40, width: 76, len: 480, cross: true, crossLen: 300, crossMul: 0.8 },
-      desc: '先一刀貫穿整條直線衝到底，落地再反手橫掃一刀——兩道刀光在地上交成一個十字。' },
+      params: { dmg: 32, radius: 165, knock: 130, stun: 0.3, cuts: 1, color: '#b8c6dc', img: 'fx_slash_crescent' },
+      ext: 'ninotachi', extName: '二之太刀',
+      desc: 'AAB：踏出去那一步順勢把刀帶成一輪弧月，身邊一圈全部掛彩。馬上按 C＝二之太刀。' },
+    { seq: ['M', 'M', 'M'], name: '橫一文字', kind: 'line_pierce',
+      params: { dmg: 58, width: 70, len: 280, stun: 0.3, cuts: 1 },
+      ext: 'issen', extName: '一閃',
+      desc: 'BBB：跑起來的那一刀不收，橫著劃過去，站在那條線上的人全都掛了彩。馬上按 C＝一閃。' },
+    { seq: ['M', 'M', 'S'], name: '切落', kind: 'strike_heavy',
+      params: { dmg: 66, range: 130, stun: 1.0, radius: 70, cleaveMul: 0.35, cuts: 3, pose: 'chop', img: 'fx_slash_kesa' },
+      ext: 'karatake', extName: '唐竹割',
+      desc: 'BBA：衝到面前才停，腳一釘住刀就直直落下——三道斬痕直接推到引爆線。馬上按 C＝唐竹割。' },
   ],
   /* 摔角手連段樹（總監 2026-08-03 定案，A=原地 B=移動 C=DASH）：
      純拍＝普通傷害、混拍變體較強；每條收尾後 0.4 秒內按 C＝延伸技（有冷卻高威力）。
@@ -215,6 +238,32 @@ const COMBOS = {
       ext: 'gut_roll', extName: '抱腰翻滾',
       desc: 'AAB：站定兩下之後踏步勾住手臂，以腰為支點把人往前摔。馬上按 C＝抱著他在地上連續翻滾輾過去。' },
   ],
+};
+
+/* 延伸技表（資料驅動；摔角手的專屬摔投走引擎硬編碼分支） */
+const EXT_MOVES = {
+  /* 空手道：摔角手的延伸是「把人變成道具」，空手道的延伸是「把一擊變成一個形狀」
+     ——點(當身)／面(飛後迴蹴)／地(鐵槌落)／貼身(肘當)，四個形狀不重複，全部零轟飛。 */
+  atemi: { name: '當身', kind: 'shock_nova', shake: 13, hitstop: 0.12, sfx: 'ougi_hit',
+    params: { dmg: 88, rings: 3, radius: 90, falloff: 0.35, critNext: true, pose: 'jab' } },
+  tobi_ushiro: { name: '飛後迴蹴', kind: 'sweep_ring', shake: 12, hitstop: 0.1, sfx: 'swing_leg',
+    params: { dmg: 72, radius: 175, knock: 200, stun: 1.2, color: '#ffd44a', img: 'fx_geri_arc' } },
+  tettsui_otoshi: { name: '鐵槌落', kind: 'aoe_blast', shake: 15, hitstop: 0.13, sfx: 'quake',
+    params: { dmg: 85, radius: 200, stun: 1.6 } },
+  empi: { name: '肘當', kind: 'strike_heavy', shake: 12, hitstop: 0.13, sfx: 'hit_heavy',
+    params: { dmg: 90, range: 110, stun: 1.2, radius: 85, cleaveMul: 0.5,
+      lunge: 26, critNext: true, pose: 'elbow' } },
+
+  jumonji: { name: '十文字斬', kind: 'line_pierce', shake: 12, hitstop: 0.12, sfx: 'ougi_cast',
+    params: { dmg: 40, width: 76, len: 480, cross: true, crossLen: 300, crossMul: 0.8,
+      cuts: 2, crossCuts: 2, forceSever: true } },
+  ninotachi: { name: '二之太刀', kind: 'sweep_ring', shake: 11, hitstop: 0.1, sfx: 'swing_blade',
+    params: { dmg: 46, radius: 230, knock: 150, stun: 0.4, cuts: 2, severAll: true,
+      color: '#e8f2ff', img: 'fx_slash_crescent' } },
+  issen: { name: '一閃', kind: 'delayed_cuts', shake: 12, hitstop: 0.1, sfx: 'flash',
+    params: { len: 560, width: 64, cuts: 2, delay: 0.3, dmgPerCut: 16, n: 3, blink: true, stun: 0.5 } },
+  karatake: { name: '唐竹割', kind: 'execute_cut', shake: 15, hitstop: 0.14, sfx: 'swing_blade',
+    params: { dmg: 88, cutsBonus: 2, pose: 'chop' } },
 };
 
 /* 同拍共鳴／三段勁的職業版顯示名（機制共用，只換字；查無此職業就用通用名） */

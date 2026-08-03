@@ -405,6 +405,16 @@
     if (hard) playTone(55, 24, 0.42, 0.4, t0 + 0.01, 'sine');
   };
 
+  /* 斬斷：高頻金屬切＋長殘響——「切開了」的聲音跟「打到了」不同 */
+  window.sfxSever = function () {
+    if (muted || !ensureCtx()) return;
+    const t0 = ctx.currentTime;
+    playNoise(0.04, 3.4, 6200, 'highpass', 0.6);
+    playTone(2400, 900, 0.3, 0.16, t0, 'triangle');
+    playTone(1600, 620, 0.42, 0.12, t0 + 0.02, 'sine');
+    playTone(160, 60, 0.24, 0.3, t0 + 0.01, 'sine');
+  };
+
   window.sfxToggleMute = function () {
     muted = !muted;
     if (bgmBus) bgmBus.gain.value = muted ? 0 : bgmVol;

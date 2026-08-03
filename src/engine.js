@@ -13,6 +13,7 @@ if (typeof window === 'undefined' || !window.AudioContext) {
   var sfxThrow = function () {};
   var sfxComboBreak = function () {};
   var sfxWallCrash = function () {};
+  var sfxSever = function () {};
 }
 
 /* ---------- 亂數（可設種子，方便自動化測試重現） ---------- */
@@ -711,7 +712,11 @@ function addMomentum(n) {
    讓絕技整局都有存在感而不是前期玩具。
    ============================================================ */
 function techWaveScale() { return 1 + (G.wave - 1) * 0.08; }
-function techDmg(base) { return base * liveDamageMult() * techWaveScale() * TUNE.techDmgMul; }
+function techDmg(base) {
+  if (G.__comboDmgMul) return techDmgRaw(base) * G.__comboDmgMul;
+  return techDmgRaw(base);
+}
+function techDmgRaw(base) { return base * liveDamageMult() * techWaveScale() * TUNE.techDmgMul; }
 function grabMaster() { return G.char.special === 'grab_master'; }
 
 /* 統一的「摔投傷害」入口：摔角手與合氣道師範的加成都收在這 */
@@ -1925,7 +1930,7 @@ function updateTechniques(dt) {
         if (L.t <= 0 || s.t <= 0.02) {
           L.done = true;
           L.e.grabbed = false;
-          L.e.thrown = { vx: Math.cos(aL2) * 700, vy: Math.sin(aL2) * 700, t: 0.5, decay: 2.2 };
+          L.e.thrown = { vx: Math.cos(aL2) * 820, vy: Math.sin(aL2) * 820, t: 0.6, decay: 2.0 };
           L.e.spin = { v: (s.dx >= 0 ? -14 : 14), t: 0.45, a: 0 };
           L.e.stun = Math.max(L.e.stun, s.chargeStun || 1);
         }
@@ -2218,9 +2223,76 @@ function beatsMatch(log, seq) {
   return seq.every((b, i) => tail[i] === b);
 }
 /* 延伸技（總監定案：有冷卻高威力，共用 8 秒） */
+/* ---------- 斬痕（劍豪的破壞語言）----------
+   摔角手的破壞是動能（轟飛/撞牆/速度放大），刀不能抄那套：
+   刀的破壞是累積的——先留痕，痕夠深才一刀兩斷。
+   拔刀斬既有的「延遲連斬」就是這條線的第一句話，這裡把它展開成完整系統。
+*/
+function addCuts(e, k, srcAng) {
+  if (!e || e.dead || !k) return;
+  // 收刀窗內斬痕加倍：刀已出鞘、鯉口已切、刀還沒回去——這一秒每一刀都咬得更深
+  const p = G.player;
+  const dbl = (p && p.iaiPhase) ? 2 : 1;
+  e.cuts = Math.min(5, (e.cuts || 0) + k * dbl);
+  e.cutT = 4;
+  e.cutAng = srcAng !== undefined ? srcAng : (e.cutAng || 0);
+  if (e.cuts >= 3) severCheck(e);
+}
+
+/* 断ち：斬痕滿了就裂開。頭目斬不斷，改成斬鐵（每道痕掛流血） */
+function severCheck(e, bonus, force) {
+  if (!e || e.dead) return false;
+  const cuts = Math.min(5, (e.cuts || 0) + (bonus || 0));
+  if (cuts < 3 && !force) return false;
+  const p = G.player;
+  const big = e.boss || e.elite;
+  if (big) {
+    // 斬鐵：斬不斷的對手改成磨——每道痕一層流血，断ち轉成單體集中傷害
+    hurtEnemy(e, techDmg(24 * cuts), { trueDmg: true, crit: true });
+    e.bleed = Math.max(e.bleed || 0, 6 * cuts * liveDamageMult());
+    e.bleedTime = 3;
+    spawnFx('spark', e.x, e.y, '#ffffff', e.r, { angle: e.cutAng || 0 });
+  } else {
+    hurtEnemy(e, techDmg(20 * cuts), { trueDmg: true, crit: true });
+    // 十字刀光：劍豪版的「撞牆震波」——但它會把斬痕傳染出去
+    spawnFx('shock', e.x, e.y, '#e8f2ff', 90, { img: 'fx_ougi_cross' });
+    for (const o of G.enemies) {
+      if (o.dead || o === e) continue;
+      if (dist2(o.x, o.y, e.x, e.y) < 90 * 90) {
+        hurtEnemy(o, techDmg(14), { trueDmg: true });
+        if (!o.dead) { o.cuts = Math.min(5, (o.cuts || 0) + 1); o.cutT = 4; }
+      }
+    }
+  }
+  e.cuts = 0; e.cutT = 0;
+  e.severFlash = 0.3;
+  addHitstop(0.1, true);
+  G.screenShake = Math.max(G.screenShake, 10);
+  sfxSever();
+  addDmgNum(e.x, e.y - e.r - 12, '断', '#e8f2ff', true);
+  return true;
+}
+
+/* 延伸技通用執行器：資料驅動。
+   摔角手的專屬摔投走 switch 的硬編碼分支，其他職業用 EXT_MOVES 表（kind + params）即可。 */
 function castExtension(move, victim) {
   const p = G.player;
   p.extCd = 8;
+  // 資料驅動的延伸技：查表 → 走既有的 castOugi kind 管線
+  const def = (typeof EXT_MOVES !== 'undefined') && EXT_MOVES[move];
+  if (def) {
+    const okE = castOugi({ kind: def.kind, params: def.params }, victim);
+    if (okE) {
+      G.ougiBanner = { name: def.name, t: 1.2 };
+      G.screenShake = Math.max(G.screenShake, def.shake || 11);
+      addHitstop(def.hitstop || 0.1, true);
+      G.hitstopEcho = { delay: 0.06, dur: 0.05 };
+      if (def.sfx) sfx(def.sfx);
+      else sfx('ougi_cast');
+      p.comboSettle = 0.35;
+    } else p.extCd = 0;
+    return okE;
+  }
   switch (move) {
     case 'clothesline': {
       const ok1 = castOugi({ kind: 'charge_line',
@@ -2350,7 +2422,17 @@ function castCombo(c, target) {
   const p = G.player;
   if (c.sig) { if ((p.ougiCd || 0) > 0) return false; }
   else if ((p.comboCd || 0) > 0) return false;
+  // 蓄勁要能灌進收尾招：連段走 castOugi 繞過了 applyWeaponHit 的 focusStacks 結算，
+  // 不補這段的話「站定蓄滿五層 → 第三下貫手」那五層勁會原封不動留在身上。
+  const focusMul = 1 + (p.focusStacks || 0) * 0.25;
+  const prevDmgMul = G.__comboDmgMul;
+  G.__comboDmgMul = focusMul;
+  if (p.focusStacks > 0) {
+    addDmgNum(p.x, p.y - 34, '寸勁 ×' + focusMul.toFixed(2), '#e8964a');
+    p.focusStacks = 0;
+  }
   const ok = castOugi(c, target);
+  G.__comboDmgMul = prevDmgMul;
   if (!ok) return false;
   p.beatLog = []; p.beatT = 0;
   if (c.ext && (p.extCd || 0) <= 0) {
@@ -2427,6 +2509,8 @@ function castOugi(o, target) {
         }
       }
       if (!e0.dead && !e0.boss) e0.flat = { t: 0.9 };   // 收尾的受方＝攤平，句號的另一半
+      if (pr.cuts) addCuts(e0, pr.cuts, a0);
+      if (pr.launch && false) {}
       // 收尾之後把勁留給下一擊：貫手替下一拳上必爆、袈裟斬留殘心
       if (pr.critNext) p.guaranteedCrit = true;
       if (pr.charge) p.chargeHits = Math.max(p.chargeHits || 0, pr.charge);
@@ -2467,6 +2551,103 @@ function castOugi(o, target) {
       sfx('grab');
       ok = true; break;
     }
+    case 'delayed_cuts': {
+      // 斬擊的破壞性不是打飛，是「斬痕後才裂開」——沿用拔刀斬的延遲連斬語言
+      const dirC2 = dashDir();
+      const exD = Math.max(p.r, Math.min(ARENA.w - p.r, p.x + dirC2.x * (pr.len || 420)));
+      const eyD = Math.max(p.r, Math.min(ARENA.h - p.r, p.y + dirC2.y * (pr.len || 420)));
+      let anyD = false;
+      for (const o2 of G.enemies) {
+        if (o2.dead) continue;
+        const t3 = Math.max(0, Math.min(1,
+          ((o2.x - p.x) * (exD - p.x) + (o2.y - p.y) * (eyD - p.y)) / (dist2(p.x, p.y, exD, eyD) || 1)));
+        const qx2 = p.x + (exD - p.x) * t3, qy2 = p.y + (eyD - p.y) * t3;
+        if (dist2(o2.x, o2.y, qx2, qy2) < ((pr.width || 76) / 2 + o2.r) * ((pr.width || 76) / 2 + o2.r)) {
+          o2.iaiCut = { t: pr.delay || 0.3, n: pr.n || 3, dmg: techDmg(pr.dmgPerCut || pr.dmg || 16) };
+          o2.stun = Math.max(o2.stun, pr.stun || 0.6);
+          if (pr.cuts) addCuts(o2, pr.cuts, 0);
+          anyD = true;
+        }
+      }
+      spawnFx('heal_link', p.x, p.y, '#e8e4dc', 0, { tx: exD, ty: eyD, img: 'fx_ougi_slash' });
+      if (pr.blink) { p.x = exD; p.y = eyD; pushOutOfWalls(p); }
+      p.pose = { type: pr.pose || 'chop', ang: Math.atan2(dirC2.y, dirC2.x), t: 0, dur: 0.3, prio: 1 };
+      sfx('swing_blade');
+      ok = anyD || !!pr.blink;
+      break;
+    }
+    case 'pierce_line': {
+      // 貫穿突刺：一條線打穿，命中者定身＋下一擊必爆（空手道的「打穿」語言）
+      const dirP = dashDir();
+      const exP = Math.max(p.r, Math.min(ARENA.w - p.r, p.x + dirP.x * (pr.len || 260)));
+      const eyP = Math.max(p.r, Math.min(ARENA.h - p.r, p.y + dirP.y * (pr.len || 260)));
+      const aP = Math.atan2(dirP.y, dirP.x);
+      let anyP = false;
+      for (const o2 of G.enemies) {
+        if (o2.dead) continue;
+        const t4 = Math.max(0, Math.min(1,
+          ((o2.x - p.x) * (exP - p.x) + (o2.y - p.y) * (eyP - p.y)) / (dist2(p.x, p.y, exP, eyP) || 1)));
+        const qx3 = p.x + (exP - p.x) * t4, qy3 = p.y + (eyP - p.y) * t4;
+        if (dist2(o2.x, o2.y, qx3, qy3) < ((pr.width || 60) / 2 + o2.r) * ((pr.width || 60) / 2 + o2.r)) {
+          hurtEnemy(o2, techDmg(pr.dmg || 60), { crit: true, fromAngle: aP });
+          if (!o2.dead) {
+            o2.stun = Math.max(o2.stun, pr.stun || 0.8);
+            o2.hitSquash = Math.max(o2.hitSquash || 0, 0.28);
+            if (pr.launch && !o2.boss) {
+              o2.thrown = { vx: Math.cos(aP) * pr.launch, vy: Math.sin(aP) * pr.launch, t: 0.5, decay: 2.2 };
+            }
+          }
+          spawnFx('spark', o2.x, o2.y, '#ffd44a', o2.r, { angle: aP });
+          anyP = true;
+        }
+      }
+      spawnFx('swing', p.x, p.y, '#e8e4dc', pr.len || 260, { angle: aP, arc: 26, type: 'arc' });
+      if (pr.blink) { p.x = exP; p.y = eyP; pushOutOfWalls(p); }
+      p.pose = { type: pr.pose || 'jab', ang: aP, t: 0, dur: 0.28, prio: 1 };
+      if (pr.critNext) p.guaranteedCrit = true;
+      if (pr.cuts) for (const o3 of G.enemies) { if (!o3.dead && o3.hitByPierce) { addCuts(o3, pr.cuts, aP); o3.hitByPierce = false; } }
+      ok = anyP || !!pr.blink;
+      break;
+    }
+    case 'execute_cut': {
+      // 唐竹割：從頭頂直劈到底的單體處決——視同再加斬痕才引爆
+      const eX = target && !target.dead ? target : nearestEnemy(p.x, p.y, 160);
+      if (!eX) break;
+      const aX = Math.atan2(eX.y - p.y, eX.x - p.x);
+      p.pose = { type: pr.pose || 'chop', ang: aX, t: 0, dur: 0.34, prio: 1 };
+      hurtEnemy(eX, techDmg(pr.dmg || 88), { crit: true, fromAngle: aX });
+      if (!eX.dead) {
+        addCuts(eX, 1, aX);
+        severCheck(eX, pr.cutsBonus || 2, true);
+      }
+      spawnFx('swing', p.x, p.y, '#e8f2ff', 130, { angle: aX, arc: 40, type: 'arc', img: 'fx_slash_kesa' });
+      addHitstop(pr.hitstop || 0.14, true);
+      G.screenShake = Math.max(G.screenShake, 15);
+      sfx('swing_blade'); sfx('hit_blade');
+      ok = true; break;
+    }
+    case 'shock_nova': {
+      // 震盪擴散：以命中點為中心的多重環，一環比一環大（空手道的爆擊震盪放大版）
+      const eN = target && !target.dead ? target : nearestEnemy(p.x, p.y, 200);
+      const cx2 = eN ? eN.x : p.x, cy2 = eN ? eN.y : p.y;
+      if (eN) hurtEnemy(eN, techDmg(pr.dmg || 70), { crit: true });
+      const rings = pr.rings || 3;
+      for (let ri = 0; ri < rings; ri++) {
+        const rr2 = (pr.radius || 90) * (0.5 + 0.5 * (ri + 1) / rings) * (1 + ri * 0.55);
+        for (const o2 of G.enemies) {
+          if (o2.dead || o2 === eN) continue;
+          if (dist2(o2.x, o2.y, cx2, cy2) < rr2 * rr2) {
+            hurtEnemy(o2, techDmg((pr.dmg || 70) * (pr.falloff || 0.35)), { trueDmg: true });
+            if (!o2.dead) o2.stun = Math.max(o2.stun, 0.5);
+          }
+        }
+        spawnFx('shock', cx2, cy2, '#ffd44a', rr2, { img: 'fx_kime_burst' });
+      }
+      spawnFx('explode', cx2, cy2, '#ffffff', 100);
+      p.pose = { type: pr.pose || 'jab', ang: Math.atan2(cy2 - p.y, cx2 - p.x), t: 0, dur: 0.3, prio: 1 };
+      if (pr.critNext) p.guaranteedCrit = true;
+      ok = true; break;
+    }
     case 'sweep_ring': {
       // 迴身一整圈：解圍用，賣的是擊退不是傷害
       p.pose = { type: 'kick', ang: p.face > 0 ? 0 : Math.PI, t: 0, dur: 0.32, prio: 1 };
@@ -2481,6 +2662,8 @@ function castOugi(o, target) {
           const kb = o2.boss ? pr.knock * 0.2 : pr.knock;
           o2.knockX += Math.cos(ea) * kb; o2.knockY += Math.sin(ea) * kb;
           o2.stun = Math.max(o2.stun, o2.boss ? pr.stun * 0.4 : pr.stun);
+          if (pr.cuts) addCuts(o2, pr.cuts, ea);
+          if (pr.severAll) severCheck(o2);   // 二之太刀：圈內滿痕的一起引爆
         }
       }
       sfx('swing_leg');
@@ -2630,7 +2813,7 @@ function castOugi(o, target) {
         const px2 = p.x + (ex - p.x) * t, py2 = p.y + (ey - p.y) * t;
         if (dist2(e.x, e.y, px2, py2) < (pr.width / 2 + e.r) * (pr.width / 2 + e.r)) {
           hurtEnemy(e, techDmg(pr.dmg), { crit: chance(0.4), trueDmg: true });
-          if (!e.dead) e.stun = Math.max(e.stun, 0.5);
+          if (!e.dead) { e.stun = Math.max(e.stun, 0.5); if (pr.cuts) addCuts(e, pr.cuts, 0); }
         }
       }
       spawnFx('heal_link', p.x, p.y, '#e8e4dc', 0, { tx: ex, ty: ey, img: 'fx_ougi_slash' });
@@ -2647,7 +2830,12 @@ function castOugi(o, target) {
           const qx = ax + (bx - ax) * t2, qy = ay + (by - ay) * t2;
           if (dist2(e.x, e.y, qx, qy) < (pr.width / 2 + e.r) * (pr.width / 2 + e.r)) {
             hurtEnemy(e, techDmg(pr.dmg * (pr.crossMul || 0.8)), { crit: chance(0.4), trueDmg: true });
-            if (!e.dead) e.stun = Math.max(e.stun, 0.5);
+            if (!e.dead) {
+              e.stun = Math.max(e.stun, 0.5);
+              if (pr.crossCuts) addCuts(e, pr.crossCuts, 0);
+              // 十字交點：站在兩刀交會處是這遊戲最不該站的地方
+              if (pr.forceSever && dist2(e.x, e.y, ex, ey) < 70 * 70) severCheck(e, 0, true);
+            }
           }
         }
         spawnFx('heal_link', ax, ay, '#e8e4dc', 0, { tx: bx, ty: by });
@@ -3026,6 +3214,10 @@ function applyWeaponHit(w, e, reach, mulOverride, isEcho) {
     spawnFx('shock', e.x - Math.cos(angC) * e.r * 0.6, e.y - e.r * 0.35, '#ffffff', 26, { img: 'fx_chop_slap' });
   }
   if (!isEcho && (p.comboStep || 0) > 0 && !e.dead) p.lastComboVictim = e;
+  // 刀留痕：劍豪的每一刀都在累積，不是每一刀都要見效
+  if (!e.dead && w.klass === '刃' && G.char.id === 'kenshi') {
+    addCuts(e, isEcho ? 1 : 1, w.angle);   // 居合追斬（isEcho）同樣留痕
+  }
   // 連段中每一下命中：受方進遞增踉蹌——對手從第一下到收尾都沒機會站直，那才叫連段
   if (!isEcho && (p.comboStep || 0) > 0 && !e.dead && !e.boss) {
     e.reel = { t: 0.35 + 0.15 * p.comboStep, lean: 0.18 * p.comboStep };
@@ -3223,6 +3415,8 @@ function updateEnemies(dt) {
     if (e.hitFlash > 0) e.hitFlash -= dt;
     if (e.hitSquash > 0) e.hitSquash -= dt;
     if (e.chopHit) { e.chopHit.t -= dt; if (e.chopHit.t <= 0) e.chopHit = null; }
+    if (e.cutT > 0) { e.cutT -= dt; if (e.cutT <= 0) e.cuts = 0; }
+    if (e.severFlash > 0) e.severFlash -= dt;
     if (e.flat) { e.flat.t -= dt; if (e.flat.t <= 0) e.flat = null; }
     // 居合的延遲連斬：0.3 秒後才裂開，之後連續三段
     if (e.iaiCut) {
@@ -3231,6 +3425,7 @@ function updateEnemies(dt) {
       if (ic.t <= 0) {
         ic.n--;
         ic.t = 0.12;
+        if (G.char && G.char.id === 'kenshi') addCuts(e, 1, 0);
         sfx('hit_blade');
         spawnFx('spark', e.x, e.y, '#ffffff', e.r, { angle: rng() * Math.PI * 2 });
         hurtEnemy(e, ic.dmg, { crit: chance(0.35), trueDmg: true, noLifesteal: false });

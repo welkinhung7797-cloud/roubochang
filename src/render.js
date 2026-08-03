@@ -1333,7 +1333,43 @@ function drawEnemies() {
       ctx.globalAlpha = 1;
       ctx.filter = 'none';
       if ((e.face || 1) > 0) ctx.scale(-1, 1);
-      // 精英王冠
+      // 斬痕：身上累積的白色細線（角度跟著那一刀走）——刀的傷是看得見的
+    if (e.cuts > 0) {
+      ctx.save();
+      ctx.globalAlpha = 0.5 + Math.min(0.45, e.cuts * 0.12);
+      ctx.strokeStyle = e.cuts >= 3 ? '#ffe9a8' : '#eaf4ff';
+      ctx.lineWidth = e.cuts >= 3 ? 1.6 : 1.1;
+      for (let ci = 0; ci < e.cuts; ci++) {
+        const ca = (e.cutAng || 0) + ci * 0.5 - 0.5;
+        const off = (ci - (e.cuts - 1) / 2) * (e.r * 0.42);
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(ca) * -e.r * 0.85 - Math.sin(ca) * off, Math.sin(ca) * -e.r * 0.85 + Math.cos(ca) * off);
+        ctx.lineTo(Math.cos(ca) * e.r * 0.85 - Math.sin(ca) * off, Math.sin(ca) * e.r * 0.85 + Math.cos(ca) * off);
+        ctx.stroke();
+      }
+      if (e.cuts >= 3) {   // 滿痕：閃爍警示「下一刀就斷」
+        ctx.globalAlpha = 0.3 + Math.sin(G.time * 16) * 0.25;
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(0, 0, e.r * 1.15, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.restore();
+    }
+    // 斬斷的瞬間：白色裂光
+    if (e.severFlash > 0) {
+      const sk = e.severFlash / 0.3;
+      ctx.save();
+      ctx.globalAlpha = sk;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3 * sk + 1;
+      const sa = e.cutAng || 0;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(sa) * -e.r * 1.6, Math.sin(sa) * -e.r * 1.6);
+      ctx.lineTo(Math.cos(sa) * e.r * 1.6, Math.sin(sa) * e.r * 1.6);
+      ctx.stroke();
+      ctx.restore();
+    }
+    // 精英王冠
       if (e.elite) {
         ctx.fillStyle = '#e0c341'; ctx.strokeStyle = INK; ctx.lineWidth = 2;
         ctx.beginPath();
