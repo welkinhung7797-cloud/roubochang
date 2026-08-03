@@ -233,6 +233,7 @@ function drawArena() {
 const BASE_FRAMES = { loaded: 0, ready: false };
 const FRAME_DEFS = {
   idle: 2, walk: 4, punch: 3, grab: 2, hurt: 2, dash: 2, ko: 1,
+  stance: 2,   // 站樁架式（各職業自己的蓄勢語言；缺圖自動退回 idle）
 };
 const ACC_IMGS = {};   // charId -> Image（頭部配件）
 const FX_IMGS = {};    // fx 名 -> Image（招式特效貼圖，黑底發光）
@@ -311,13 +312,28 @@ function pickFrame(p) {
   }
   if (p.dead) return pick('ko', 0);
   if (p.hurtT > 0) return pick('hurt', p.hurtT > 0.15 ? 0 : 1);
-  if (p.dashState) return pick('dash', Math.floor(t * 10) % 2);
+  if (p.dashState) {
+    if (p.dashState.id === 'clothesline') return pick('dash', 1);   // 蹲低前傾＋程式彈跳＝奔跑
+    return pick('dash', Math.floor(t * 10) % 2);
+  }
   if (p.grabState) return pick('grab', p.grabState.mode === 'hold' && p.stillHold > 0.2 ? 1 : 0);
   if (p.pose && p.pose.prio >= 0 && p.pose.type !== 'stomp') {
+    // 打擊的時間天生不對稱：25% 預備、20% 接觸（hitstop 會凍住這格）、55% 跟隨。
+    // 三幀均分是「手刀讀不出來」的另一半原因。
     const k = Math.min(0.999, p.pose.t / p.pose.dur);
-    return pick('punch', Math.floor(k * 3));
+    return pick('punch', k < 0.25 ? 0 : (k < 0.45 ? 1 : 2));
   }
   if (p.moveTime > 0.05) return pick('walk', Math.floor((p.walkAnim / Math.PI) * 2) % 4);
+  // 站樁蓄力：專屬架式幀、越接近觸發拍得越急——「站著就有魔法」的解方
+  if (stillActive() && p.stillT > 0.5) {
+    const def = MOVE_MAP[p.moves.still];
+    let prog = 0;
+    if (p.focusStacks > 0 && def && def.max) prog = p.focusStacks / def.max;
+    else if (def && def.interval) prog = Math.min(1, p.stillTechTimer / def.interval);
+    if (prog >= 1 && p.focusStacks > 0) return pick('stance', 1);   // 勁滿定格：上膛了
+    const period = 0.3 - 0.16 * prog;
+    return pick('stance', Math.floor(t / period) % 2);
+  }
   return pick('idle', Math.floor(t * 1.6) % 2);
 }
 
@@ -331,6 +347,25 @@ function drawPlayerFramed(p, c) {
   if (p.face < 0) ctx.scale(-1, 1);
   const vAim = p.aimAng !== undefined ? Math.sin(p.aimAng) : 0;
   if (vAim) { ctx.rotate(vAim * 0.2); ctx.scale(1, 1 - 0.08 * Math.abs(vAim)); }
+  // 站樁蓄勢的身體語言（新幀到位前的程式版）：下沉、前傾、深呼吸、出力微顫
+  const stillK = Math.max(0, Math.min(1, (p.stillT || 0) / 0.5));
+  if (stillK > 0 && !p.dashState && !p.grabState) {
+    const breathe = Math.sin(G.time * Math.PI * 1.8) * 0.022 * stillK;
+    ctx.translate(Math.sin(G.time * Math.PI * 22) * 0.35 * stillK, FRAME_H * 0.05 * stillK);
+    ctx.rotate(-0.05 * stillK);
+    ctx.scale(1 + 0.045 * stillK, 1 - 0.06 * stillK + breathe);
+    if (p.stancePopT > 0) {
+      const pk = p.stancePopT / 0.08;
+      ctx.scale(1 + 0.1 * pk, 1 - 0.06 * pk);
+    }
+  }
+  // 飛奔金臂勾的奔跑循環：上下彈跳＋前傾搖擺——單幀也要看得出在跑
+  if (p.dashState && p.dashState.id === 'clothesline') {
+    const runT = (p.dashState.dur0 || 0.3) - p.dashState.t;
+    const bob = Math.sin(runT * Math.PI * 2 * 6.5);
+    ctx.translate(0, bob * 2.5);
+    ctx.rotate(0.2 + bob * 0.035);
+  }
   if (p.iframe > 0 && Math.floor(G.time * 20) % 2 === 0) ctx.filter = 'brightness(2.2)';
   ctx.drawImage(img, -w / 2, -FRAME_H * 0.62, w, FRAME_H);
   // 配件：疊在頭部（基底幀構圖固定，錨點統一）
@@ -1108,6 +1143,8 @@ function drawEnemies() {
     ctx.ellipse(0, e.r * 0.82, e.r * 0.85, e.r * 0.3, 0, 0, Math.PI * 2);
     ctx.fill();
 
+    // 被金臂勾掛倒：整個人翻著飛（腳離地才叫 clothesline）
+    if (e.spin) ctx.rotate(e.spin.a);
     // 妖怪貼圖模式：飄浮＋微透明＝幽靈感
     const imgKey = e.boss ? 'boss_' + e.id : e.id;
     loadEnemyImg(imgKey);

@@ -1561,13 +1561,68 @@ function updateTechniques(dt) {
   // ---- 衝刺 ----
   if (p.dashState) {
     const s = p.dashState;
+    if (s.pre && s.pre > 0) {
+      // 衝撞的預備拍：重心後撤（8px），給眼睛一條基準線
+      s.pre -= dt;
+      p.x -= s.dx * 60 * dt; p.y -= s.dy * 60 * dt;
+      pushOutOfWalls(p);
+      return;
+    }
     s.t -= dt;
     if (s.dur0 === undefined) s.dur0 = s.t + dt;
-    // 企鵝滑行曲線：起步爆發、後段滑行減速——是「滑」出去不是「閃」過去
+    // 企鵝滑行曲線：起步爆發、後段滑行減速——是「滑」出去不是「閃」過去。
+    // 衝撞類（accel）相反：前 25% 從三成速加速到滿速，之後定速——是「撞」進去。
     const slideK = Math.max(0, s.t / s.dur0);
-    const spdNow = s.spd * (0.55 + 0.75 * slideK);
+    const runK = 1 - slideK;   // 0→1 經過時間比
+    const spdNow = s.accel
+      ? s.spd * Math.min(1, 0.33 + runK / 0.25 * 0.67)
+      : s.spd * (0.55 + 0.75 * slideK);
     p.x += s.dx * spdNow * dt;
     p.y += s.dy * spdNow * dt;
+    // 飛奔金臂勾的寬走廊命中：手臂是整條橫桿（chargeW），不是貼身半徑
+    if (s.id === 'clothesline') {
+      const aL = Math.atan2(s.dy, s.dx);
+      for (const e of G.enemies) {
+        if (e.dead || e.grabbed || e.thrown || e.hitByDash) continue;
+        const relX = e.x - p.x, relY = e.y - p.y;
+        const along = relX * s.dx + relY * s.dy;
+        const side = Math.abs(-relX * s.dy + relY * s.dx);
+        if (along < -6 || along > 42 || side > (s.chargeW || 48) + e.r) continue;
+        e.hitByDash = true; s.hitAny = true;
+        hurtEnemy(e, techDmg(s.chargeDmg || 55) * (s.boost || 1), { crit: chance(0.35), fromAngle: aL });
+        if (!e.dead) {
+          if (e.boss) {
+            e.knockX += Math.cos(aL) * 76; e.knockY += Math.sin(aL) * 76;
+            e.stun = Math.max(e.stun, (s.chargeStun || 1) * 0.4);
+          } else {
+            e.grabbed = true; e.stun = 99;
+            s.latched.push({ e, t: 0.12, off: (s.latched.length % 2 ? -1 : 1) * (10 + s.latched.length * 4) });
+          }
+          e.hitSquash = Math.max(e.hitSquash || 0, 0.24);
+        }
+        s.spd *= 0.75;
+        sfx('throw_hit');
+        addHitstop(s.firstHitDone ? 0 : 0.09, true);
+        s.firstHitDone = true;
+      }
+    }
+    // 掛在臂彎上的人：跟著衝，0.12 秒後甩出去翻過去
+    if (s.latched && s.latched.length) {
+      const aL2 = Math.atan2(s.dy, s.dx);
+      for (const L of s.latched) {
+        if (L.done || L.e.dead) continue;
+        L.t -= dt;
+        L.e.x = p.x + s.dx * 26 - s.dy * L.off;
+        L.e.y = p.y + s.dy * 26 + s.dx * L.off;
+        if (L.t <= 0 || s.t <= 0.02) {
+          L.done = true;
+          L.e.grabbed = false;
+          L.e.thrown = { vx: Math.cos(aL2) * 620, vy: Math.sin(aL2) * 620, t: 0.45 };
+          L.e.spin = { v: (s.dx >= 0 ? -14 : 14), t: 0.45, a: 0 };
+          L.e.stun = Math.max(L.e.stun, s.chargeStun || 1);
+        }
+      }
+    }
     // 冰滑痕
     s.trailT = (s.trailT || 0) - dt;
     if (s.trailT <= 0) {
@@ -1625,18 +1680,26 @@ function updateTechniques(dt) {
           }
           break;
         } else if (s.id === 'clothesline' && !e.hitByDash) {
-          // 飛奔金臂勾：奔跑中掛到誰誰倒，不停步、貫穿整排
+          // 飛奔金臂勾：金臂勾的定義是把人的腳掀離地面——掛到的人翻著飛出去，
+          // 不是被推走。撞一個掉一次速（被人牆拖住的重量感）。
           e.hitByDash = true; s.hitAny = true;
           const aL = Math.atan2(s.dy, s.dx);
           hurtEnemy(e, techDmg(s.chargeDmg || 55) * (s.boost || 1), { crit: chance(0.35), fromAngle: aL });
           if (!e.dead) {
-            const kb = e.boss ? (s.chargeKnock || 380) * 0.2 : (s.chargeKnock || 380);
-            e.knockX += Math.cos(aL) * kb; e.knockY += Math.sin(aL) * kb;
-            e.stun = Math.max(e.stun, e.boss ? (s.chargeStun || 1) * 0.4 : (s.chargeStun || 1));
+            if (e.boss) {
+              e.knockX += Math.cos(aL) * 76; e.knockY += Math.sin(aL) * 76;
+              e.stun = Math.max(e.stun, (s.chargeStun || 1) * 0.4);
+            } else {
+              // 先掛在臂彎上帶走一小段，才甩出去翻——這是金臂勾跟爆炸的差別
+              e.grabbed = true; e.stun = 99;
+              s.latched.push({ e, t: 0.12, off: (s.latched.length % 2 ? -1 : 1) * (10 + s.latched.length * 4) });
+            }
             e.hitSquash = Math.max(e.hitSquash || 0, 0.24);
           }
-          sfx('hit_heavy');
-          addHitstop(0.05, true);
+          s.spd *= 0.75;
+          sfx('throw_hit');
+          addHitstop(s.hitAny && s.firstHitDone ? 0 : 0.09, true);
+          s.firstHitDone = true;
         } else if (s.id === 'seiken' && !e.hitByDash) {
           // 飛込正拳：只打碰到的第一個敵人，釘住，下一拳必定爆擊
           e.hitByDash = true; s.hitAny = true;
@@ -1996,7 +2059,8 @@ function castOugi(o, target) {
       const spdC = pr.chargeSpd || 820;
       p.dashState = {
         id: 'clothesline', dx: dirC.x, dy: dirC.y,
-        t: pr.len / spdC, spd: spdC,
+        t: pr.len / spdC, spd: spdC, accel: true,
+        pre: 0.13, latched: [],
         chargeDmg: pr.dmg, chargeKnock: pr.knock, chargeStun: pr.stun,
         chargeW: pr.width / 2, boost: 1,
       };
@@ -2248,10 +2312,11 @@ function updateWeapons(dt) {
 function fireWeapon(w, reach) {
   const p = G.player;
   w.swing = 1;
-  w.swingDir *= -1;
+  if (w.klass !== '摔技') w.swingDir *= -1;   // 摔技鎖定揮向：圖與刀路不准反向
   // 揮武器時手臂跟著出去（起手式姿勢優先，不覆蓋）
   if (!p.pose || p.pose.prio !== 1) {
-    p.pose = { type: w.klass === '摔技' ? 'chop' : 'swing', ang: w.angle, t: 0, dur: 0.2, prio: 0 };
+    p.pose = { type: w.klass === '摔技' ? 'chop' : 'swing', ang: w.angle, t: 0,
+      dur: w.klass === '摔技' ? 0.26 : 0.2, prio: 0 };
   }
 
   if (w.type === 'grab') {
@@ -2306,8 +2371,14 @@ function spawnStrike(w, reach) {
     s.ang0 = w.angle - half * w.swingDir;
     s.ang1 = w.angle + half * w.swingDir;
     s.cur = s.ang0;
-    s.dur = Math.max(0.12, Math.min(0.3, w.cd * 0.24));   // 勾拳快、打刀沉、重械慢
-    w.swingDur = s.dur;
+    if (w.klass === '摔技') {
+      // 手刀：110ms 引手（不掃描）→ 60ms 接觸窗一口氣掃完。接觸是瞬間，不攤在整段上。
+      s.windup = 0.11;
+      s.dur = 0.06;
+    } else {
+      s.dur = Math.max(0.12, Math.min(0.3, w.cd * 0.24));   // 勾拳快、打刀沉、重械慢
+    }
+    w.swingDur = s.dur + (s.windup || 0);
   } else if (w.type === 'spin') {
     s.kind = 'orbit';
     s.cur = w.angle;
@@ -2360,6 +2431,7 @@ function updateStrikes(dt) {
       }
       if (s.traveled >= s.maxDist) s.dead = true;
     } else if (s.kind === 'sweep' || s.kind === 'orbit') {
+      if (s.windup && s.windup > 0) { s.windup -= dt; s.t = 0; continue; }
       const k = Math.min(1, s.t / s.dur);
       const prev = s.cur;
       s.cur = s.kind === 'sweep'
@@ -2594,8 +2666,20 @@ function updatePlayer(dt) {
   pushOutOfWalls(p);
   p.walkAnim += moving ? dt * 10 : -p.walkAnim * dt * 8;
 
-  if (moving) { p.moveTime = Math.min(1, p.moveTime + dt); p.stillT = 0; }
-  else { p.moveTime = 0; p.stillT += dt; }
+  if (moving) { p.moveTime = Math.min(1, p.moveTime + dt); p.stillT = 0; p.stancePop = false; }
+  else {
+    p.moveTime = 0;
+    const prevStill = p.stillT;
+    p.stillT += dt;
+    // 架式成形的那一拍：收束環＋定住——玩家要知道 0.5 秒到了
+    if (prevStill < 0.5 && p.stillT >= 0.5 && !p.stancePop) {
+      p.stancePop = true;
+      const md = MOVE_MAP[p.moves.still];
+      spawnFx('shock', p.x, p.y, (md && md.color) || '#e8e4dc', 26);
+      p.stancePopT = 0.08;
+    }
+    if (p.stancePopT > 0) p.stancePopT -= dt;
+  }
 
   if (p.iframe > 0) p.iframe -= dt;
   if (p.armorBuffT > 0) { p.armorBuffT -= dt; if (p.armorBuffT <= 0) p.armorBuff = 0; }
@@ -2672,13 +2756,26 @@ function updateEnemies(dt) {
       if (e.dead) continue;
     }
 
-    // 被抓住＝身體歸玩家管，AI 完全停擺
-    if (e.grabbed) continue;
+    // 被抓住＝身體歸玩家管，AI 完全停擺。
+    // 安全網：確認真的有人持有他（擒抱/飛天摔/迴旋摔/扛人衝刺/掛臂），沒有就當場釋放。
+    if (e.grabbed) {
+      const pl = G.player;
+      const held = pl && !pl.dead && (
+        (pl.grabState && (pl.grabState.e === e || pl.grabState.carried === e)) ||
+        (pl.airSlam && pl.airSlam.e === e) ||
+        (pl.dashState && (pl.dashState.carried === e ||
+          (pl.dashState.latched && pl.dashState.latched.some(L => L.e === e && !L.done)))));
+      if (held) continue;
+      e.grabbed = false;
+      e.stun = Math.min(e.stun, 0.8);
+      e.thrown = { vx: 0, vy: 0, t: 0.1 };
+    }
 
     // 被扔出去：飛行中撞傷沿路的敵人，撞牆自己再吃一次
     if (e.thrown) {
       const th = e.thrown;
       th.t -= dt;
+      if (e.spin) { e.spin.a += e.spin.v * dt; e.spin.t -= dt; if (e.spin.t <= 0) e.spin = null; }
       e.x += th.vx * dt; e.y += th.vy * dt;
       th.vx *= Math.pow(0.05, dt); th.vy *= Math.pow(0.05, dt);
       for (const o of G.enemies) {
