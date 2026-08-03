@@ -220,7 +220,7 @@ function startWave(w) {
   P.dashCd = 0; P.moveTechTimer = 0; P.stillTechTimer = 0; P.counterProcCd = 0;
   P.focusStacks = 0; P.focusT = 0; P.breathAcc = 0;
   P.flashHasteT = 0; P.staggerT = 0; P.pose = null;
-  P.iaiWindup = 0; P.iaiDef = null; P.sheathing = 0;
+  P.iaiPhase = null; P.sheathing = 0;
   P.jawUsed = false; P.killHasteT = 0; P.stillT = 0; P.bellPlateCd = 0;
   // 醉仙葫蘆：每波隨機一項大強化
   if (hasItem('drunken_gourd')) {
@@ -758,23 +758,33 @@ function castDash() {
     case 'flash_step': ok = techFlashStep(d); break;
     case 'mountain_bash': ok = techMountainBash(d); break;
     case 'knee_dash': ok = dashGeneric(d, 'knee'); break;
-    case 'drunk_roll':
-      ok = dashGeneric(d, 'roll');
-      if (ok) p.iframe = Math.max(p.iframe, d.dashDur + 0.12);   // 全程無敵
-      break;
+    case 'drunk_roll': ok = dashGeneric(d, 'roll'); break;
     case 'suplex_grab': ok = dashGeneric(d, 'suplex'); break;
-    case 'iai_slash':
-      // 居合：先停頓拔刀，再爆發——iaiWindup 走完才真正衝
-      p.iaiWindup = d.windup || 0.28;
-      p.iaiDef = d;
-      p.pose = { type: 'iaidraw', ang: 0, t: 0, dur: d.windup || 0.28, prio: 1 };
-      sfx('draw');
+    case 'iai_slash': {
+      // 居合三段式：甩刀（有傷害）→ 反拿水平收刀 → 瞬移閃光，線上敵人延遲連斬
+      const ang0 = (() => {
+        const t = nearestEnemy(p.x, p.y, 500);
+        return t ? Math.atan2(t.y - p.y, t.x - p.x) : (p.face > 0 ? 0 : Math.PI);
+      })();
+      // 第一段：前方甩刀
+      sfx('swing_blade');
+      spawnFx('swing', p.x, p.y, '#bfd4e8', 90, { angle: ang0, arc: 100, type: 'arc' });
+      p.pose = { type: 'chop', ang: ang0, t: 0, dur: 0.15, prio: 1 };
+      for (const e of G.enemies) {
+        if (e.dead || e.grabbed || e.thrown) continue;
+        const dd = Math.hypot(e.x - p.x, e.y - p.y);
+        if (dd > 90 + e.r) continue;
+        const ea = Math.atan2(e.y - p.y, e.x - p.x);
+        if (Math.abs(angDiff(ea, ang0)) > 0.95) continue;
+        addBeat('D');
+        hurtEnemy(e, techDmg(12), { fromAngle: ang0 });
+      }
+      // 進入收刀段，之後在 updateTechniques 走完整條鏈
+      p.iaiPhase = { phase: 'sheath', t: 0.3, boost: 0 };
       ok = true;
       break;
-    case 'shadow_dash':
-      ok = dashGeneric(d, 'shadow');
-      if (ok) p.iframe = Math.max(p.iframe, d.dashDur + 0.15);   // 全程無敵、穿人、零傷害
-      break;
+    }
+    case 'shadow_dash': ok = dashGeneric(d, 'shadow'); break;   // 穿人但不無敵——這遊戲的衝刺沒有無敵
     case 'sumo_press': ok = techSumoPress(d); break;
   }
   if (ok) {
@@ -1002,7 +1012,6 @@ function techFlashStep() {
   const a = Math.atan2(tgt.y - p.y, tgt.x - p.x);
   p.x = Math.max(p.r, Math.min(ARENA.w - p.r, tgt.x + Math.cos(a) * (tgt.r + 26)));
   p.y = Math.max(p.r, Math.min(ARENA.h - p.r, tgt.y + Math.sin(a) * (tgt.r + 26)));
-  p.iframe = Math.max(p.iframe, 0.4);
   p.guaranteedCrit = true;
   p.flashHasteT = 2;
   spawnFx('burst', p.x, p.y, '#79d9c0', 20);
@@ -1070,11 +1079,44 @@ function updateTechniques(dt) {
   if (p.counterProcCd > 0) p.counterProcCd -= dt;
   if (p.ougiField > 0) p.ougiField -= dt;
   if (p.hurtT > 0) p.hurtT -= dt;
-  if (p.iaiWindup > 0) {
-    p.iaiWindup -= dt;
-    if (p.iaiWindup <= 0 && p.iaiDef) {
-      dashGeneric(p.iaiDef, 'iai');
-      p.iaiDef = null;
+  // 居合鏈：收刀 → 瞬移閃光 → 線上敵人掛延遲連斬
+  if (p.iaiPhase) {
+    const ip = p.iaiPhase;
+    ip.t -= dt;
+    if (ip.phase === 'sheath' && ip.t <= 0) {
+      sfx('sheathe');
+      // 瞬移：方向鍵指定方向優先，沒按就朝面向
+      const k = G.keys;
+      let dx = 0, dy = 0;
+      if (k['a'] || k['arrowleft']) dx -= 1;
+      if (k['d'] || k['arrowright']) dx += 1;
+      if (k['w'] || k['arrowup']) dy -= 1;
+      if (k['s'] || k['arrowdown']) dy += 1;
+      if (dx === 0 && dy === 0) {
+        const dir = dashDir();
+        dx = dir.x; dy = dir.y;
+      } else {
+        const l = Math.hypot(dx, dy); dx /= l; dy /= l;
+      }
+      const x0 = p.x, y0 = p.y;
+      p.x = Math.max(p.r, Math.min(ARENA.w - p.r, p.x + dx * 400));
+      p.y = Math.max(p.r, Math.min(ARENA.h - p.r, p.y + dy * 400));
+      pushOutOfWalls(p);
+      sfx('flash');
+      addHitstop(0.08, true);
+      spawnFx('iailine', x0, y0, '#ffffff', 0, { tx: p.x, ty: p.y });
+      // 線廊道上的敵人：0.3 秒後裂開——延遲三連斬
+      for (const e of G.enemies) {
+        if (e.dead || e.grabbed || e.thrown) continue;
+        const t2 = Math.max(0, Math.min(1,
+          ((e.x - x0) * (p.x - x0) + (e.y - y0) * (p.y - y0)) / (dist2(x0, y0, p.x, p.y) || 1)));
+        const lx = x0 + (p.x - x0) * t2, ly = y0 + (p.y - y0) * t2;
+        if (dist2(e.x, e.y, lx, ly) < (36 + e.r) * (36 + e.r)) {
+          e.iaiCut = { t: 0.3, n: 3, dmg: techDmg(16) * (1 + (ip.boost || 0)) };
+          addBeat('D');
+        }
+      }
+      p.iaiPhase = null;
     }
   }
   if (p.sheathing > 0) {
@@ -2077,7 +2119,7 @@ function updatePlayer(dt) {
   if (k['w'] || k['arrowup']) my -= 1;
   if (k['s'] || k['arrowdown']) my += 1;
   // 衝刺中身體不歸自己管；踉蹌時腿軟
-  if (p.dashState || p.staggerT > 0 || p.iaiWindup > 0) { mx = 0; my = 0; }
+  if (p.dashState || p.staggerT > 0 || (p.iaiPhase && p.iaiPhase.phase === 'sheath')) { mx = 0; my = 0; }
   const len = Math.hypot(mx, my);
   const moving = len > 0;
   if (moving) { mx /= len; my /= len; if (mx !== 0) p.face = mx > 0 ? 1 : -1; }
@@ -2142,6 +2184,19 @@ function updateEnemies(dt) {
     e.anim += dt * 6;
     if (e.hitFlash > 0) e.hitFlash -= dt;
     if (e.hitSquash > 0) e.hitSquash -= dt;
+    // 居合的延遲連斬：0.3 秒後才裂開，之後連續三段
+    if (e.iaiCut) {
+      const ic = e.iaiCut;
+      ic.t -= dt;
+      if (ic.t <= 0) {
+        ic.n--;
+        ic.t = 0.12;
+        sfx('hit_blade');
+        spawnFx('spark', e.x, e.y, '#ffffff', e.r, { angle: rng() * Math.PI * 2 });
+        hurtEnemy(e, ic.dmg, { crit: chance(0.35), trueDmg: true, noLifesteal: false });
+        if (ic.n <= 0 || e.dead) e.iaiCut = null;
+      }
+    }
     if (e.hyperArmorT > 0) e.hyperArmorT -= dt;
     if (e.stunAcc > 0) e.stunAcc -= dt * 0.5;
     if (e.slow > 0) e.slow -= dt;
@@ -2682,6 +2737,7 @@ function spawnFx(type, x, y, color, size, extra) {
   if (type === 'swing') f.life = 0.22;
   if (type === 'spark') f.life = 0.2;
   if (type === 'slide') f.life = 0.5;
+  if (type === 'iailine') f.life = 0.6;
   if (type === 'explode') f.life = 0.5;
   if (type === 'shock') f.life = 0.45;
   if (type === 'burst_start') f.life = 0.6;

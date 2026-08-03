@@ -1218,7 +1218,9 @@ function drawBoss(e, col, flash) {
 /* 武器類別 → 特效貼圖（招式差異的本體：同一套動畫，不同的靈氣） */
 function fxForWeapon(w) {
   if (w.klass === '刃') return 'fx_slash';
-  if (w.klass === '摔技' || w.klass === '掌' || w.klass === '相撲') return 'fx_chop';
+  if (w.klass === '摔技') return FX_IMGS.fx_tegatana ? 'fx_tegatana' : 'fx_chop';   // 摔角的手刀
+  if (w.klass === '掌' || w.klass === '相撲') return 'fx_chop';
+  if (w.klass === '拳') return FX_IMGS.fx_seiken ? 'fx_seiken' : 'fx_punch';        // 空手道的正拳
   return 'fx_punch';
 }
 
@@ -1228,6 +1230,7 @@ function drawStrikes() {
   for (const s of G.strikes) {
     const w = s.w;
     // 特效貼圖模式：黑底發光圖用加法混合疊上去
+    loadFx('fx_tegatana'); loadFx('fx_seiken');
     const fxName = fxForWeapon(w);
     loadFx(fxName); loadFx('fx_impact');
     const fxImg = FX_IMGS[fxName];
@@ -1239,14 +1242,19 @@ function drawStrikes() {
         : 1 - Math.min(1, s.t / (s.dur || 0.2));
       ctx.globalAlpha = 0.55 + 0.45 * kLife;
       if (s.kind === 'thrust') {
-        const sz = 34;
+        // 拳影從小到大「打出去」，不是憑空出現
+        const grow = Math.min(1, 0.35 + s.traveled / 45);
+        const sz = 34 * grow;
         ctx.translate(s.x, s.y);
         ctx.rotate(s.ang);
         ctx.drawImage(fxImg, -sz / 2, -sz / 2, sz, sz);
       } else if (s.kind === 'sweep' || s.kind === 'orbit') {
-        const sz = s.reach * 1.15;
+        // 刀光隨掃掠「長出來」：0.13 秒內展開
+        const kGrow = Math.min(1, s.t / ((s.dur || 0.2) * 0.7));
+        const sz = s.reach * 1.15 * (0.45 + 0.55 * kGrow);
         ctx.translate(p.x, p.y);
         ctx.rotate(s.cur);
+        ctx.globalAlpha *= (0.4 + 0.6 * kGrow);
         ctx.drawImage(fxImg, -sz * 0.1, -sz / 2, sz, sz);
       } else if (s.kind === 'slam') {
         const k = Math.min(1, s.t / s.delay);
@@ -1473,6 +1481,18 @@ function drawFxOver() {
         ctx.lineTo(f.x + Math.cos(a) * d1, f.y + Math.sin(a) * d1);
         ctx.stroke();
       }
+      ctx.restore();
+    } else if (f.type === 'iailine') {
+      // 居合的軌跡：一道白光，亮起再淡去
+      ctx.save();
+      const kk = f.t / f.life;
+      ctx.globalAlpha = kk < 0.15 ? kk / 0.15 : 1 - (kk - 0.15) / 0.85;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 5 * (1 - kk * 0.6);
+      ctx.beginPath(); ctx.moveTo(f.x, f.y); ctx.lineTo(f.tx, f.ty); ctx.stroke();
+      ctx.strokeStyle = '#bfe8f5';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(f.x, f.y + 2); ctx.lineTo(f.tx, f.ty + 2); ctx.stroke();
       ctx.restore();
     } else if (f.type === 'slide') {
       // 企鵝滑行的冰痕：兩道短平行線淡出
