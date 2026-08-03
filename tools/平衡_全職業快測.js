@@ -39,7 +39,7 @@ for (const id of CHARS) {
   let r;
   try {
     r = vm.runInContext(
-      `window.__test.simulate(${JSON.stringify(id)}, ${danger}, ${seed}, 1800)`, sandbox);
+      `window.__test.simulate(${JSON.stringify(id)}, ${danger}, ${seed}, 4200)`, sandbox);
   } catch (e) {
     fails.push(id + ' → 例外：' + e.message);
     console.log(id.padEnd(10) + '例外  ' + e.message);

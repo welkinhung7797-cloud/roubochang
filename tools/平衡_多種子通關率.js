@@ -37,7 +37,7 @@ for (const c of CHARS) {
   let win = 0;
   for (const seed of SEEDS) {
     const r = vm.runInContext(
-      `window.__test.simulate(${JSON.stringify(c.id)}, ${danger}, ${seed}, 1800)`, sb);
+      `window.__test.simulate(${JSON.stringify(c.id)}, ${danger}, ${seed}, 4200)`, sb);
     if (r.result === 'victory') win++;
     waves.push(r.wave); kills.push(r.kills);
   }

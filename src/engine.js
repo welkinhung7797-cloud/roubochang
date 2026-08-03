@@ -216,11 +216,14 @@ function startRun(charId, danger) {
 function startWave(w) {
   G.wave = w;
   G.waveTime = 0;
+  G.spawnClosed = false;   // 出兵時間到了沒
+  G.waveKills = 0; G.waveMat = 0; G.waveDmg = 0;
+  G.tally = null;
   G.waveDur = waveDuration(w);
   G.waveEnding = 0;
   G.enemies = []; G.projectiles = []; G.fx = []; G.strikes = [];
   G.hitstop = 0; G.hitstopCd = 0;
-  G.comboHits = 0; G.comboT = 0;
+  G.comboHits = 0; G.comboT = 0; G.comboBest = 0;
   G.player.x = ARENA.w / 2; G.player.y = ARENA.h / 2;
   G.player.iframe = 1.0;
   G.player.momentum = 0; G.player.burst = 0;
@@ -491,6 +494,7 @@ function hurtEnemy(e, amount, opts) {
   if (dmg >= 3) {
     G.screenShake = Math.max(G.screenShake, Math.min(9, 1 + dmg * 0.12));
     G.comboHits = (G.comboHits || 0) + 1;
+    if (G.comboHits > (G.comboBest || 0)) G.comboBest = G.comboHits;
     G.comboT = 2;
     G.comboPop = 0.18;
     e.hitSquash = 0.16;
@@ -517,6 +521,7 @@ function killEnemy(e) {
   if (e.dead) return;
   e.dead = true;
   G.kills++;
+  G.waveKills = (G.waveKills || 0) + 1;
   addHitstop(e.elite || e.boss ? 0.10 : 0.05, true);
   if (hasItem('swift_tabi')) G.player.killHasteT = 2;
   G.screenShake = Math.max(G.screenShake, e.boss ? 20 : (e.elite ? 6 : 2));
@@ -4034,6 +4039,7 @@ function collectPickup(it) {
   const p = G.player;
   if (it.type === 'mat') {
     G.materials += it.value;
+    G.waveMat = (G.waveMat || 0) + it.value;
     G.totalMaterials += it.value;
     gainXp(it.value);
     if (hasItem('training_gi')) healPlayer(1);
@@ -4114,25 +4120,59 @@ function chooseLevelUp(idx) {
 
 /* ---------- 波次結束 ---------- */
 function updateWave(dt) {
+  if ((G.spawnClosedT || 0) > 0) G.spawnClosedT -= dt;
+  if (G.tally) {
+    G.tally.t += dt;
+    // 演完之後等玩家按鍵，或 1.4 秒後自動走（不要逼玩家等，也不要來不及看）
+    if (G.tally.t >= G.tally.dur + 1.4 || (G.tally.t >= G.tally.dur * 0.8 && G.tallySkip)) {
+      G.tallySkip = false;
+      const t = G.tally; G.tally = null;
+      finishWaveReal(t);
+    }
+    return;
+  }
   if (G.waveEnding > 0) {
     G.waveEnding -= dt;
     if (G.waveEnding <= 0) finishWave();
     return;
   }
-  G.waveTime += dt;
-  if (G.waveTime >= G.waveDur) {
-    // 頭目波不看碼表：頭目沒倒就一直打，只是不再補一般敵人
-    if (isBossWave(G.wave) && G.enemies.some(e => e.boss)) {
+  if (!G.spawnClosed) {
+    G.waveTime += dt;
+    if (G.waveTime >= G.waveDur) {
+      // 出兵時間到：不再補人，但這一波還沒結束——場上的要殺光。
+      // （舊行為是碼表一到就直接跳結算，剩下的敵人憑空消失，很突兀。）
+      G.spawnClosed = true;
       G.spawnBudget = 0;
-      return;
+      sfx('quake');   // 出兵停止：一記悶響，跟一般命中音分家
+      G.spawnClosedT = 2.2;
     }
-    G.waveEnding = 1.4;
+    return;
   }
+  // 清場階段：殺光才進結算
+  if (G.enemies.some(e => !e.dead)) return;
+  G.waveEnding = 1.4;   // 先把地上的素材吸乾淨，再跑結算
 }
 
 function finishWave() {
   G.pickups.forEach(it => { if (!it.dead) collectPickup(it); });
   G.pickups = [];
+  // 結算演出：數字一格一格跳出來，不要「忽然卡掉」直接進商店（總監 2026-08-04 指令）
+  if (!G.tally) {
+    const harvestPre = Math.round(G.player.stats.harvest * (1 + G.wave * 0.15));
+    G.tally = {
+      t: 0, dur: 2.9, wave: G.wave,
+      kills: G.waveKills || 0, mat: G.waveMat || 0,
+      harvest: harvestPre, hp: Math.round(G.player.hp), maxHp: Math.round(G.player.maxHp),
+      best: G.comboBest || 0,
+    };
+    sfx('levelup');
+    return;
+  }
+  finishWaveReal(null);
+}
+
+/* 結算演完之後才真的過關 */
+function finishWaveReal() {
   G.player.hp = G.player.maxHp;   // 波間回滿：每一波都是新的擂台
   G.enemies = [];
   G.projectiles = [];

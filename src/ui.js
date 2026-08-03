@@ -767,6 +767,8 @@ function initPauseMenu() {
 /* ---------- 輸入 ---------- */
 function initInput() {
   window.addEventListener('keydown', e => {
+    // 結算演出：演完八成之後任意鍵快轉
+    if (G.tally) { G.tallySkip = true; }
     const k = e.key.toLowerCase();
     G.keys[k] = true;
     if (k === ' ' || k === 'arrowup' || k === 'arrowdown') e.preventDefault();

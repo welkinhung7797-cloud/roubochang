@@ -2435,8 +2435,33 @@ function drawHud() {
     ctx.textAlign = 'left';
   }
 
-  // 波末提示
-  if (G.waveEnding > 0) {
+  // 出兵停止 → 殲滅剩餘 → 回收 → 結算，四段各有各的畫面，不要忽然卡掉
+  if (G.spawnClosed && !G.tally) {
+    const left = G.enemies.filter(e => !e.dead).length;
+    ctx.textAlign = 'center';
+    if ((G.spawnClosedT || 0) > 0) {
+      // 剛停止出兵：大字報一次就好，之後退成常駐小字
+      const k = Math.min(1, G.spawnClosedT / 2.2);
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, k * 2.4);
+      ctx.font = 'bold 44px ' + FONT;
+      ctx.lineWidth = 8; ctx.strokeStyle = INK;
+      ctx.strokeText('不再增援', VIEW.w / 2, VIEW.h * 0.3);
+      ctx.fillStyle = '#ffd44a';
+      ctx.fillText('不再增援', VIEW.w / 2, VIEW.h * 0.3);
+      ctx.restore();
+    }
+    if (left > 0) {
+      ctx.font = 'bold 22px ' + FONT;
+      ctx.lineWidth = 5; ctx.strokeStyle = INK;
+      const msg = '殲滅剩餘 ' + left;
+      ctx.strokeText(msg, VIEW.w / 2, 92);
+      ctx.fillStyle = '#e8964a';
+      ctx.fillText(msg, VIEW.w / 2, 92);
+    }
+    ctx.textAlign = 'left';
+  }
+  if (G.waveEnding > 0 && !G.tally) {
     ctx.textAlign = 'center';
     ctx.font = 'bold 36px ' + FONT;
     ctx.lineWidth = 6; ctx.strokeStyle = INK;
@@ -2445,6 +2470,7 @@ function drawHud() {
     ctx.fillText('回收素材', VIEW.w / 2, VIEW.h / 2 - 60);
     ctx.textAlign = 'left';
   }
+  if (G.tally) drawTally();
 }
 
 /* ---------- 圖示（供介面用） ---------- */
@@ -2755,4 +2781,77 @@ function drawCharPortraitTo(canvasEl, charId) {
   // 立繪＝各職業的站架，跟戰鬥中同一套骨架
   drawFighter(c, ch, { time: 0.7, face: 1, walk: 0 });
   c.restore();
+}
+
+/* ---------- 波末結算演出 ----------
+   總監 2026-08-04：「結束的時候都要有結算動畫，不要很突兀地忽然卡掉」。
+   四行數字依序滑進來、各自從 0 跑到目標值，跑完停 1.4 秒再進商店。
+   期間按任意鍵可以快轉（G.tallySkip），但最少要演完八成——
+   不然玩家連自己這波打了什麼都沒看到。 */
+function drawTally() {
+  const t = G.tally;
+  const ROWS = [
+    { k: '擊倒', v: t.kills, col: '#e8964a', suf: '' },
+    { k: '素材', v: t.mat, col: '#77c47f', suf: '' },
+    { k: '收成', v: t.harvest, col: '#77c47f', suf: '', hide: !t.harvest },
+    { k: '最高連擊', v: t.best, col: '#ffd44a', suf: ' HITS', hide: !t.best },
+  ].filter(r => !r.hide);
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(10,7,4,0.72)';
+  ctx.fillRect(0, 0, VIEW.w, VIEW.h);
+
+  const cx = VIEW.w / 2;
+  const topY = VIEW.h * 0.3;
+  ctx.textAlign = 'center';
+
+  // 標題：第 N 波 完成
+  const kT = Math.min(1, t.t / 0.4);
+  ctx.save();
+  ctx.globalAlpha = kT;
+  ctx.translate(cx, topY - (1 - kT) * 24);
+  ctx.font = 'bold 46px ' + FONT;
+  ctx.lineWidth = 9; ctx.strokeStyle = INK;
+  ctx.strokeText('第 ' + t.wave + ' 波 完成', 0, 0);
+  ctx.fillStyle = '#fff';
+  ctx.fillText('第 ' + t.wave + ' 波 完成', 0, 0);
+  ctx.restore();
+
+  // 每一行延遲 0.36 秒依序進場，數字各自從 0 跑上去
+  ROWS.forEach((r, i) => {
+    const start = 0.55 + i * 0.36;
+    const p = Math.max(0, Math.min(1, (t.t - start) / 0.55));
+    if (p <= 0) return;
+    const y = topY + 62 + i * 44;
+    const ease = 1 - Math.pow(1 - p, 3);
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, p * 1.6);
+    ctx.translate(cx, y + (1 - ease) * 16);
+    ctx.font = 'bold 18px ' + FONT;
+    ctx.textAlign = 'right';
+    ctx.lineWidth = 5; ctx.strokeStyle = INK;
+    ctx.strokeText(r.k, -18, 0);
+    ctx.fillStyle = '#c3b295';
+    ctx.fillText(r.k, -18, 0);
+    const shown = Math.round(r.v * ease);
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 30px ' + FONT;
+    ctx.lineWidth = 6;
+    ctx.strokeText(shown + r.suf, 4, 2);
+    ctx.fillStyle = r.col;
+    ctx.fillText(shown + r.suf, 4, 2);
+    ctx.restore();
+  });
+
+  // 演完之後才給提示，不要一開始就叫玩家跳過
+  if (t.t >= t.dur * 0.8) {
+    ctx.globalAlpha = 0.55 + 0.35 * Math.sin(G.time * 5);
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 13px ' + FONT;
+    ctx.fillStyle = '#8a795e';
+    ctx.fillText('按任意鍵繼續', cx, topY + 62 + ROWS.length * 44 + 26);
+    ctx.globalAlpha = 1;
+  }
+  ctx.textAlign = 'left';
+  ctx.restore();
 }

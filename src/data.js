@@ -893,7 +893,10 @@ const DANGER_LEVELS = [
   { lv: 5, name: '危險 5', hp: 2.80, dmg: 1.72, count: 1.92, mat: 1.25 },
 ];
 
-function waveDuration(w) { return (20 + (w - 1) * 1.5) * TUNE.waveDurMul; }
+/* 一輪的「出兵時間」。時間到只是停止生怪，場上剩下的要殺光才過關（總監 2026-08-04 指令），
+   所以實際的一輪長度＝這個數字＋清場時間，會比帳面更長。
+   舊值 20 秒起跳太短，一波還沒進入狀況就結束了。 */
+function waveDuration(w) { return (34 + (w - 1) * 2.6) * TUNE.waveDurMul; }
 function isBossWave(w) { return w === 10 || w === 20; }
 function bossOfWave(w) { return w === 10 ? 'champ' : 'yokozuna'; }
 
