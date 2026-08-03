@@ -221,6 +221,8 @@ function startWave(w) {
   P.beatLog = []; P.beatT = 0; P.beatState = null; P.beatCd = 0; P.triCd = 0; P.stillHold = 0;
   P.dashChain = 0; P.dashChainT = 0; P.dashBeatCounted = false; P.ougiCd = 0;
   P.comboCd = 0; P.comboFiring = false; P.comboReadyCue = false; P.beatPopT = 0; P.comboStep = 0;
+  P.comboSettle = 0; P.poseAfter = null; P.pendingCombo = null;
+  G.hitstopEcho = null;
   if (P.airSlam && P.airSlam.e) { P.airSlam.e.grabbed = false; P.airSlam.e.stun = 0.5; }
   P.airSlam = null;
   P.dashCd = 0; P.moveTechTimer = 0; P.stillTechTimer = 0; P.counterProcCd = 0;
@@ -719,7 +721,7 @@ function throwDmg(base) {
    對空氣出招＝把演出的份量花在沒有意義的地方（總監明令禁止）。 */
 function holdOrFire(timerKey, def, range) {
   const p = G.player;
-  if (!nearestEnemy(p.x, p.y, range)) {
+  if (!nearestEnemy(p.x, p.y, range * 1.8)) {
     p[timerKey] = def.interval;   // 扣住：保持蓄滿
     return false;
   }
@@ -918,16 +920,17 @@ function startGrab(e, d) {
 function doAirSlam(a) {
   const p = G.player, e = a.e;
   p.airSlam = null;
+  p.staggerT = Math.max(p.staggerT, 0.35 + 0.65 * (a.dizzy || 0));   // 掄越久，落地後越站不穩
   sfx('throw_hit');
-  addHitstop(0.13, true);
+  addHitstop(0.16, true);
   addBeat('S');
   spawnFx('explode', p.x, p.y, '#b07a4a', 150);
-  spawnFx('shock', p.x, p.y, '#b07a4a', 150, { img: 'fx_slam' });
+  spawnFx('shock', p.x, p.y, '#b07a4a', 150, { img: 'fx_slam_ring', squash: 0.45 });
   G.screenShake = Math.max(G.screenShake, 16);
   e.grabbed = false;
   e.x = p.x; e.y = p.y + 6;
   hurtEnemy(e, throwDmg(26 + e.maxHp * 0.34), { trueDmg: true });
-  if (!e.dead) e.stun = 1.4;
+  if (!e.dead) { e.stun = 1.4; e.flat = { t: 1.2 }; e.knockX = 0; e.knockY = 0; }
   for (const o of G.enemies) {
     if (o.dead || o === e) continue;
     if (dist2(o.x, o.y, p.x, p.y) < 150 * 150) {
@@ -1182,7 +1185,24 @@ function techMountainBash() {
 function updateTechniques(dt) {
   const p = G.player;
   if (p.dashCd > 0) p.dashCd -= dt * (1 + Math.max(0, p.stats.atkSpd) / 200);
-  if (p.pose) { p.pose.t += dt; if (p.pose.t >= p.pose.dur) p.pose = null; }
+  if (p.pose) {
+    p.pose.t += dt;
+    if (p.pose.t >= p.pose.dur) {
+      if (p.pose.prio === 1 && p.comboSettle > 0) p.poseAfter = { type: p.pose.type, t: 0.18 };
+      p.pose = null;
+    }
+  }
+  if (p.poseAfter) { p.poseAfter.t -= dt; if (p.poseAfter.t <= 0) p.poseAfter = null; }
+  // 排隊中的連段收尾：前一招接觸幀播完就放
+  if (p.pendingCombo) p.pendingComboWait -= dt;
+  if (p.pendingCombo && (!p.pose || p.pose.t >= 0.18 || p.pose.prio < 0 || p.pendingComboWait <= 0)) {
+    const pc = p.pendingCombo;
+    p.pendingCombo = null;
+    p.comboFiring = true;
+    const fired2 = castCombo(pc);
+    p.comboFiring = false;
+    if (fired2) p.comboStep = 0;
+  }
   if (p.killHasteT > 0) p.killHasteT -= dt;
   if (p.bellPlateCd > 0) p.bellPlateCd -= dt;
   if (p.staggerT > 0) p.staggerT -= dt;
@@ -1246,6 +1266,7 @@ function updateTechniques(dt) {
   if (p.ougiCd > 0) p.ougiCd -= dt;
   if (p.comboCd > 0) p.comboCd -= dt;
   if (p.beatPopT > 0) p.beatPopT -= dt;
+  if (p.comboSettle > 0) p.comboSettle -= dt;
   if (p.comboCdMsgT > 0) p.comboCdMsgT -= dt;
   // 連段窗口：停手太久前綴就散了——連段要一氣呵成，不是隔半分鐘慢慢湊。
   // 只套用在有連段表的職業：他們的前綴是純站/移拍，一兩秒就湊得出來。
@@ -1429,15 +1450,19 @@ function updateTechniques(dt) {
   if (p.grabState && p.grabState.mode === 'hold') {
     const g = p.grabState;
     const e = g.e;
-    if (e.dead) { p.grabState = null; }
+    if (e.dead) { p.staggerT = Math.max(p.staggerT, 0.35 + 0.65 * (g.dizzy || 0)); p.grabState = null; }
     else {
       g.t += dt;
       // 抓的人雙臂一直鎖著對方（prio 1：武器揮擊不搶走這個姿勢）
       p.pose = { type: 'hold', ang: Math.atan2(e.y - p.y, e.x - p.x), t: 0.12, dur: 0.35, prio: 1 };
       const moving = p.moveTime > 0.1;
       if (moving) {
-        // 掄著他甩打周遭（移動拍）
+        // 掄著他甩打周遭（移動拍）——越掄越快（+4%/秒、上限+30%），4 秒後開始頭暈
         p.stillHold = 0;
+        if (!g.baseSpin) g.baseSpin = g.spinSpd;
+        g.spinSpd = (g.baseSpin >= 0 ? 1 : -1) * Math.min(Math.abs(g.baseSpin) * 1.3,
+          Math.abs(g.baseSpin) * (1 + 0.04 * g.t));
+        if (g.t > 4) g.dizzy = Math.min(1, (g.t - 4) / 3);
         g.ang += g.spinSpd * dt;
         e.x = p.x + Math.cos(g.ang) * g.orbitR;
         e.y = p.y + Math.sin(g.ang) * g.orbitR;
@@ -1459,7 +1484,8 @@ function updateTechniques(dt) {
           }
           // 整段掄甩只記一個 M 拍：多記會把擒抱的 D 拍擠出三格拍譜，D,M,S 就湊不成了
           if (hitAny && !g.beatM) { g.beatM = true; addBeat('M'); }
-          hurtEnemy(e, throwDmg(2), { trueDmg: true, noLifesteal: true });
+          // 被掄的人只有「撞到別人」那一下才扣血——他是武器，不是持續放血的沙包
+          if (hitAny) hurtEnemy(e, throwDmg(3), { trueDmg: true, noLifesteal: true });
         }
       } else {
         // 站定醞釀炸彈摔（站樁拍）——人質在懷裡掙扎，不是貼紙
@@ -1469,18 +1495,11 @@ function updateTechniques(dt) {
         if (p.stillHold >= 0.5) {
           // 炸彈摔＝把人抱起來跳上天，滯空期間自己走位選落點（再按一次 Space 提早落地）
           sfx('dash');
-          p.airSlam = { e, t: 0, dur: 1.2, slam: false };
+          p.airSlam = { e, t: 0, dur: 1.0, slam: false, dizzy: g.dizzy || 0 };
           p.grabState = null; p.stillHold = 0;
         }
       }
-      // 持有超時：自動炸彈摔（避免無限扣人質）
-      if (p.grabState && g.t >= g.dur) {
-        p.stillHold = 0;
-        e.grabbed = false;
-        e.thrown = { vx: Math.cos(g.ang) * 700, vy: Math.sin(g.ang) * 700, t: 0.5 };
-        hurtEnemy(e, throwDmg(12 + e.maxHp * 0.15), { trueDmg: true });
-        p.grabState = null;
-      }
+      // 掄甩不自動放開（總監指令）：抓著就一直掄，結束方式只有站定炸彈摔或人質陣亡
       e.x = Math.max(e.r, Math.min(ARENA.w - e.r, e.x));
       e.y = Math.max(e.r, Math.min(ARENA.h - e.r, e.y));
     }
@@ -1494,7 +1513,8 @@ function updateTechniques(dt) {
       a.t += dt;
       if (a.x0 === undefined) { a.x0 = p.x; a.y0 = p.y; }
       const kA = Math.min(1, a.t / a.dur);
-      a.h = Math.min(52, a.t / 0.2 * 52) * (kA > 0.9 ? (1 - kA) * 10 : 1);   // 起跳升空、落地收回
+      a.h = Math.min(52, a.t / 0.2 * 52);
+      if (kA > 0.91) { const dK = (kA - 0.91) / 0.09; a.h *= Math.max(0, 1 - dK * dK); }   // 90ms easeIn 砸下
       p.iframe = Math.max(p.iframe, 0.08);   // 人在空中，地面的敵人碰不到（不是衝刺無敵）
       // 滯空位移上限：這是重新定位，不是傳送
       const dx0 = p.x - a.x0, dy0 = p.y - a.y0;
@@ -1507,12 +1527,21 @@ function updateTechniques(dt) {
     }
   }
   // ---- 迴旋抓摔：掄人 ----
-  else if (p.grabState) {
+  // 注意條件要排除 hold 模式：擒抱持有走上面自己的區塊，
+  // 這裡混進去會雙重處理（無條件扣血＋自動扔出）——總監抱怨的「一直扣血、會放開」就是這個
+  else if (p.grabState && p.grabState.mode !== 'hold') {
     const g = p.grabState;
     const e = g.e;
     if (e.dead) { p.grabState = null; }
     else {
       g.t += dt;
+      // 越轉越快：等速旋轉永遠讀不出「掄起來了」——轉速、呼嘯音高一起爬升
+      if (g.super) {
+        const kS = Math.min(1, g.t / g.dur);
+        g.spinSpd = (g.spinSpd >= 0 ? 1 : -1) * (5 + 11 * kS);
+        g.whooshT = (g.whooshT || 0) - dt;
+        if (g.whooshT <= 0) { g.whooshT = 0.4; sfx('wind', { pitch: 0.85 + 0.5 * kS, vol: 0.8 }); }
+      }
       g.ang += g.spinSpd * dt;
       e.x = p.x + Math.cos(g.ang) * g.orbitR;
       e.y = p.y + Math.sin(g.ang) * g.orbitR;
@@ -1522,10 +1551,12 @@ function updateTechniques(dt) {
       if (g.tick <= 0) {
         g.tick = 0.12;
         // 被掄的人是武器：傷害看他的體重（最大生命）
+        let orbHit = false;
         for (const o of G.enemies) {
           if (o.dead || o === e) continue;
           const rr = o.r + e.r + 4;
           if (dist2(o.x, o.y, e.x, e.y) < rr * rr) {
+            orbHit = true;
             hurtEnemy(o, throwDmg(4 + e.maxHp * 0.04) * (g.super ? 1.5 : 1), { trueDmg: true });
             if (!o.dead) {
               const a = Math.atan2(o.y - e.y, o.x - e.x);
@@ -1533,7 +1564,8 @@ function updateTechniques(dt) {
             }
           }
         }
-        hurtEnemy(e, throwDmg(3), { trueDmg: true, noLifesteal: true });
+        // 迴旋抓摔同規則：被掄的人撞到別人才扣血
+        if (orbHit) hurtEnemy(e, throwDmg(3), { trueDmg: true, noLifesteal: true });
         if (e.dead) { p.grabState = null; return; }
       }
       if (g.t >= g.dur) {
@@ -1801,6 +1833,14 @@ function addBeat(type, auto) {
   if (!auto && !p.comboFiring && (type === 'S' || type === 'M')) {
     const c = matchCombo(type);
     if (c) {
+      // 銜接：觸發的那一下命中發生在前一招接觸幀中段——立刻覆寫 pose 會看成「突然變招」。
+      // 排隊到 0.18 秒（接觸幀播完）再出，玩家看到的才是「手刀打完→順勢頭槌」。
+      const cdOk = c.sig ? (p.ougiCd || 0) <= 0 : (p.comboCd || 0) <= 0;
+      if (cdOk && p.pose && p.pose.prio >= 0 && p.pose.t < 0.18) {
+        p.pendingCombo = c; p.pendingComboWait = 0.12;
+        p.beatCd = 0.4; p.beatT = 0;
+        return;
+      }
       p.comboFiring = true;
       const fired = castCombo(c);
       p.comboFiring = false;
@@ -1957,15 +1997,19 @@ function castCombo(c, target) {
   p.beatLog = []; p.beatT = 0;
   if (c.sig) {
     p.ougiCd = 7.5;
+    p.comboSettle = 0.35;
+    G.hitstopEcho = { delay: 0.06, dur: 0.05 };
     G.ougiBanner = { name: c.name, t: 1.3 };
-    G.screenShake = Math.max(G.screenShake, 10);
+    G.screenShake = Math.max(G.screenShake, 12);
     addHitstop(0.12, true);
     sfx('ougi_cast'); sfx('ougi_hit');
   } else {
     p.comboCd = 2.5;
+    p.comboSettle = 0.35;   // 句號：這 0.35 秒的靜止就是「一套打完了」
+    G.hitstopEcho = { delay: 0.06, dur: 0.04 };
     addDmgNum(p.x, p.y - 46, c.name, '#ffd44a', true);
     G.screenShake = Math.max(G.screenShake, 7);
-    addHitstop(0.09, true);
+    addHitstop(0.15, true);
     spawnFx('explode', p.x, p.y, '#ffffff', 62);
     sfx('ougi_hit');
     sfx('hit_heavy');
@@ -2014,6 +2058,7 @@ function castOugi(o, target) {
           }
         }
       }
+      if (!e0.dead && !e0.boss) e0.flat = { t: 0.9 };   // 收尾的受方＝攤平，句號的另一半
       // 收尾之後把勁留給下一擊：貫手替下一拳上必爆、袈裟斬留殘心
       if (pr.critNext) p.guaranteedCrit = true;
       if (pr.charge) p.chargeHits = Math.max(p.chargeHits || 0, pr.charge);
@@ -2309,7 +2354,7 @@ function updateWeapons(dt) {
       const base = p.face > 0 ? -0.45 : Math.PI + 0.45;
       w.angle = base + spread * (p.face > 0 ? 1 : -1) + Math.sin(G.time * 2 + idx) * 0.05;
     }
-    if (w.cdLeft <= 0 && target) {
+    if (w.cdLeft <= 0 && target && (p.comboSettle || 0) <= 0.17) {
       const d = Math.sqrt(dist2(p.x, p.y, target.x, target.y));
       if (d <= reach + target.r) {
         fireWeapon(w, reach);
@@ -2560,11 +2605,27 @@ function applyWeaponHit(w, e, reach, mulOverride, isEcho) {
     if (b) addBeat(b);
   }
 
+  // 手刀是以「受方反應＋那聲啪」定義的招：橫壓後仰不位移、胸口白閃、脆響
+  if (!isEcho && w.klass === '摔技' && !e.dead) {
+    const angC = Math.atan2(e.y - p.y, e.x - p.x);
+    e.chopHit = { t: 0.22, ang: angC };
+    spawnFx('shock', e.x - Math.cos(angC) * e.r * 0.6, e.y - e.r * 0.35, '#ffffff', 26, { img: 'fx_chop_slap' });
+  }
+  // 連段中每一下命中：受方進遞增踉蹌——對手從第一下到收尾都沒機會站直，那才叫連段
+  if (!isEcho && (p.comboStep || 0) > 0 && !e.dead && !e.boss) {
+    e.reel = { t: 0.35 + 0.15 * p.comboStep, lean: 0.18 * p.comboStep };
+  }
+  // 遞進頓幀＋畫面震：第一拍 45ms/3、第二拍 65ms/5——時間上也要聽得出 1、2
+  if (!isEcho && (p.comboStep || 0) > 0) {
+    addHitstop(p.comboStep >= 2 ? 0.065 : 0.045, false);
+    G.screenShake = Math.max(G.screenShake, p.comboStep >= 2 ? 5 : 3);
+  }
   // 命中音：依武器類與力度分層；連段一、二下音高走揚（1、2、3 的節奏要用耳朵聽得到）
   if (!isEcho) {
     const cs = p.comboStep || 0;
     const co = cs === 1 ? { pitch: 1.0 } : (cs >= 2 ? { pitch: 1.18, vol: 1.2 } : undefined);
-    if (w.klass === '刃') sfx('hit_blade', co);
+    if (w.klass === '摔技') sfx('chop_crack', co);
+    else if (w.klass === '刃') sfx('hit_blade', co);
     else if (w.klass === '腿') sfx('hit_kick', co);
     else if (w.klass === '棍' || w.klass === '重械' || w.klass === '軟兵') sfx('hit_blunt', co);
     else if (crit || base >= e.maxHp * 0.3) sfx('hit_heavy', co);
@@ -2740,6 +2801,8 @@ function updateEnemies(dt) {
     e.anim += dt * 6;
     if (e.hitFlash > 0) e.hitFlash -= dt;
     if (e.hitSquash > 0) e.hitSquash -= dt;
+    if (e.chopHit) { e.chopHit.t -= dt; if (e.chopHit.t <= 0) e.chopHit = null; }
+    if (e.flat) { e.flat.t -= dt; if (e.flat.t <= 0) e.flat = null; }
     // 居合的延遲連斬：0.3 秒後才裂開，之後連續三段
     if (e.iaiCut) {
       const ic = e.iaiCut;
@@ -2835,6 +2898,11 @@ function updateEnemies(dt) {
     const kdcy = Math.exp(-(e.knockDecay || 6.44) * dt);
     e.knockX *= kdcy; e.knockY *= kdcy;
 
+    if (e.reel) {
+      e.reel.t -= dt;
+      if (e.reel.t <= 0) e.reel = null;
+      else { clampEnemy(e); continue; }
+    }
     if (e.stun > 0) { e.stun -= dt; clampEnemy(e); continue; }
 
     const dx = p.x - e.x, dy = p.y - e.y;
@@ -3340,6 +3408,10 @@ function updateGame(dt) {
     G.hitstop -= dt;
     updateFx(dt * 0.3);
     return;
+  }
+  if (G.hitstopEcho) {
+    G.hitstopEcho.delay -= dt;
+    if (G.hitstopEcho.delay <= 0) { G.hitstop = Math.max(G.hitstop, G.hitstopEcho.dur); G.hitstopEcho = null; }
   }
   G.time += dt;
   updateWave(dt);

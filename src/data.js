@@ -577,7 +577,7 @@ const WEAPONS = [
     dmg: 58, cd: 1.9, range: 102, arc: 360, knock: 220, critMult: 2.0, crit: 5, price: 28,
     desc: '慢到令人絕望，但砸下去周圍全部躺平。' },
   { id: 'chop_reverse', name: '逆水平手刀', klass: '摔技', type: 'arc', icon: 'palm', color: '#8fd4e0',
-    dmg: 20, cd: 0.8, range: 92, arc: 120, knock: 90, critMult: 1.7, crit: 6, stun: 0.25, price: 20,
+    dmg: 20, cd: 0.8, range: 92, arc: 120, knock: 0, critMult: 1.7, crit: 6, stun: 0.25, price: 20,
     desc: '整條手臂反手橫劈，聲音比傷害還嚇人。' },
   { id: 'lariat', name: '金臂勾', klass: '摔技', type: 'arc', icon: 'fist', color: '#c98a3c',
     dmg: 24, cd: 0.95, range: 99, arc: 170, knock: 250, critMult: 1.7, crit: 6, price: 22,

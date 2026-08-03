@@ -233,7 +233,16 @@ function drawArena() {
 const BASE_FRAMES = { loaded: 0, ready: false };
 const FRAME_DEFS = {
   idle: 2, walk: 4, punch: 3, grab: 2, hurt: 2, dash: 2, ko: 1,
-  stance: 2,   // 站樁架式（各職業自己的蓄勢語言；缺圖自動退回 idle）
+  stance: 2,     // 站樁架式（各職業自己的蓄勢語言）
+  headbutt: 2,   // 頭槌（連段收尾要用頭，不是揮手）
+  bigboot: 2,    // 大足踢（用腿）
+  elbow: 2,      // 肘擊墜落（用肘）
+  slam: 2,       // 炸彈摔下墜/落地
+};
+/* pose 型別 → 幀組。頭槌用頭、大足踢用腿——三條連段在畫面上必須是三個動作。
+   缺圖一律退回 punch（絕不退回 idle）。 */
+const POSE_FRAMESET = {
+  head: 'headbutt', kick: 'bigboot', knee: 'bigboot', elbow: 'elbow', hold: 'grab',
 };
 const ACC_IMGS = {};   // charId -> Image（頭部配件）
 const FX_IMGS = {};    // fx 名 -> Image（招式特效貼圖，黑底發光）
@@ -317,13 +326,33 @@ function pickFrame(p) {
     return pick('dash', Math.floor(t * 10) % 2);
   }
   if (p.grabState) return pick('grab', p.grabState.mode === 'hold' && p.stillHold > 0.2 ? 1 : 0);
+  if (p.airSlam) return pick('grab', 1);   // 舉人過頂：滯空全程雙翅高舉，不是抱著人走路
   if (p.pose && p.pose.prio >= 0 && p.pose.type !== 'stomp') {
-    // 打擊的時間天生不對稱：25% 預備、20% 接觸（hitstop 會凍住這格）、55% 跟隨。
-    // 三幀均分是「手刀讀不出來」的另一半原因。
+    // 手刀走絕對毫秒：接觸幀必須涵蓋 110~180ms 的判定窗——
+    // 兩套時間軸（畫面百分比 vs 判定毫秒）只重疊 7ms 就是「手刀沒力」的機械原因
+    if (p.pose.type === 'chop') {
+      const tt = p.pose.t;
+      return pick('punch', tt < 0.11 ? 0 : (tt < 0.18 ? 1 : 2));
+    }
+    const setName = POSE_FRAMESET[p.pose.type] || 'punch';
+    const nF = FRAME_DEFS[setName] || 3;
     const k = Math.min(0.999, p.pose.t / p.pose.dur);
-    return pick('punch', k < 0.25 ? 0 : (k < 0.45 ? 1 : 2));
+    const fi = nF === 2 ? (k < 0.42 ? 0 : 1) : (k < 0.25 ? 0 : (k < 0.45 ? 1 : 2));
+    if (setName !== 'punch' && !(ok(src, setName, fi) || ok(BASE_FRAMES, setName, fi))) {
+      return pick('punch', nF === 2 ? (fi ? 2 : 0) : fi);   // 缺圖退 punch，不退 idle
+    }
+    return pick(setName, fi);
+  }
+  // 收尾招的句號：pose 播完後定格在最後一格 0.18 秒——連段的爽感有一半來自這個停頓
+  if (p.poseAfter && p.poseAfter.t > 0) {
+    const sn = POSE_FRAMESET[p.poseAfter.type] || 'punch';
+    const nn = FRAME_DEFS[sn] || 3;
+    if (ok(src, sn, nn - 1) || ok(BASE_FRAMES, sn, nn - 1)) return pick(sn, nn - 1);
+    return pick('punch', 2);
   }
   if (p.moveTime > 0.05) return pick('walk', Math.floor((p.walkAnim / Math.PI) * 2) % 4);
+  // 連段進行中不回中立：停在跟隨幀，下一招從上一招結束的地方開始
+  if (p.comboStep > 0 && p.moveTime < 0.05) return pick('punch', 2);
   // 站樁蓄力：專屬架式幀、越接近觸發拍得越急——「站著就有魔法」的解方
   if (stillActive() && p.stillT > 0.5) {
     const def = MOVE_MAP[p.moves.still];
@@ -783,14 +812,15 @@ function drawPlayer() {
   ctx.beginPath();
   ctx.ellipse(0, p.r * 0.85, p.r * 0.9 * shK, p.r * 0.34 * shK, 0, 0, Math.PI * 2);
   ctx.fill();
-  if (air > 0) {
-    const pulse = 0.55 + Math.sin(G.time * 14) * 0.25;
-    ctx.strokeStyle = 'rgba(224,145,60,' + pulse + ')';
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.ellipse(0, p.r * 0.85, 150 * 0.34, 150 * 0.13, 0, 0, Math.PI * 2); ctx.stroke();
-    ctx.setLineDash([6, 6]);
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.ellipse(0, p.r * 0.85, 150 * 0.5, 150 * 0.19, 0, 0, Math.PI * 2); ctx.stroke();
+  if (air > 0 && p.airSlam) {
+    // 落點圈＝真實殺傷半徑 150（之前只畫到 34%/50%，圈外看似安全其實會被砸）
+    const aT = p.airSlam.t, aD = p.airSlam.dur;
+    const late = aT > aD * 0.55;
+    const shrink = late ? Math.max(150, 190 - (aT - aD * 0.55) / (aD * 0.45) * 40) : 150;
+    ctx.strokeStyle = 'rgba(224,145,60,' + (late ? 0.6 : 0.3) + ')';
+    ctx.lineWidth = late ? 3 : 2;
+    if (!late) ctx.setLineDash([7, 7]);
+    ctx.beginPath(); ctx.ellipse(0, p.r * 0.85, shrink, shrink * 0.38, 0, 0, Math.PI * 2); ctx.stroke();
     ctx.setLineDash([]);
   }
   ctx.translate(0, -air);
@@ -1119,9 +1149,61 @@ function loadEnemyImg(key) {
 }
 
 function drawEnemies() {
+  const pl = G.player;
   for (const e of G.enemies) {
+    // 被掄甩中（擒抱移動/迴旋抓摔）：這一招的主角是人質，不是玩家
+    const heldSwing = e.grabbed && pl && pl.grabState && pl.grabState.e === e &&
+      (pl.grabState.mode !== 'hold' || pl.moveTime > 0.1);
+    if (heldSwing) {
+      // 軌跡殘影：沒有殘影，高速旋轉讀起來只是「圖在圓周跳格」
+      const g = pl.grabState;
+      const gk = e.boss ? 'boss_' + e.id : e.id;
+      loadEnemyImg(gk);
+      const gi = ENEMY_IMGS[gk];
+      if (gi) {
+        const hh = e.r * 2.5, ww = hh * (gi.width / gi.height);
+        const dir = (g.spinSpd || 7) >= 0 ? 1 : -1;
+        for (let i = 4; i >= 1; i--) {
+          const ga = g.ang - dir * i * 0.16;
+          ctx.save();
+          ctx.globalAlpha = Math.max(0.04, 0.26 - i * 0.05);
+          ctx.translate(pl.x + Math.cos(ga) * g.orbitR, pl.y + Math.sin(ga) * g.orbitR);
+          ctx.rotate(ga + Math.PI / 2 - 0.3 * dir);
+          ctx.scale(1.18, 0.88);
+          ctx.drawImage(gi, -ww / 2, -hh / 2, ww, hh);
+          ctx.restore();
+        }
+      }
+    }
     ctx.save();
     ctx.translate(e.x, e.y);
+    // 被掄的人：身體被離心力拉直、落後於旋轉方向——不是氣球綁在繩子上
+    if (heldSwing) {
+      const g = pl.grabState;
+      const dir = (g.spinSpd || 7) >= 0 ? 1 : -1;
+      ctx.rotate(g.ang + Math.PI / 2 - 0.3 * dir);
+      ctx.scale(1.18, 0.88);
+    }
+    // 被種在地上（炸彈摔落地）：翻平＋壓扁＋彈一次
+    if (e.flat) {
+      const done = 1.2 - e.flat.t;
+      const fk = Math.min(1, done / 0.12);
+      const bounce = done < 0.32 && done > 0.12 ? Math.sin((done - 0.12) / 0.2 * Math.PI) * 6 : 0;
+      ctx.translate(0, -bounce);
+      ctx.rotate(Math.PI / 2 * fk);
+      ctx.scale(1.25, 0.55);
+    }
+    // 挨了手刀：橫向壓縮＋上身後仰、腳不動——跟被鎚子砸是兩回事
+    if (e.chopHit) {
+      const ck = Math.max(0, e.chopHit.t / 0.22);
+      const dirC = Math.cos(e.chopHit.ang) >= 0 ? 1 : -1;
+      ctx.rotate(-0.2 * ck * dirC);
+      ctx.scale(1 - 0.22 * ck, 1 + 0.1 * ck);
+    }
+    // 連段中被打得越來越站不住：一下比一下仰得更後面
+    if (e.reel && pl) {
+      ctx.rotate(e.reel.lean * (e.x < pl.x ? -1 : 1) * Math.min(1, e.reel.t / 0.2));
+    }
     ctx.fillStyle = 'rgba(0,0,0,0.32)';
     ctx.beginPath();
     ctx.ellipse(0, e.r * 0.82, e.r * 0.85, e.r * 0.3, 0, 0, Math.PI * 2);
@@ -1134,11 +1216,11 @@ function drawEnemies() {
     loadEnemyImg(imgKey);
     const eimg = ENEMY_IMGS[imgKey];
     if (eimg) {
-      const hover = Math.sin(e.anim * 0.9) * e.r * 0.14;
+      const hover = (e.grabbed || e.flat) ? 0 : Math.sin(e.anim * 0.9) * e.r * 0.14;
       const h = e.r * 2.5;
       const w = h * (eimg.width / eimg.height);
-      if (e.hitSquash > 0) {
-        const k = e.hitSquash / 0.16;
+      if (e.hitSquash > 0 && !e.chopHit) {
+        const k = Math.min(1, e.hitSquash / 0.16);
         ctx.scale(1 + 0.28 * k, 1 - 0.28 * k);
       }
       if (e.hitFlash > 0) ctx.filter = 'brightness(2.4)';
@@ -1181,7 +1263,7 @@ function drawEnemies() {
     ctx.translate(0, bob);
     // 受擊壓扁回彈
     if (e.hitSquash > 0) {
-      const k = e.hitSquash / 0.16;
+      const k = Math.min(1, e.hitSquash / 0.16);
       ctx.scale(1 + 0.28 * k, 1 - 0.28 * k);
     }
     ctx.strokeStyle = INK;
@@ -1628,7 +1710,8 @@ function drawFxUnder() {
         ctx.globalCompositeOperation = 'lighter';
         ctx.globalAlpha = (1 - k) * 0.95;
         const ssz = f.size * 2.2 * (0.5 + k * 0.6);
-        ctx.drawImage(simg, f.x - ssz / 2, f.y - ssz / 2, ssz, ssz);
+        const sq = f.squash || 1;
+        ctx.drawImage(simg, f.x - ssz / 2, f.y - ssz * sq / 2, ssz, ssz * sq);
         ctx.restore();
         continue;
       }

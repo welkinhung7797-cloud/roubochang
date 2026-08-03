@@ -80,7 +80,28 @@
   window.addEventListener('keydown', unlock, { once: false });
   window.addEventListener('pointerdown', unlock, { once: false });
 
+  let crackBuf = null;
+  function chopCrack(opts) {
+    if (muted || !ensureCtx()) return;
+    opts = opts || {};
+    if (!crackBuf) {
+      crackBuf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.05), ctx.sampleRate);
+      const d = crackBuf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 2.4);
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = crackBuf;
+    src.playbackRate.value = (opts.pitch || 1) * (0.92 + Math.random() * 0.2);
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 2600;
+    const g = ctx.createGain();
+    g.gain.value = 0.85 * (opts.vol || 1);
+    src.connect(hp); hp.connect(g); g.connect(master);
+    src.start();
+  }
+
   window.sfx = function (key, opts) {
+    if (key === 'chop_crack') return chopCrack(opts);
     if (muted || !ctx || !buffers[key] || !buffers[key].length) return;
     opts = opts || {};
     const now = ctx.currentTime;
