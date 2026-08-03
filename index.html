@@ -132,6 +132,12 @@ button:disabled{cursor:not-allowed;opacity:.45}
   border-bottom:1px solid #2c2318;color:var(--muted)}
 .kv b{color:var(--text);font-weight:700}
 .kv b.up{color:var(--good)} .kv b.down{color:var(--bad)}
+/* 武器卡的「目前值 | 新值」：舊值壓暗、新值依好壞上色 */
+.kv b u.old{text-decoration:none;color:#8a795e;font-weight:400}
+.kv b s{text-decoration:none;color:#6b5a3e;margin:0 3px}
+.kv b em{font-style:normal;font-weight:800}
+.kv b em.up{color:var(--good)}
+.kv b em.down{color:var(--bad)}
 .tagrow{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
 .tagrow i{font-style:normal;font-size:10.5px;color:var(--accent);border:1px solid #4a3a22;padding:1px 5px}
 .flavor{font-size:11px;color:#8f7f68;line-height:1.6;margin-top:7px}
@@ -297,6 +303,12 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .bd-opt u{display:block;text-decoration:none;font-size:9.5px;color:#e0913c;margin-top:1px}
 .bd-opt span{display:block;font-size:10px;color:#8a795e;line-height:1.5;margin-top:1px}
 .bd-pick-foot{font-size:9.5px;color:#8a795e;padding:4px 8px;background:#14100a;line-height:1.5}
+#trait-cards{display:flex;gap:16px;margin-top:26px}
+.tr-card{width:262px;background:var(--panel);outline:3px solid var(--ink2);box-shadow:6px 6px 0 var(--ink2);padding:16px;text-align:left;cursor:pointer;transition:.1s}
+.tr-card:hover{transform:translateY(-4px);box-shadow:8px 8px 0 var(--ink2)}
+.tr-tag{font-size:10px;letter-spacing:.16em;color:var(--accent);font-weight:800}
+.tr-name{font-size:22px;font-weight:900;letter-spacing:.08em;margin:4px 0 8px;font-family:var(--font-title)}
+.tr-desc{font-size:12px;color:var(--muted);line-height:1.75;min-height:70px}
 .combo-block{margin-top:9px;border:2px solid var(--line);background:#17110a;padding:7px 9px;
   box-shadow:0 3px 0 rgba(8,5,2,.4)}
 .combo-head{font-size:12px;font-weight:800;letter-spacing:.16em;color:#c3b295;
@@ -453,6 +465,13 @@ button:disabled{cursor:not-allowed;opacity:.45}
     <div id="levelup-cards"></div>
     <!-- 選卡時數值面板要看得到：決定要不要拿 +2 護甲，得同時看得到自己現在幾點護甲 -->
     <div id="levelup-stats"></div>
+  </div>
+
+  <!-- 特性抉擇（打完頭目） -->
+  <div id="panel-trait" class="overlay hidden">
+    <div class="title-md" id="trait-title">頭目伏誅</div>
+    <div class="sub" style="margin-top:6px">選一項特性——這會改變你的打法，選了就跟著你到最後</div>
+    <div id="trait-cards"></div>
   </div>
 
   <!-- 商店 -->

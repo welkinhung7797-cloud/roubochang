@@ -10,11 +10,11 @@ function onModeChange() {
   if (G.mode !== 'playing' && typeof showPause === 'function') showPause(false);
   // 戰鬥 BGM：進場放、結算停（商店與升級照放，節奏不斷）
   if (typeof bgmPlay === 'function') {
-    if (G.mode === 'playing' || G.mode === 'shop' || G.mode === 'levelup') bgmPlay();
+    if (G.mode === 'playing' || G.mode === 'shop' || G.mode === 'levelup' || G.mode === 'trait') bgmPlay();
     else if (G.mode === 'gameover' || G.mode === 'victory') bgmStop(1.2);
     else bgmStop(0.5);
   }
-  ['panel-menu', 'panel-select', 'panel-levelup', 'panel-shop', 'panel-end'].forEach(id => {
+  ['panel-menu', 'panel-select', 'panel-levelup', 'panel-shop', 'panel-end', 'panel-trait'].forEach(id => {
     $(id).classList.add('hidden');
   });
   $('hud-hint').classList.add('hidden');
@@ -23,6 +23,7 @@ function onModeChange() {
     case 'select': $('panel-select').classList.remove('hidden'); break;
     case 'playing': $('hud-hint').classList.remove('hidden'); break;
     case 'levelup': renderLevelUp(); $('panel-levelup').classList.remove('hidden'); break;
+    case 'trait': renderTraitPick(); $('panel-trait').classList.remove('hidden'); break;
     case 'shop': renderShop(); $('panel-shop').classList.remove('hidden'); break;
     case 'gameover':
     case 'victory': renderEnd(); $('panel-end').classList.remove('hidden'); break;
@@ -347,9 +348,24 @@ function weaponShopInfo(e) {
   if (w.dot) extra.push('持續傷害');
   if (w.slow) extra.push('減速');
   if (w.lifesteal) extra.push('吸血 ' + w.lifesteal + '%');
-  return '<div class="kv"><span>傷害</span><b>' + w.dmg + '</b></div>' +
-    '<div class="kv"><span>冷卻</span><b>' + w.cd.toFixed(2) + ' 秒</b></div>' +
-    '<div class="kv"><span>範圍</span><b>' + w.range + '</b></div>' +
+  // 「目前值 | 新值」對照（依總監給的參考片）：玩家要判斷「這把值不值得換」，
+  // 只給新武器的絕對值等於要他自己記住舊的。同類武器裡最好的那把當比較基準。
+  const mine = G.player.weapons.filter(x => x.klass === base.klass);
+  let cmp = null;
+  if (mine.length) cmp = mine.reduce((a, b) => (b.dmg / b.cd > a.dmg / a.cd ? b : a));
+  const row = (label, cur, nv, fmt, better) => {
+    const f = fmt || (x => x);
+    if (cur === null || cur === undefined || Math.abs(cur - nv) < 1e-6) {
+      return '<div class="kv"><span>' + label + '</span><b>' + f(nv) + '</b></div>';
+    }
+    const up = better === 'low' ? nv < cur : nv > cur;
+    return '<div class="kv"><span>' + label + '</span><b>' +
+      '<u class="old">' + f(cur) + '</u> <s>|</s> ' +
+      '<em class="' + (up ? 'up' : 'down') + '">' + f(nv) + '</em></b></div>';
+  };
+  return row('傷害', cmp ? cmp.dmg : null, w.dmg) +
+    row('冷卻', cmp ? cmp.cd : null, w.cd, x => x.toFixed(2) + ' 秒', 'low') +
+    row('範圍', cmp ? cmp.range : null, w.range) +
     '<div class="kv"><span>類型</span><b>' + base.klass + ' · ' + typeName + '</b></div>' +
     (extra.length ? '<div class="tagrow">' + extra.map(t => '<i>' + t + '</i>').join('') + '</div>' : '') +
     '<div class="flavor">' + base.desc + '</div>';
@@ -984,6 +1000,7 @@ function botControl(dt) {
 }
 
 function botAutoUi() {
+  if (G.mode === 'trait') { chooseTrait(0); return; }
   if (G.mode === 'levelup' && G.levelChoices) {
     // 模擬會挑的玩家：脆的時候優先保命裝，其餘看通用強度
     const p = G.player;
@@ -1195,5 +1212,23 @@ function bindBoard(root) {
       openBoardSlot = null;
       renderLoadout();
     };
+  });
+}
+
+/* 特性抉擇（打完頭目三選一） */
+function renderTraitPick() {
+  const wrap = $('trait-cards');
+  if (!wrap) return;
+  const bossName = (BOSS_MAP[bossOfWave(G.wave)] || {}).name || '頭目';
+  $('trait-title').textContent = bossName + ' 伏誅';
+  wrap.innerHTML = '';
+  (G.traitChoices || []).forEach((t, i) => {
+    const el = document.createElement('button');
+    el.className = 'tr-card';
+    el.innerHTML = '<div class="tr-tag">' + t.tag + '</div>' +
+      '<div class="tr-name">' + t.name + '</div>' +
+      '<div class="tr-desc">' + t.desc + '</div>';
+    el.onclick = () => { chooseTrait(i); };
+    wrap.appendChild(el);
   });
 }

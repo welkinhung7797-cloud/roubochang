@@ -878,12 +878,24 @@ const BOSSES = [
   { id: 'yokozuna', name: '橫綱', behavior: 'boss', hp: 10000, dmg: 30, speed: 46, size: 44,
     color: '#c9576b', mat: 80, phase: 'yokozuna',
     desc: '張手震波與地面踏震，血量越低越暴躁。' },
+  { id: 'ironhead_b', name: '鐵頭王', behavior: 'boss', hp: 1100, dmg: 18, speed: 66, size: 30,
+    color: '#c98a3c', mat: 26, phase: 'champ',
+    desc: '第一個擋路的。頭比拳硬，衝起來不轉彎。' },
+  { id: 'twinfist', name: '雙拳鬼', behavior: 'boss', hp: 4200, dmg: 26, speed: 62, size: 36,
+    color: '#a06fd0', mat: 55, phase: 'champ',
+    desc: '兩隻手各打各的，突進之後還有回手。' },
+  { id: 'stonewall', name: '磐石', behavior: 'boss', hp: 16000, dmg: 34, speed: 40, size: 48,
+    color: '#7a8a9a', mat: 100, phase: 'yokozuna',
+    desc: '站著就是一堵牆。踏震範圍比橫綱更大。' },
+  { id: 'thunderking', name: '雷王', behavior: 'boss', hp: 24000, dmg: 40, speed: 54, size: 46,
+    color: '#e0c341', mat: 140, phase: 'yokozuna',
+    desc: '最後一關。震波帶麻痺，血越低打得越快。' },
 ];
 const BOSS_MAP = {};
 BOSSES.forEach(b => BOSS_MAP[b.id] = b);
 
 /* ---------- 波次 / 難度 ---------- */
-const MAX_WAVE = 20;
+const MAX_WAVE = 30;   // 總監 2026-08-04：先設計 30 關為目標
 const DANGER_LEVELS = [
   { lv: 0, name: '危險 0', hp: 1.00, dmg: 1.00, count: 1.00, mat: 1.00 },
   { lv: 1, name: '危險 1', hp: 1.20, dmg: 1.10, count: 1.12, mat: 1.05 },
@@ -897,8 +909,12 @@ const DANGER_LEVELS = [
    所以實際的一輪長度＝這個數字＋清場時間，會比帳面更長。
    舊值 20 秒起跳太短，一波還沒進入狀況就結束了。 */
 function waveDuration(w) { return (34 + (w - 1) * 2.6) * TUNE.waveDurMul; }
-function isBossWave(w) { return w === 10 || w === 20; }
-function bossOfWave(w) { return w === 10 ? 'champ' : 'yokozuna'; }
+/* 每 5 關一個特殊頭目（總監 2026-08-04）。打完頭目才給特性抉擇——
+   特性是會改變打法的東西，放在升級四選一裡會把那個介面撐爆，
+   而升級四選一已經定案要維持樸素（一張卡一個屬性）。 */
+const BOSS_ORDER = ['ironhead_b', 'champ', 'twinfist', 'yokozuna', 'stonewall', 'thunderking'];
+function isBossWave(w) { return w % 5 === 0 && w <= MAX_WAVE; }
+function bossOfWave(w) { return BOSS_ORDER[Math.min(BOSS_ORDER.length - 1, Math.floor(w / 5) - 1)]; }
 
 /* ---------- 武器流派套裝 ----------
    同流派湊 2 把＝小成、湊 3 把以上＝大成。逼出「走流派」的 build 決策。
@@ -1087,3 +1103,60 @@ const EXTRA_FINISHERS = {
 })();
 /* 混拍那排的解鎖波次：前五波先讓玩家把兩排六格玩熟 */
 const BOARD_MX_UNLOCK_WAVE = 6;
+
+/* ---------- 特性（打完頭目三選一，總監 2026-08-04 定案） ----------
+   會改變打法的東西放這裡，不放升級四選一——那個介面已經定案維持樸素。
+   30 關 = 6 個頭目 = 6 次抉擇，玩家有一條講得出來的成長線。
+   全部沿用引擎已經有的鉤子，不發明新機制。 */
+const TRAITS = [
+  { id: 'small', name: '縮骨', tag: '體型',
+    desc: '體型縮小三成，移動速度 +25%。打得到的距離也跟著變短。',
+    stats: { speed: 25 }, size: 0.7 },
+  { id: 'big', name: '巨軀', tag: '體型',
+    desc: '體型放大三成，攻擊距離 +18%、護甲 +3。移動速度 -12%。',
+    stats: { range: 18, armor: 3, speed: -12 }, size: 1.3 },
+  { id: 'longarm', name: '長臂', tag: '攻擊',
+    desc: '攻擊距離 +25%。夠得到，就是最強的加成。',
+    stats: { range: 25 } },
+  { id: 'quick', name: '快手', tag: '攻擊',
+    desc: '攻擊速度 +30%。',
+    stats: { atkSpd: 30 } },
+  { id: 'triple_dash', name: '三段身法', tag: '位移',
+    desc: '衝刺可以連續使用 3 次，但冷卻拉長到 12 秒。',
+    dashCharges: 3, dashCdMul: 2.0 },
+  { id: 'sprint', name: '疾走', tag: '位移',
+    desc: '移動速度 +100%。受到傷害後失效 6 秒。',
+    sprint: { mul: 2.0, lockout: 6 } },
+  { id: 'burn_stack', name: '烈火拳', tag: '狀態',
+    desc: '普攻命中造成燃燒，持續傷害且可以無限累加。',
+    onHit: { burn: 1 } },
+  { id: 'chain_bolt', name: '雷紋', tag: '狀態',
+    desc: '每隔 6 秒，下一次命中會在附近炸開連鎖閃電，造成傷害與減速。',
+    proc: { every: 6, kind: 'chain', dmg: 26, jumps: 3, slow: 1.2 } },
+  { id: 'dash_trail', name: '殘軌', tag: '位移',
+    desc: '衝刺經過的路徑會留下軌跡，0.75 秒後爆炸。',
+    dashTrail: { delay: 0.75, dmg: 34, r: 62 } },
+  { id: 'stun_shield', name: '制勝', tag: '控場',
+    desc: '每次把敵人定身或擒抱住，獲得一層護盾（最多 3 層）。',
+    onControl: { shield: 1, max: 3 } },
+  { id: 'comet', name: '流星', tag: '控場',
+    desc: '定身或擒抱敵人時，召喚一顆短暫延遲後墜落的彗星。',
+    onControl: { comet: { delay: 0.8, dmg: 58, r: 84 } } },
+  { id: 'blood_pact', name: '血契', tag: '代價',
+    desc: '最大生命 -30%，但所有傷害額外造成真實傷害。',
+    stats: { maxHp: -30 }, trueDmg: 0.25 },
+  { id: 'ward', name: '結界', tag: '防禦',
+    desc: '每 30 秒獲得一道護盾，可以完全擋下一次傷害。',
+    ward: { every: 30 } },
+  { id: 'pace', name: '腳程', tag: '防禦',
+    desc: '移動累積到一定距離就回復生命。走位本身變成資源。',
+    paceHeal: { per: 900, hp: 6 } },
+  { id: 'pulse', name: '念動', tag: '範圍',
+    desc: '每 6 秒自動在周圍炸開一次念力衝擊。',
+    proc: { every: 6, kind: 'nova', dmg: 32, r: 108 } },
+  { id: 'reap', name: '斬返', tag: '範圍',
+    desc: '每 8 秒自動放出一次大範圍斬擊，命中會回血。',
+    proc: { every: 8, kind: 'reap', dmg: 40, r: 150, heal: 4 } },
+];
+const TRAIT_MAP = {};
+TRAITS.forEach(t => TRAIT_MAP[t.id] = t);

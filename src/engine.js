@@ -128,6 +128,11 @@ function recalcStats(p) {
     for (const k in it.stats) s[k] += it.stats[k];
   });
   if (p.waveStats) for (const k in p.waveStats) s[k] += p.waveStats[k];
+  // 特性的屬性部分（體型、長臂、快手、血契…）跟道具走同一條加總路線
+  (p.traits || []).forEach(id => {
+    const t = TRAIT_MAP[id];
+    if (t && t.stats) for (const k in t.stats) s[k] += t.stats[k];
+  });
   // 武器流派套裝：同 klass 2 把小成、3 把大成
   const kc = {};
   p.weapons.forEach(w => kc[w.klass] = (kc[w.klass] || 0) + 1);
@@ -213,6 +218,8 @@ function startRun(charId, danger) {
   // 開局只開「站站」「移移」兩排六格且全部填滿——不要讓玩家一開始就苦惱空格。
   G.player.comboBoard = defaultBoard(charId);
   G.player.boardRows = ['SS', 'MM'];
+  G.player.traits = [];
+  G.traitChoices = null;
   // 擁有池：盤上的六招開局就有，其餘靠商店買。同一招只能上一格，所以要記誰在盤上。
   G.player.ownedFinishers = Object.keys(G.player.comboBoard).map(k => G.player.comboBoard[k]);
   G.shop = null;
@@ -4248,9 +4255,41 @@ function finishWaveReal() {
   const harvest = Math.round(G.player.stats.harvest * (1 + G.wave * 0.15));
   if (harvest > 0) { G.materials += harvest; G.totalMaterials += harvest; }
   if (G.wave >= MAX_WAVE) { G.mode = 'victory'; onRunEnd(true); if (typeof onModeChange === 'function') onModeChange(); return; }
+  // 打完頭目才給特性抉擇（總監 2026-08-04）：那是會改變打法的東西，
+  // 放進升級四選一會把那個已經定案要維持樸素的介面撐爆。
+  if (isBossWave(G.wave)) { G.pendingShop = true; openTraitPick(); return; }
   if (G.levelQueue > 0) { G.pendingShop = true; openLevelUp(); }
   else { openShop(); }
 }
+
+function openTraitPick() {
+  const own = G.player.traits || [];
+  const pool = TRAITS.filter(t => own.indexOf(t.id) < 0);
+  const picks = [];
+  for (let i = 0; i < 3 && pool.length; i++) {
+    picks.push(pool.splice(Math.floor(rng() * pool.length), 1)[0]);
+  }
+  if (!picks.length) { openShop(); return; }
+  G.traitChoices = picks;
+  G.mode = 'trait';
+  if (typeof onModeChange === 'function') onModeChange();
+}
+
+function chooseTrait(i) {
+  const _p = G.player;
+  const t = G.traitChoices && G.traitChoices[i];
+  if (!t) return;
+  G.player.traits.push(t.id);
+  G.traitChoices = null;
+  recalcStats(_p);
+  if (G.pendingShop) { G.pendingShop = false; openShop(); }
+  else { G.mode = 'playing'; }
+  if (typeof onModeChange === 'function') onModeChange();
+}
+
+/* 特性查詢：引擎各處用這兩個，不要各自去翻 traits 陣列 */
+function hasTrait(id) { const p = G.player; return !!(p && p.traits && p.traits.indexOf(id) >= 0); }
+function traitOf(id) { return hasTrait(id) ? TRAIT_MAP[id] : null; }
 
 /* ---------- 商店 ---------- */
 function rollItem(maxTier) {
