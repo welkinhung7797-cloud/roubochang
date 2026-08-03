@@ -1624,6 +1624,19 @@ function updateTechniques(dt) {
             p.dashState = null;
           }
           break;
+        } else if (s.id === 'clothesline' && !e.hitByDash) {
+          // 飛奔金臂勾：奔跑中掛到誰誰倒，不停步、貫穿整排
+          e.hitByDash = true; s.hitAny = true;
+          const aL = Math.atan2(s.dy, s.dx);
+          hurtEnemy(e, techDmg(s.chargeDmg || 55) * (s.boost || 1), { crit: chance(0.35), fromAngle: aL });
+          if (!e.dead) {
+            const kb = e.boss ? (s.chargeKnock || 380) * 0.2 : (s.chargeKnock || 380);
+            e.knockX += Math.cos(aL) * kb; e.knockY += Math.sin(aL) * kb;
+            e.stun = Math.max(e.stun, e.boss ? (s.chargeStun || 1) * 0.4 : (s.chargeStun || 1));
+            e.hitSquash = Math.max(e.hitSquash || 0, 0.24);
+          }
+          sfx('hit_heavy');
+          addHitstop(0.05, true);
         } else if (s.id === 'seiken' && !e.hitByDash) {
           // 飛込正拳：只打碰到的第一個敵人，釘住，下一拳必定爆擊
           e.hitByDash = true; s.hitAny = true;
@@ -1977,29 +1990,17 @@ function castOugi(o, target) {
       break;
     }
     case 'charge_line': {
-      // 橫掛衝鋒：朝方向衝一段，路徑上的人全部被掛倒
+      // 橫掛衝鋒：真的跑過去（不是瞬移）——dashState 帶位移，沿路撞到誰誰倒
       const dirC = dashDir();
-      const ex2 = Math.max(p.r, Math.min(ARENA.w - p.r, p.x + dirC.x * pr.len));
-      const ey2 = Math.max(p.r, Math.min(ARENA.h - p.r, p.y + dirC.y * pr.len));
       const aC = Math.atan2(dirC.y, dirC.x);
-      for (const o2 of G.enemies) {
-        if (o2.dead) continue;
-        const t2 = Math.max(0, Math.min(1,
-          ((o2.x - p.x) * (ex2 - p.x) + (o2.y - p.y) * (ey2 - p.y)) / (dist2(p.x, p.y, ex2, ey2) || 1)));
-        const qx = p.x + (ex2 - p.x) * t2, qy = p.y + (ey2 - p.y) * t2;
-        if (dist2(o2.x, o2.y, qx, qy) < (pr.width / 2 + o2.r) * (pr.width / 2 + o2.r)) {
-          hurtEnemy(o2, techDmg(pr.dmg), { crit: chance(0.35), fromAngle: aC });
-          if (!o2.dead) {
-            const kb = o2.boss ? pr.knock * 0.2 : pr.knock;
-            o2.knockX += Math.cos(aC) * kb; o2.knockY += Math.sin(aC) * kb;
-            o2.stun = Math.max(o2.stun, o2.boss ? pr.stun * 0.4 : pr.stun);
-          }
-        }
-      }
-      spawnFx('swing', p.x, p.y, '#c98a3c', 130, { angle: aC, arc: 150, type: 'arc' });
-      p.pose = { type: pr.pose || 'swing', ang: aC, t: 0, dur: 0.35, prio: 1 };
-      p.x = ex2; p.y = ey2;
-      pushOutOfWalls(p);
+      const spdC = pr.chargeSpd || 820;
+      p.dashState = {
+        id: 'clothesline', dx: dirC.x, dy: dirC.y,
+        t: pr.len / spdC, spd: spdC,
+        chargeDmg: pr.dmg, chargeKnock: pr.knock, chargeStun: pr.stun,
+        chargeW: pr.width / 2, boost: 1,
+      };
+      p.pose = { type: pr.pose || 'swing', ang: aC, t: 0, dur: pr.len / spdC + 0.15, prio: 1 };
       spawnFx('slide', p.x, p.y, '#c98a3c', 40, { angle: aC });
       sfx('wind');
       ok = true; break;
