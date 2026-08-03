@@ -209,11 +209,11 @@ const COMBOS = {
       ext: 'ninotachi', extName: '二之太刀',
       desc: 'AAB：踏出去那一步順勢把刀帶成一輪弧月，身邊一圈全部掛彩。馬上按 C＝二之太刀。' },
     { seq: ['M', 'M', 'M'], name: '橫一文字', kind: 'line_pierce',
-      params: { dmg: 58, width: 70, len: 280, stun: 0.3, cuts: 1 },
+      params: { dmg: 58, width: 70, len: 280, stun: 0.3, cuts: 1, pose: 'yokoichi' },
       ext: 'issen', extName: '一閃',
       desc: 'BBB：跑起來的那一刀不收，橫著劃過去，站在那條線上的人全都掛了彩。馬上按 C＝一閃。' },
     { seq: ['M', 'M', 'S'], name: '切落', kind: 'strike_heavy',
-      params: { dmg: 66, range: 130, stun: 1.0, radius: 70, cleaveMul: 0.35, cuts: 3, pose: 'chop', img: 'fx_slash_kesa' },
+      params: { dmg: 66, range: 130, stun: 1.0, radius: 70, cleaveMul: 0.35, cuts: 3, pose: 'kiriotoshi', img: 'fx_slash_kesa' },
       ext: 'karatake', extName: '唐竹割',
       desc: 'BBA：衝到面前才停，腳一釘住刀就直直落下——三道斬痕直接推到引爆線。馬上按 C＝唐竹割。' },
   ],
@@ -261,9 +261,9 @@ const EXT_MOVES = {
     params: { dmg: 46, radius: 230, knock: 150, stun: 0.4, cuts: 2, severAll: true,
       color: '#e8f2ff', img: 'fx_slash_crescent' } },
   issen: { name: '一閃', kind: 'delayed_cuts', shake: 12, hitstop: 0.1, sfx: 'flash',
-    params: { len: 560, width: 64, cuts: 2, delay: 0.3, dmgPerCut: 16, n: 3, blink: true, stun: 0.5 } },
+    params: { len: 560, width: 64, cuts: 2, delay: 0.3, dmgPerCut: 16, n: 3, blink: true, stun: 0.5, pose: 'issen' } },
   karatake: { name: '唐竹割', kind: 'execute_cut', shake: 15, hitstop: 0.14, sfx: 'swing_blade',
-    params: { dmg: 88, cutsBonus: 2, pose: 'chop' } },
+    params: { dmg: 88, cutsBonus: 2, pose: 'karatake' } },
 };
 
 /* 同拍共鳴／三段勁的職業版顯示名（機制共用，只換字；查無此職業就用通用名） */

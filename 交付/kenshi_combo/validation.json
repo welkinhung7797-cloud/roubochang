@@ -1,0 +1,88 @@
+{
+  "character": "Kenshi",
+  "reference_frames": [
+    "ref_frames/kenshi_idle.png",
+    "ref_frames/kenshi_punch_1.png"
+  ],
+  "generation_mode": "built-in image generation with reference-locked identity prompts",
+  "canvas": {
+    "width": 512,
+    "height": 512,
+    "background": "#FFFFFF",
+    "opaque": true
+  },
+  "animation_alignment": {
+    "grounded_orange_foot_baseline_y": "477-478",
+    "karatake_1_airborne_orange_foot_bottom_y": 419,
+    "rule": "shared grounded baseline; compression and extension instead of incidental bobbing"
+  },
+  "manual_visual_gates": {
+    "same_samurai_penguin_identity": "pass",
+    "faces_right": "pass",
+    "determined_expression": "pass",
+    "topknot_present": "pass",
+    "drawn_katana_present": "pass",
+    "hip_sheath_painted_into_every_frame": "pass",
+    "no_text_or_watermark": "pass",
+    "hard_cel_fill_and_dark_outline": "pass",
+    "readable_at_46px_tall": "pass"
+  },
+  "frames": [
+    {
+      "file": "yokoichi_1.png",
+      "dimensions": "512x512",
+      "alpha_range": [255, 255],
+      "pure_white_corners": 4,
+      "sha256": "3957b1c09f206e31f322f758697850737f124d1f750f1c085f9e7d9e68444a73"
+    },
+    {
+      "file": "yokoichi_2.png",
+      "dimensions": "512x512",
+      "alpha_range": [255, 255],
+      "pure_white_corners": 4,
+      "sha256": "9c7dedc24d7dfc3953853436c994a7778f2d6e3a07ebb1c7f7c8338daee9f5e2"
+    },
+    {
+      "file": "kiriotoshi_1.png",
+      "dimensions": "512x512",
+      "alpha_range": [255, 255],
+      "pure_white_corners": 4,
+      "sha256": "5a8cf6fb6946ae38864f8233268b8a97bab112e88cb288d5a83ff8c41332ee12"
+    },
+    {
+      "file": "kiriotoshi_2.png",
+      "dimensions": "512x512",
+      "alpha_range": [255, 255],
+      "pure_white_corners": 4,
+      "sha256": "01c120fb0ead25125d1c7d965a18901d0dea991b67b745fc3366bb89ee135b53"
+    },
+    {
+      "file": "issen_1.png",
+      "dimensions": "512x512",
+      "alpha_range": [255, 255],
+      "pure_white_corners": 4,
+      "sha256": "d284ecad192053c722e2b474f25858334f191b0f89a68dfbb078b8c939cb91a9"
+    },
+    {
+      "file": "issen_2.png",
+      "dimensions": "512x512",
+      "alpha_range": [255, 255],
+      "pure_white_corners": 4,
+      "sha256": "bba26b1d730fa15a6981b00d25f113deb2b7570b21682d58617c8d8995e95630"
+    },
+    {
+      "file": "karatake_1.png",
+      "dimensions": "512x512",
+      "alpha_range": [255, 255],
+      "pure_white_corners": 4,
+      "sha256": "5a0dc220f7f05d53aeb0eaa317dfcb9552e9957a14850bb241529c8a65454e20"
+    },
+    {
+      "file": "karatake_2.png",
+      "dimensions": "512x512",
+      "alpha_range": [255, 255],
+      "pure_white_corners": 4,
+      "sha256": "259738b090b40477d7303572df3f6d67e74877e0dbecf2fdaa38e328da718415"
+    }
+  ]
+}
