@@ -40,6 +40,14 @@
 
   let ctx = null;
   let master = null;
+  let bgmBus = null, bgmSrc = null, bgmBuf = null, bgmLoading = false;
+  const BGM_FILE = 'assets/bgm/battle.mp3';
+  const BGM_LOOP_END = 59.0;   // 原曲最後 0.9 秒是淡出——循環跳過它，不然每分鐘會掉一次音量
+  let bgmVol = 0.55;
+  try {
+    const bv = parseFloat(localStorage.getItem('penguin_bgmvol_v1'));
+    if (!isNaN(bv)) bgmVol = Math.max(0, Math.min(1, bv));
+  } catch (e) {}
   const buffers = {};
   const lastPlay = {};
   let muted = false;
@@ -57,6 +65,9 @@
     master = ctx.createGain();
     master.gain.value = curVol;
     master.connect(ctx.destination);
+    bgmBus = ctx.createGain();
+    bgmBus.gain.value = bgmVol;
+    bgmBus.connect(master);
     // 預載全部
     for (const key in FILES) {
       FILES[key].forEach((name, i) => {
@@ -159,8 +170,61 @@
     });
   };
 
+  function loadBgm() {
+    if (bgmBuf || bgmLoading || !ctx) return;
+    bgmLoading = true;
+    fetch(BGM_FILE)
+      .then(r => r.arrayBuffer())
+      .then(ab => ctx.decodeAudioData(ab))
+      .then(buf => { bgmBuf = buf; bgmLoading = false; if (window.__bgmWanted) window.bgmPlay(); })
+      .catch(() => { bgmLoading = false; });
+  }
+
+  window.bgmPlay = function () {
+    window.__bgmWanted = true;
+    if (!ensureCtx()) return;
+    if (ctx.state === 'suspended') ctx.resume();
+    if (!bgmBuf) { loadBgm(); return; }
+    if (bgmSrc) return;   // 已經在播
+    bgmSrc = ctx.createBufferSource();
+    bgmSrc.buffer = bgmBuf;
+    bgmSrc.loop = true;
+    bgmSrc.loopStart = 0;
+    bgmSrc.loopEnd = Math.min(BGM_LOOP_END, bgmBuf.duration);
+    bgmSrc.connect(bgmBus);
+    bgmSrc.start(0);
+  };
+
+  window.bgmStop = function (fade) {
+    window.__bgmWanted = false;
+    if (!bgmSrc || !ctx) return;
+    const s = bgmSrc;
+    bgmSrc = null;
+    if (fade) {
+      const g = ctx.createGain();
+      // 淡出後停：直接 stop 會爆音
+      try { s.disconnect(); } catch (e) {}
+      s.connect(g); g.connect(bgmBus);
+      const t0 = ctx.currentTime;
+      g.gain.setValueAtTime(1, t0);
+      g.gain.linearRampToValueAtTime(0.0001, t0 + fade);
+      setTimeout(() => { try { s.stop(); } catch (e) {} }, fade * 1000 + 60);
+    } else {
+      try { s.stop(); } catch (e) {}
+    }
+  };
+
+  window.bgmGetVolume = function () { return bgmVol; };
+  window.bgmSetVolume = function (v) {
+    bgmVol = Math.max(0, Math.min(1, v));
+    if (bgmBus) bgmBus.gain.value = bgmVol;
+    try { localStorage.setItem('penguin_bgmvol_v1', String(bgmVol)); } catch (e) {}
+    return bgmVol;
+  };
+
   window.sfxToggleMute = function () {
     muted = !muted;
+    if (bgmBus) bgmBus.gain.value = muted ? 0 : bgmVol;
     return muted;
   };
 })();

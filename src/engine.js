@@ -7,6 +7,8 @@ if (typeof window === 'undefined' || !window.AudioContext) {
   var sfx = function () {};
   var sfxBeat = function () {};
   var sfxComboReady = function () {};
+  var bgmPlay = function () {};
+  var bgmStop = function () {};
 }
 
 /* ---------- 亂數（可設種子，方便自動化測試重現） ---------- */

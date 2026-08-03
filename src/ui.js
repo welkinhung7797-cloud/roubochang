@@ -8,6 +8,12 @@ let selectedDanger = 0;
 
 function onModeChange() {
   if (G.mode !== 'playing' && typeof showPause === 'function') showPause(false);
+  // 戰鬥 BGM：進場放、結算停（商店與升級照放，節奏不斷）
+  if (typeof bgmPlay === 'function') {
+    if (G.mode === 'playing' || G.mode === 'shop' || G.mode === 'levelup') bgmPlay();
+    else if (G.mode === 'gameover' || G.mode === 'victory') bgmStop(1.2);
+    else bgmStop(0.5);
+  }
   ['panel-menu', 'panel-select', 'panel-levelup', 'panel-shop', 'panel-end'].forEach(id => {
     $(id).classList.add('hidden');
   });
@@ -610,6 +616,11 @@ function showPause(on) {
     $('opt-vol').value = v;
     $('opt-vol-val').textContent = v;
   }
+  if (on && typeof bgmGetVolume === 'function') {
+    const bv = Math.round(bgmGetVolume() * 100);
+    const el2 = $('opt-bgm');
+    if (el2) { el2.value = bv; $('opt-bgm-val').textContent = bv; }
+  }
   if (on && G.char) {
     const row = $('pause-combo');
     if (row) row.innerHTML = comboTableHtml(G.char.id);
@@ -622,6 +633,13 @@ function initPauseMenu() {
     vol.oninput = () => {
       $('opt-vol-val').textContent = vol.value;
       if (typeof sfxSetVolume === 'function') sfxSetVolume(vol.value / 100);
+    };
+  }
+  const bg = $('opt-bgm');
+  if (bg) {
+    bg.oninput = () => {
+      $('opt-bgm-val').textContent = bg.value;
+      if (typeof bgmSetVolume === 'function') bgmSetVolume(bg.value / 100);
     };
   }
   const r = $('btn-resume');
