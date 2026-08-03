@@ -832,16 +832,6 @@ function drawPlayer() {
         }
       }
     }
-    // 連段就緒：金色脈動圈——身體亮起來，下一下就是收尾招
-    if (rdy.length) {
-      ctx.strokeStyle = rdy.some(r => r.sig) ? '#ffd44a' : '#e8e4dc';
-      ctx.lineWidth = 2.5;
-      ctx.globalAlpha = 0.5 + Math.sin(G.time * 13) * 0.3;
-      ctx.beginPath();
-      ctx.arc(0, 0, p.r + 11 + Math.sin(G.time * 13) * 2, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
   }
 
   // 爆發光環
@@ -854,17 +844,11 @@ function drawPlayer() {
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
-  // 三態招式視覺：站樁與移動技生效時要一眼看得出「開著」
+  // 三態招式視覺：站樁生效交給架式幀與蓄力點演，不再畫指示環（總監：看不懂的圈圈不要）
   const stillOn = stillActive();
   const movingOn = movingActive();
   if (stillOn) {
     const sid = p.moves.still;
-    const col = MOVE_MAP[sid] ? MOVE_MAP[sid].color : '#e8e4dc';
-    ctx.strokeStyle = col;
-    ctx.lineWidth = 2.5;
-    ctx.globalAlpha = 0.55 + Math.sin(G.time * 8) * 0.2;
-    ctx.beginPath(); ctx.arc(0, 0, p.r + 8, 0, Math.PI * 2); ctx.stroke();
-    ctx.globalAlpha = 1;
     if ((sid === 'focus_strike' || sid === 'sanchin') && p.focusStacks > 0) {   // 蓄力層數
       ctx.fillStyle = '#e8964a';
       for (let i = 0; i < p.focusStacks; i++) {

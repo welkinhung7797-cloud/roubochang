@@ -715,6 +715,18 @@ function throwDmg(base) {
 /* ---------- 三態招式 ----------
    衝刺技＝Space 主動；移動技＝持續移動自動；站樁技＝站定 0.5 秒自動。
 */
+/* 蓄好待發：招蓄滿但範圍內沒目標 → 扣住（計時器停在滿格），有人進圈立刻放。
+   對空氣出招＝把演出的份量花在沒有意義的地方（總監明令禁止）。 */
+function holdOrFire(timerKey, def, range) {
+  const p = G.player;
+  if (!nearestEnemy(p.x, p.y, range)) {
+    p[timerKey] = def.interval;   // 扣住：保持蓄滿
+    return false;
+  }
+  p[timerKey] = 0;
+  return true;
+}
+
 function stillActive() {
   const p = G.player;
   return p.stillT > 0.5 && !p.dashState && !p.grabState && !p.airSlam && !p.dead;
@@ -1249,11 +1261,11 @@ function updateTechniques(dt) {
   if (stillActive()) {
     p.stillTechTimer += dt;
     if (stillId === 'quake_pulse' && p.stillTechTimer >= MOVE_MAP.quake_pulse.interval) {
-      p.stillTechTimer = 0;
-      quakePulse(MOVE_MAP.quake_pulse);
+      if (holdOrFire('stillTechTimer', MOVE_MAP.quake_pulse, MOVE_MAP.quake_pulse.radius + 20))
+        quakePulse(MOVE_MAP.quake_pulse);
     } else if (stillId === 'palm_flurry' && p.stillTechTimer >= MOVE_MAP.palm_flurry.interval && !p.flurry) {
-      p.stillTechTimer = 0;
-      p.flurry = { t: 0.4, tick: 0, n: 0, max: 3 };
+      if (holdOrFire('stillTechTimer', MOVE_MAP.palm_flurry, 150))
+        p.flurry = { t: 0.4, tick: 0, n: 0, max: 3 };
     } else if (stillId === 'sanchin') {
       // 三戰立：扎根調息，五分勁滿的那一擊必定爆擊（引爆空手道的爆擊震盪）
       p.focusT += dt;
@@ -1264,13 +1276,13 @@ function updateTechniques(dt) {
         if (p.focusStacks >= (MOVE_MAP.sanchin.max || 5)) p.guaranteedCrit = true;
       }
     } else if (stillId === 'triple_slash' && p.stillTechTimer >= MOVE_MAP.triple_slash.interval && !p.flurry) {
-      p.stillTechTimer = 0;
+      if (holdOrFire('stillTechTimer', MOVE_MAP.triple_slash, 160))
       p.flurry = { t: 0.5, tick: 0, n: 0, max: 3, tickDur: 0.14, radius: 145, halfArc: 0.87,
         arc: 100, color: '#b8c6dc', pose: 'chop', beat: 'S', sfx: 'swing_blade',
         dmg: [10, 10, 20], knock: [40, 40, 130], stunLast: 0.6, img: 'fx_slash_triple', imgLast: 'fx_slash_kesa' };
     } else if (stillId === 'elbow_drop' && p.stillTechTimer >= MOVE_MAP.elbow_drop.interval) {
-      p.stillTechTimer = 0;
-      elbowDrop(MOVE_MAP.elbow_drop);
+      if (holdOrFire('stillTechTimer', MOVE_MAP.elbow_drop, MOVE_MAP.elbow_drop.radius + 20))
+        elbowDrop(MOVE_MAP.elbow_drop);
     } else if (stillId === 'focus_strike') {
       p.focusT += dt;
       if (p.focusT >= 0.6 && p.focusStacks < 6) {
@@ -1290,22 +1302,22 @@ function updateTechniques(dt) {
   if (movingActive()) {
     p.moveTechTimer += dt;
     if (moveId === 'cyclone_kick' && p.moveTechTimer >= MOVE_MAP.cyclone_kick.interval) {
-      p.moveTechTimer = 0;
-      cycloneSweep(MOVE_MAP.cyclone_kick);
+      if (holdOrFire('moveTechTimer', MOVE_MAP.cyclone_kick, MOVE_MAP.cyclone_kick.radius + 20))
+        cycloneSweep(MOVE_MAP.cyclone_kick);
     } else if (moveId === 'tail_wake' && p.moveTechTimer >= MOVE_MAP.tail_wake.interval) {
-      p.moveTechTimer = 0;
-      tailWake();
+      if (holdOrFire('moveTechTimer', MOVE_MAP.tail_wake, 130))
+        tailWake();
     } else if (moveId === 'jodan_kick' && p.moveTechTimer >= MOVE_MAP.jodan_kick.interval) {
-      p.moveTechTimer = 0;
-      cycloneSweep(MOVE_MAP.jodan_kick);
+      if (holdOrFire('moveTechTimer', MOVE_MAP.jodan_kick, MOVE_MAP.jodan_kick.radius + 20))
+        cycloneSweep(MOVE_MAP.jodan_kick);
     } else if (moveId === 'twin_slash' && p.moveTechTimer >= MOVE_MAP.twin_slash.interval && !p.flurry) {
-      p.moveTechTimer = 0;
+      if (holdOrFire('moveTechTimer', MOVE_MAP.twin_slash, 150))
       p.flurry = { t: 0.3, tick: 0, n: 0, max: 2, tickDur: 0.12, radius: 130, halfArc: 0.96,
         arc: 110, color: '#8fa8d4', pose: 'chop', beat: 'M', sfx: 'swing_blade',
         dmg: 10, knock: 55, img: 'fx_slash_double' };
     } else if (moveId === 'lariat_run' && p.moveTechTimer >= MOVE_MAP.lariat_run.interval) {
-      p.moveTechTimer = 0;
-      lariatRun(MOVE_MAP.lariat_run);
+      if (holdOrFire('moveTechTimer', MOVE_MAP.lariat_run, MOVE_MAP.lariat_run.radius + 20))
+        lariatRun(MOVE_MAP.lariat_run);
     } else if (moveId === 'phantom_press') {
       phantomPress(dt);
     }
