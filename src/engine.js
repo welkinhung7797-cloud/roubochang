@@ -217,6 +217,7 @@ function startWave(w) {
   P.grabState = null; P.dashState = null; P.flurry = null;
   P.burstMulti = null; P.rushMulti = null; P.kneeChain = null; P.ougiField = 0;
   P.beatLog = []; P.beatT = 0; P.beatState = null; P.beatCd = 0; P.triCd = 0; P.stillHold = 0;
+  P.dashChain = 0; P.dashChainT = 0; P.dashBeatCounted = false; P.ougiCd = 0;
   P.dashCd = 0; P.moveTechTimer = 0; P.stillTechTimer = 0; P.counterProcCd = 0;
   P.focusStacks = 0; P.focusT = 0; P.breathAcc = 0;
   P.flashHasteT = 0; P.staggerT = 0; P.pose = null;
@@ -723,18 +724,20 @@ function autoDmg(base) {
 
 function castDash() {
   const p = G.player;
-  if (p.dead || p.dashCd > 0) return false;
+  if (p.dead) return false;
   if (p.grabState || p.dashState || p.staggerT > 0 || p.burstMulti || p.rushMulti || p.kneeChain) return false;
   const id = p.moves.dash;
   const d = MOVE_MAP[id];
 
-  // 奧義判定：節拍湊齊職業指令，這一下 Space 就不是普通衝刺
+  // 奧義判定：節拍湊齊職業指令，這一下 Space 就不是普通衝刺。
+  // 奧義不是衝刺，不吃衝刺冷卻——湊齊了隨時能放。
   const o = OUGI[G.char.id];
-  if (o && beatsMatch(p.beatLog, o.seq)) {
+  if (o && (p.ougiCd || 0) <= 0 && beatsMatch(p.beatLog, o.seq)) {
     const okO = castOugi(o);
     if (okO) {
       p.beatLog = []; p.beatT = 0;
       p.dashCd = d.cd * 1.25 * TUNE.dashCdMul * (hasItem('master_obi') ? 0.8 : 1);
+      p.ougiCd = d.cd * 1.25;   // 奧義自身冷卻：防止純站/移拍序連發
       G.ougiBanner = { name: o.name, t: 1.3 };
       G.screenShake = Math.max(G.screenShake, 10);
       addHitstop(0.12, true);
@@ -744,6 +747,7 @@ function castDash() {
       return true;
     }
   }
+  if (p.dashCd > 0) return false;
 
   // 通用節拍加成：站拍＝這次衝刺傷害 +25%／拍，移拍＝冷卻 -15%／拍
   const stillBeats = p.beatLog.filter(b => b === 'S').length;
@@ -751,6 +755,10 @@ function castDash() {
   const boost = 1 + stillBeats * 0.25;
   const cdMul = 1 - Math.min(0.45, moveBeats * 0.15);
 
+  // 拍譜在出招前就結清（換成蓄勁/縮冷卻），switch 內命中記的 D 拍才能存活；
+  // 出招失敗（例：縮地沒目標）就原封還原，不能白吃玩家的拍。
+  const beatSnapshot = p.beatLog;
+  p.beatLog = []; p.beatT = 0; p.dashBeatCounted = false;
   let ok = false;
   switch (id) {
     case 'tackle': ok = dashTackle(d); break;
@@ -785,13 +793,13 @@ function castDash() {
       break;
     }
     case 'shadow_dash': ok = dashGeneric(d, 'shadow'); break;   // 穿人但不無敵——這遊戲的衝刺沒有無敵
+    case 'lunge_thrust': ok = dashGeneric(d, 'seiken'); break;
     case 'sumo_press': ok = techSumoPress(d); break;
   }
   if (ok) {
     sfx(id === 'flash_step' ? 'flash' : 'dash');
     p.dashCd = d.cd * cdMul * TUNE.dashCdMul * (hasItem('master_obi') ? 0.8 : 1);
     if (p.dashState) p.dashState.boost = boost;
-    p.beatLog = []; p.beatT = 0;   // 每次衝刺後重新演奏
     if (boost > 1) addDmgNum(p.x, p.y - 34, '蓄勁 ×' + boost.toFixed(2), '#e8964a');
     p.pose = { type: 'dash', ang: 0, t: 0, dur: Math.max(0.25, d.dashDur || 0.25), prio: 1 };
     if (hasItem('fist_wrap')) p.guaranteedCrit = true;
@@ -804,6 +812,7 @@ function castDash() {
       });
     }
   }
+  if (!ok) { p.beatLog = beatSnapshot; }
   return ok;
 }
 
@@ -916,20 +925,78 @@ function quakePulse(d) {
 function cycloneSweep(d) {
   const p = G.player;
   let hitAny = false;
-  spawnFx('swing', p.x, p.y, '#c9d96a', d.radius, { angle: 0, arc: 360, type: 'spin' });
-  p.pose = { type: 'kick', ang: 0, t: 0, dur: 0.3, prio: 1 };
+  const full = !d.arc || d.arc >= 360;
+  const tgt = full ? null : nearestEnemy(p.x, p.y, 200);
+  const ang = full ? 0 : (tgt ? Math.atan2(tgt.y - p.y, tgt.x - p.x) : (p.face > 0 ? 0 : Math.PI));
+  const half = full ? Math.PI * 2 : (d.arc * Math.PI / 180) / 2;
+  spawnFx('swing', p.x, p.y, d.color || '#c9d96a', d.radius, { angle: ang, arc: full ? 360 : d.arc, type: full ? 'spin' : 'arc', img: d.img });
+  p.pose = { type: 'kick', ang, t: 0, dur: 0.3, prio: 1 };
   for (const e of G.enemies) {
     if (e.dead) continue;
     if (dist2(e.x, e.y, p.x, p.y) < (d.radius + e.r) * (d.radius + e.r)) {
+      const ea = Math.atan2(e.y - p.y, e.x - p.x);
+      if (!full && Math.abs(angDiff(ea, ang)) > half) continue;
       hitAny = true;
-      hurtEnemy(e, autoDmg(9), { trueDmg: true });
+      hurtEnemy(e, autoDmg(d.dmg || 9), { trueDmg: true });
       if (!e.dead) {
-        const a = Math.atan2(e.y - p.y, e.x - p.x);
-        e.knockX += Math.cos(a) * 50; e.knockY += Math.sin(a) * 50;
+        e.knockX += Math.cos(ea) * (d.knock || 50); e.knockY += Math.sin(ea) * (d.knock || 50);
       }
     }
   }
   if (hitAny) addBeat('M');
+}
+
+/* 移動技：金臂勾——朝奔跑方向橫掃，助跑越久掛得越飛 */
+function lariatRun(d) {
+  const p = G.player;
+  const ml = Math.hypot(p.lastMoveX, p.lastMoveY) || 1;
+  const ang = Math.atan2(p.lastMoveY / ml, p.lastMoveX / ml);
+  const runK = Math.min(1, p.moveTime / 2.0);
+  const half = (d.arc * Math.PI / 180) / 2;
+  spawnFx('swing', p.x, p.y, d.color, d.radius, { angle: ang, arc: d.arc, type: 'arc', img: 'fx_lariat' });
+  p.pose = { type: 'swing', ang, t: 0, dur: 0.25, prio: 1 };
+  sfx('wind');
+  let hitAny = false;
+  for (const e of G.enemies) {
+    if (e.dead) continue;
+    if (dist2(e.x, e.y, p.x, p.y) > (d.radius + e.r) * (d.radius + e.r)) continue;
+    const ea = Math.atan2(e.y - p.y, e.x - p.x);
+    if (Math.abs(angDiff(ea, ang)) > half) continue;
+    hitAny = true;
+    hurtEnemy(e, autoDmg(d.dmg) * (0.7 + 0.8 * runK), { fromAngle: ang });
+    if (!e.dead) {
+      const kb = (e.boss ? 40 : d.knock) * (0.6 + 0.9 * runK);
+      e.knockX += Math.cos(ea) * kb; e.knockY += Math.sin(ea) * kb;
+      if (!e.boss && d.stun) e.stun = Math.max(e.stun, d.stun * runK);
+    }
+  }
+  if (hitAny) addBeat('M');
+}
+
+/* 站樁技：肘擊墜落——騰空落肘，砸到的連旁邊一起趴 */
+function elbowDrop(d) {
+  const p = G.player;
+  const tgt = nearestEnemy(p.x, p.y, d.radius);
+  const ang = tgt ? Math.atan2(tgt.y - p.y, tgt.x - p.x) : (p.face > 0 ? 0 : Math.PI);
+  p.pose = { type: 'elbow', ang, t: 0, dur: 0.3, prio: 1 };
+  spawnFx('shock', p.x, p.y, d.color, d.radius, { img: 'fx_elbow_drop' });
+  sfx('throw_hit');
+  addHitstop(0.05, false);
+  G.screenShake = Math.max(G.screenShake, 6);
+  let hitAny = false;
+  for (const e of G.enemies) {
+    if (e.dead) continue;
+    if (dist2(e.x, e.y, p.x, p.y) < (d.radius + e.r) * (d.radius + e.r)) {
+      hitAny = true;
+      hurtEnemy(e, autoDmg(d.dmg), { trueDmg: true });
+      if (!e.dead) {
+        e.stun = Math.max(e.stun, e.boss ? 0.28 : d.stun);
+        const a = Math.atan2(e.y - p.y, e.x - p.x);
+        e.knockX += Math.cos(a) * d.knock; e.knockY += Math.sin(a) * d.knock;
+      }
+    }
+  }
+  if (hitAny) addBeat('S');
 }
 
 /* 移動技：曳尾勁——掃傷身後 */
@@ -1131,6 +1198,8 @@ function updateTechniques(dt) {
   if (p.beatCd > 0) p.beatCd -= dt;
   if (p.triCd > 0) p.triCd -= dt;
   if (p.resonCd > 0) p.resonCd -= dt;
+  if (p.dashChainT > 0) p.dashChainT -= dt; else p.dashChain = 0;
+  if (p.ougiCd > 0) p.ougiCd -= dt;
   if (p.flowT > 0) p.flowT -= dt;
 
   // ---- 站樁技 ----
@@ -1143,6 +1212,23 @@ function updateTechniques(dt) {
     } else if (stillId === 'palm_flurry' && p.stillTechTimer >= MOVE_MAP.palm_flurry.interval && !p.flurry) {
       p.stillTechTimer = 0;
       p.flurry = { t: 0.4, tick: 0, n: 0, max: 3 };
+    } else if (stillId === 'sanchin') {
+      // 三戰立：扎根調息，五分勁滿的那一擊必定爆擊（引爆空手道的爆擊震盪）
+      p.focusT += dt;
+      if (p.focusT >= (MOVE_MAP.sanchin.tick || 0.5) && p.focusStacks < (MOVE_MAP.sanchin.max || 5)) {
+        p.focusT = 0; p.focusStacks++;
+        addDmgNum(p.x, p.y - 30, '勁', '#e8964a');
+        spawnFx('shock', p.x, p.y, '#e8964a', 46, { img: 'fx_kime' });
+        if (p.focusStacks >= (MOVE_MAP.sanchin.max || 5)) p.guaranteedCrit = true;
+      }
+    } else if (stillId === 'triple_slash' && p.stillTechTimer >= MOVE_MAP.triple_slash.interval && !p.flurry) {
+      p.stillTechTimer = 0;
+      p.flurry = { t: 0.5, tick: 0, n: 0, max: 3, tickDur: 0.14, radius: 145, halfArc: 0.87,
+        arc: 100, color: '#b8c6dc', pose: 'chop', beat: 'S', sfx: 'swing_blade',
+        dmg: [10, 10, 20], knock: [40, 40, 130], stunLast: 0.6, img: 'fx_slash_triple', imgLast: 'fx_slash_kesa' };
+    } else if (stillId === 'elbow_drop' && p.stillTechTimer >= MOVE_MAP.elbow_drop.interval) {
+      p.stillTechTimer = 0;
+      elbowDrop(MOVE_MAP.elbow_drop);
     } else if (stillId === 'focus_strike') {
       p.focusT += dt;
       if (p.focusT >= 0.6 && p.focusStacks < 6) {
@@ -1167,6 +1253,17 @@ function updateTechniques(dt) {
     } else if (moveId === 'tail_wake' && p.moveTechTimer >= MOVE_MAP.tail_wake.interval) {
       p.moveTechTimer = 0;
       tailWake();
+    } else if (moveId === 'jodan_kick' && p.moveTechTimer >= MOVE_MAP.jodan_kick.interval) {
+      p.moveTechTimer = 0;
+      cycloneSweep(MOVE_MAP.jodan_kick);
+    } else if (moveId === 'twin_slash' && p.moveTechTimer >= MOVE_MAP.twin_slash.interval && !p.flurry) {
+      p.moveTechTimer = 0;
+      p.flurry = { t: 0.3, tick: 0, n: 0, max: 2, tickDur: 0.12, radius: 130, halfArc: 0.96,
+        arc: 110, color: '#8fa8d4', pose: 'chop', beat: 'M', sfx: 'swing_blade',
+        dmg: 10, knock: 55, img: 'fx_slash_double' };
+    } else if (moveId === 'lariat_run' && p.moveTechTimer >= MOVE_MAP.lariat_run.interval) {
+      p.moveTechTimer = 0;
+      lariatRun(MOVE_MAP.lariat_run);
     } else if (moveId === 'phantom_press') {
       phantomPress(dt);
     }
@@ -1174,27 +1271,33 @@ function updateTechniques(dt) {
     p.moveTechTimer = 0;
   }
 
-  // ---- 千手張打脈衝（站樁觸發） ----
+  // ---- 連段脈衝模板（千手張打／二連斬／三連斬共用；預設值＝千手張打原參數） ----
   if (p.flurry) {
     const f = p.flurry;
     f.t -= dt; f.tick -= dt;
     if (f.tick <= 0 && f.n < (f.max || 3)) {
-      f.tick = 0.115; f.n++;
+      f.tick = f.tickDur || 0.115; f.n++;
+      const isLast = f.n >= (f.max || 3);
       const tgt = nearestEnemy(p.x, p.y, 200);
       const ang = tgt ? Math.atan2(tgt.y - p.y, tgt.x - p.x) : (p.face > 0 ? 0 : Math.PI);
-      spawnFx('swing', p.x, p.y, '#c9576b', 110, { angle: ang, arc: 120, type: 'arc' });
-      p.pose = { type: 'palm', ang, t: 0, dur: 0.2, prio: 1 };
+      spawnFx('swing', p.x, p.y, f.color || '#c9576b', f.radius || 110,
+        { angle: ang, arc: f.arc || 120, type: 'arc', img: (isLast && f.imgLast) ? f.imgLast : f.img });
+      p.pose = { type: f.pose || 'palm', ang, t: 0, dur: 0.2, prio: 1 };
+      if (f.sfx) sfx(f.sfx);
+      const dmgN = Array.isArray(f.dmg) ? f.dmg[f.n - 1] : (f.dmg || 9);
+      const knockN = Array.isArray(f.knock) ? f.knock[f.n - 1] : (f.knock !== undefined ? f.knock : 140);
       for (const e of G.enemies) {
         if (e.dead) continue;
         const dd = Math.hypot(e.x - p.x, e.y - p.y);
-        if (dd > 110 + e.r) continue;
+        if (dd > (f.radius || 110) + e.r) continue;
         const ea = Math.atan2(e.y - p.y, e.x - p.x);
-        if (Math.abs(angDiff(ea, ang)) > 1.05) continue;
-        hurtEnemy(e, autoDmg(9), { fromAngle: ang });
-        addBeat('S');
+        if (Math.abs(angDiff(ea, ang)) > (f.halfArc || 1.05)) continue;
+        hurtEnemy(e, autoDmg(dmgN), { fromAngle: ang });
+        addBeat(f.beat || 'S');
         if (!e.dead) {
-          const kb = e.boss ? 25 : 140;
+          const kb = e.boss ? 25 : knockN;
           e.knockX += Math.cos(ea) * kb; e.knockY += Math.sin(ea) * kb;
+          if (isLast && f.stunLast && !e.boss) e.stun = Math.max(e.stun, f.stunLast);
         }
       }
     }
@@ -1298,7 +1401,8 @@ function updateTechniques(dt) {
               }
             }
           }
-          if (hitAny) addBeat('M');
+          // 整段掄甩只記一個 M 拍：多記會把擒抱的 D 拍擠出三格拍譜，D,M,S 就湊不成了
+          if (hitAny && !g.beatM) { g.beatM = true; addBeat('M'); }
           hurtEnemy(e, throwDmg(2), { trueDmg: true, noLifesteal: true });
         }
       } else {
@@ -1466,6 +1570,20 @@ function updateTechniques(dt) {
             p.dashState = null;
           }
           break;
+        } else if (s.id === 'seiken' && !e.hitByDash) {
+          // 飛込正拳：只打碰到的第一個敵人，釘住，下一拳必定爆擊
+          e.hitByDash = true; s.hitAny = true;
+          addBeat('D');
+          const da = Math.atan2(s.dy, s.dx);
+          hurtEnemy(e, techDmg(26) * (s.boost || 1), { fromAngle: da });
+          if (!e.dead) {
+            e.stun = Math.max(e.stun, 0.5);
+            e.knockX += Math.cos(da) * 300; e.knockY += Math.sin(da) * 300;
+          }
+          p.guaranteedCrit = true;
+          spawnFx('spark', e.x, e.y, '#ffd44a', 22, { angle: da });
+          p.dashState = null;
+          break;
         } else if (!e.hitByDash) {
           e.hitByDash = true; s.hitAny = true;
           addBeat('D');
@@ -1542,14 +1660,22 @@ function addBeat(type) {
     const rs = p.beatLog.join('');
     if (rs === 'MMM') {
       p.resonCd = 5; p.flowT = 4;
-      addDmgNum(p.x, p.y - 40, '行雲', '#8fd4e0', true);
+      addDmgNum(p.x, p.y - 40, resonName('MMM', '行雲'), '#8fd4e0', true);
     } else if (rs === 'SSS') {
       p.resonCd = 5; p.chargeHits = 3;
-      addDmgNum(p.x, p.y - 40, '蓄勢', '#e8964a', true);
-    } else if (rs === 'DDD') {
-      p.resonCd = 5;
+      addDmgNum(p.x, p.y - 40, resonName('SSS', '蓄勢'), '#e8964a', true);
+    }
+  }
+  // 連衝（同拍共鳴）：連續三次衝刺各命中至少一下（7 秒窗）。
+  // 不看拍譜——拍譜會被衝刺清掉，D 三連在譜上永遠湊不齊。
+  if (type === 'D' && !p.dashBeatCounted) {
+    p.dashBeatCounted = true;
+    p.dashChain = (p.dashChainT || 0) > 0 ? (p.dashChain || 0) + 1 : 1;
+    p.dashChainT = 7;
+    if (p.dashChain >= 3) {
+      p.dashChain = 0; p.dashChainT = 0;
       p.dashCd = Math.max(0, p.dashCd - 2.5);
-      addDmgNum(p.x, p.y - 40, '連衝', '#ffd44a', true);
+      addDmgNum(p.x, p.y - 40, resonName('DASH3', '連衝'), '#ffd44a', true);
     }
   }
   // 三段勁：最近三拍湊齊 站、移、衝 各一（順序不拘）→ 自動爆出一圈氣勁小招
@@ -1558,7 +1684,7 @@ function addBeat(type) {
     if (s === 'DMS') {
       p.triCd = 6;
       spawnFx('shock', p.x, p.y, '#ffd44a', 115);
-      addDmgNum(p.x, p.y - 40, '三段勁', '#ffd44a', true);
+      addDmgNum(p.x, p.y - 40, resonName('TRI', '三段勁'), '#ffd44a', true);
       addHitstop(0.06, true);
       sfx('wind');
       for (const e of G.enemies) {
@@ -1573,6 +1699,12 @@ function addBeat(type) {
       }
     }
   }
+}
+
+/* 同拍共鳴／三段勁的職業版顯示名：查 RESON_NAME 覆寫表，沒有就用通用名 */
+function resonName(key, fallback) {
+  const t = G.char && RESON_NAME[G.char.id];
+  return (t && t[key]) || fallback;
 }
 
 /* 依玩家當下的行動狀態決定這次武器命中算哪一拍 */
@@ -1594,7 +1726,7 @@ function beatsMatch(log, seq) {
 }
 function ougiReady() {
   const o = OUGI[G.char.id];
-  return !!(o && beatsMatch(G.player.beatLog, o.seq));
+  return !!(o && (G.player.ougiCd || 0) <= 0 && beatsMatch(G.player.beatLog, o.seq));
 }
 
 function castOugi(o) {
@@ -1612,6 +1744,7 @@ function castOugi(o) {
       hurtEnemy(e, techDmg(pr.dmg), { crit: true });
       if (!e.dead) e.stun = Math.max(e.stun, 1.0);
       spawnFx('explode', e.x, e.y, '#ffffff', 90);
+      spawnFx('shock', e.x, e.y, '#ffd44a', 100, { img: 'fx_kime_burst' });
       ok = true; break;
     }
     case 'burst_multi': {
@@ -1697,8 +1830,26 @@ function castOugi(o) {
           if (!e.dead) e.stun = Math.max(e.stun, 0.5);
         }
       }
-      spawnFx('heal_link', p.x, p.y, '#e8e4dc', 0, { tx: ex, ty: ey });
+      spawnFx('heal_link', p.x, p.y, '#e8e4dc', 0, { tx: ex, ty: ey, img: 'fx_ougi_slash' });
       p.x = ex; p.y = ey;
+      // 第二刀：落點反手橫掃，與第一刀在地上交成十字
+      if (pr.cross) {
+        const nx = -dir.y, ny = dir.x;
+        const ax = ex - nx * pr.crossLen, ay = ey - ny * pr.crossLen;
+        const bx = ex + nx * pr.crossLen, by = ey + ny * pr.crossLen;
+        for (const e of G.enemies) {
+          if (e.dead) continue;
+          const t2 = Math.max(0, Math.min(1,
+            ((e.x - ax) * (bx - ax) + (e.y - ay) * (by - ay)) / (dist2(ax, ay, bx, by) || 1)));
+          const qx = ax + (bx - ax) * t2, qy = ay + (by - ay) * t2;
+          if (dist2(e.x, e.y, qx, qy) < (pr.width / 2 + e.r) * (pr.width / 2 + e.r)) {
+            hurtEnemy(e, techDmg(pr.dmg * (pr.crossMul || 0.8)), { crit: chance(0.4), trueDmg: true });
+            if (!e.dead) e.stun = Math.max(e.stun, 0.5);
+          }
+        }
+        spawnFx('heal_link', ax, ay, '#e8e4dc', 0, { tx: bx, ty: by });
+        spawnFx('shock', ex, ey, '#e8e4dc', 190, { img: 'fx_ougi_cross' });
+      }
       p.iframe = Math.max(p.iframe, 0.5);
       G.screenShake = Math.max(G.screenShake, 10);
       ok = true; break;
@@ -1742,12 +1893,21 @@ function castOugi(o) {
       }
       if (!best) break;
       if (best.boss) {
-        hurtEnemy(best, throwDmg(80), { trueDmg: true });
+        // 掄不動這麼大隻，那就直接把他砸進地板：本體重擊＋周圍震盪
+        hurtEnemy(best, throwDmg(pr.bossDmg || 80), { trueDmg: true });
         best.stun = Math.max(best.stun, 1.5);
-        spawnFx('explode', best.x, best.y, '#c2703c', 120);
+        spawnFx('explode', best.x, best.y, '#c2703c', 140);
+        for (const e2 of G.enemies) {
+          if (e2.dead || e2 === best) continue;
+          if (dist2(e2.x, e2.y, best.x, best.y) < 140 * 140) {
+            hurtEnemy(e2, throwDmg(pr.blastDmg || 20), { trueDmg: true });
+            if (!e2.dead) e2.stun = Math.max(e2.stun, 0.8);
+          }
+        }
+        G.screenShake = Math.max(G.screenShake, 12);
         ok = true; break;
       }
-      startGrab(best, { dur: 2.1, orbitR: 76, spinSpd: 9 });
+      startGrab(best, { dur: pr.dur || 2.1, orbitR: pr.orbitR || 76, spinSpd: pr.spinSpd || 9 });
       p.grabState.super = true;
       ok = true; break;
     }
@@ -1819,7 +1979,7 @@ function fireWeapon(w, reach) {
   w.swingDir *= -1;
   // 揮武器時手臂跟著出去（起手式姿勢優先，不覆蓋）
   if (!p.pose || p.pose.prio !== 1) {
-    p.pose = { type: 'swing', ang: w.angle, t: 0, dur: 0.2, prio: 0 };
+    p.pose = { type: w.klass === '摔技' ? 'chop' : 'swing', ang: w.angle, t: 0, dur: 0.2, prio: 0 };
   }
 
   if (w.type === 'grab') {
@@ -1834,14 +1994,27 @@ function fireWeapon(w, reach) {
       if (Math.abs(angDiff(a, w.angle)) > halfArc + Math.atan2(e.r, Math.max(20, d))) continue;
       if (d < bd) { bd = d; best = e; }
     }
+    spawnGhostStrike(w, reach);   // 抓技的可見劈砍（純視覺，命中判定照舊走即時抓取）
     if (best) {
-      spawnFx('swing', p.x, p.y, w.color, reach, { angle: w.angle, arc: w.arc, type: w.type });
       applyWeaponHit(w, best, reach);
       if (G.char.special === 'flurry' && !best.dead) applyWeaponHit(w, best, reach, 0.4, true);
     }
     return;
   }
   spawnStrike(w, reach);
+}
+
+/* 純視覺掃擊：抓技武器沒有攻擊實體，補一道會畫出來但不帶傷害的刀路 */
+function spawnGhostStrike(w, reach) {
+  const p = G.player;
+  const half = (Math.max(w.arc || 90, 90) * Math.PI / 180) / 2;
+  G.strikes.push({
+    w, reach, t: 0, hit: [], ghost: true, kind: 'sweep',
+    ang0: w.angle - half * w.swingDir,
+    ang1: w.angle + half * w.swingDir,
+    cur: w.angle - half * w.swingDir,
+    dur: 0.13,
+  });
 }
 
 function spawnStrike(w, reach) {
@@ -1918,6 +2091,7 @@ function updateStrikes(dt) {
       s.cur = s.kind === 'sweep'
         ? s.ang0 + (s.ang1 - s.ang0) * k
         : s.cur + s.spd * dt;
+      if (s.ghost) { if (s.t >= s.dur) s.dead = true; continue; }
       // 掃掠帶：上一幀角度到這一幀角度之間的扇區都算刀路
       for (const e of G.enemies) {
         if (e.dead || e.grabbed || e.thrown || s.hit.includes(e)) continue;

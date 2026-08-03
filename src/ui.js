@@ -617,10 +617,12 @@ const BOT = { on: false, dir: 0, dirT: 0 };
 /* 機器人的衝刺判斷：奧義就緒立刻放，否則依衝刺技的性質看時機 */
 function botDash() {
   const p = G.player;
-  if (p.dashCd > 0 || p.dashState || p.grabState) return;
+  if (p.dashState || p.grabState) return;
   const near = r => G.enemies.filter(e => !e.dead && !e.grabbed && !e.thrown &&
     dist2(e.x, e.y, p.x, p.y) < r * r).length;
+  // 奧義不吃衝刺冷卻——湊齊就搶著放
   if (ougiReady() && near(300) >= 1) { castDash(); return; }
+  if (p.dashCd > 0) return;
   let go = false;
   switch (p.moves.dash) {
     case 'tackle': go = near(260) >= 3; break;
@@ -643,6 +645,7 @@ function botDash() {
       break;
     }
     case 'sumo_press': go = near(140) >= 3; break;
+    case 'lunge_thrust': go = near(240) >= 1; break;
   }
   if (go) castDash();
 }
@@ -651,6 +654,10 @@ function botDash() {
 function botWantsStill() {
   const p = G.player;
   const sid = p.moves.still;
+  // 擒抱持有中：先掄著人甩（記 M 拍），掄到了才站定炸彈摔——D,M,S 才湊得成
+  if (p.grabState && p.grabState.mode === 'hold') {
+    return !!p.grabState.beatM;
+  }
   // 場上有遠程壓力（投擲手或飛行物瞄著你）就別死站著捱打
   const throwers = G.enemies.filter(e => !e.dead && e.behavior === 'thrower').length;
   const bullets = G.projectiles.length;
@@ -658,13 +665,22 @@ function botWantsStill() {
   const nearCount = G.enemies.filter(e => !e.dead &&
     dist2(e.x, e.y, p.x, p.y) < 150 * 150).length;
   const farthest = nearestEnemy(p.x, p.y, 3000);
+  // 奧義差站拍就站著打：拍譜是奧義序列的前綴、下一拍要 S、身邊有人可打 → 站定湊完
+  const oo = OUGI[G.char.id];
+  if (oo && p.beatLog.length > 0 && p.beatLog.length < oo.seq.length) {
+    let prefix = true;
+    for (let i = 0; i < p.beatLog.length; i++) if (p.beatLog[i] !== oo.seq[i]) { prefix = false; break; }
+    if (prefix && oo.seq[p.beatLog.length] === 'S' && nearCount >= 1) return true;
+  }
   // 貼身型站樁：敵人來了才站（化勁摔、金鐘罩、震腳、千手）
-  if (sid === 'counter_stance' || sid === 'iron_bell' || sid === 'quake_pulse' || sid === 'palm_flurry') {
+  if (sid === 'counter_stance' || sid === 'iron_bell' || sid === 'quake_pulse' || sid === 'palm_flurry' ||
+      sid === 'triple_slash' || sid === 'elbow_drop') {
     return nearCount >= 1 && p.hp > p.maxHp * 0.45;
   }
   // 蓄力型站樁：沒威脅才站（寸勁、吐納）
-  if (sid === 'focus_strike') {
-    return nearCount === 0 && farthest && dist2(farthest.x, farthest.y, p.x, p.y) > 240 * 240 && p.focusStacks < 6;
+  if (sid === 'focus_strike' || sid === 'sanchin') {
+    return nearCount === 0 && farthest && dist2(farthest.x, farthest.y, p.x, p.y) > 240 * 240 &&
+      p.focusStacks < (sid === 'sanchin' ? 5 : 6);
   }
   if (sid === 'breath_heal') {
     return nearCount === 0 && p.hp < p.maxHp * 0.85;

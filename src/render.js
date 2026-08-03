@@ -794,7 +794,7 @@ function drawPlayer() {
     ctx.globalAlpha = 0.55 + Math.sin(G.time * 8) * 0.2;
     ctx.beginPath(); ctx.arc(0, 0, p.r + 8, 0, Math.PI * 2); ctx.stroke();
     ctx.globalAlpha = 1;
-    if (sid === 'focus_strike' && p.focusStacks > 0) {   // 蓄力層數
+    if ((sid === 'focus_strike' || sid === 'sanchin') && p.focusStacks > 0) {   // 蓄力層數
       ctx.fillStyle = '#e8964a';
       for (let i = 0; i < p.focusStacks; i++) {
         const a = -Math.PI / 2 + (i - (p.focusStacks - 1) / 2) * 0.5;
@@ -1283,7 +1283,10 @@ function drawBoss(e, col, flash) {
 /* 武器類別 → 特效貼圖（招式差異的本體：同一套動畫，不同的靈氣） */
 function fxForWeapon(w) {
   if (w.klass === '刃') return 'fx_slash';
-  if (w.klass === '摔技') return FX_IMGS.fx_tegatana ? 'fx_tegatana' : 'fx_chop';   // 摔角的手刀
+  if (w.klass === '摔技') {
+    if (FX_IMGS.fx_chop_gyaku) return 'fx_chop_gyaku';   // 逆水平手刀專用圖（到貨自動切換）
+    return FX_IMGS.fx_tegatana ? 'fx_tegatana' : 'fx_chop';
+  }
   if (w.klass === '掌' || w.klass === '相撲') return 'fx_chop';
   if (w.klass === '拳') return FX_IMGS.fx_seiken ? 'fx_seiken' : 'fx_punch';        // 空手道的正拳
   return 'fx_punch';
@@ -1295,7 +1298,7 @@ function drawStrikes() {
   for (const s of G.strikes) {
     const w = s.w;
     // 特效貼圖模式：黑底發光圖用加法混合疊上去
-    loadFx('fx_tegatana'); loadFx('fx_seiken');
+    loadFx('fx_tegatana'); loadFx('fx_seiken'); loadFx('fx_chop_gyaku');
     const fxName = fxForWeapon(w);
     loadFx(fxName); loadFx('fx_impact');
     const fxImg = FX_IMGS[fxName];
@@ -1463,6 +1466,17 @@ function drawFxUnder() {
   for (const f of G.fx) {
     const k = f.t / f.life;
     if (f.type === 'shock') {
+      if (f.img) loadFx(f.img);
+      const simg = f.img && FX_IMGS[f.img];
+      if (simg) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = (1 - k) * 0.95;
+        const ssz = f.size * 2.2 * (0.5 + k * 0.6);
+        ctx.drawImage(simg, f.x - ssz / 2, f.y - ssz / 2, ssz, ssz);
+        ctx.restore();
+        continue;
+      }
       ctx.strokeStyle = f.color;
       ctx.globalAlpha = 1 - k;
       ctx.lineWidth = 6 * (1 - k) + 1;
@@ -1475,6 +1489,20 @@ function drawFxUnder() {
       ctx.beginPath(); ctx.arc(f.x, f.y, f.size * (1 - k), 0, Math.PI * 2); ctx.stroke();
       ctx.globalAlpha = 1;
     } else if (f.type === 'heal_link') {
+      if (f.img) loadFx(f.img);
+      const limg = f.img && FX_IMGS[f.img];
+      if (limg) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 1 - k;
+        const la = Math.atan2(f.ty - f.y, f.tx - f.x);
+        const ll = Math.hypot(f.tx - f.x, f.ty - f.y) || 1;
+        ctx.translate((f.x + f.tx) / 2, (f.y + f.ty) / 2);
+        ctx.rotate(la);
+        ctx.drawImage(limg, -ll / 2, -52, ll, 104);
+        ctx.restore();
+        continue;
+      }
       ctx.strokeStyle = f.color;
       ctx.globalAlpha = (1 - k) * 0.8;
       ctx.lineWidth = 3;
@@ -1488,6 +1516,20 @@ function drawFxOver() {
   for (const f of G.fx) {
     const k = f.t / f.life;
     if (f.type === 'swing') {
+      if (f.img) loadFx(f.img);
+      const fimg = f.img && FX_IMGS[f.img];
+      if (fimg) {
+        // 招式貼圖：黑底發光圖加法疊上，跟著揮擊角度轉（pivot 在左 10%）
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = (1 - k) * 0.9;
+        ctx.translate(f.x, f.y);
+        ctx.rotate(f.angle || 0);
+        const fsz = f.size * 2.1 * (0.6 + k * 0.5);
+        ctx.drawImage(fimg, -fsz * 0.1, -fsz / 2, fsz, fsz);
+        ctx.restore();
+        continue;
+      }
       const half = (f.arc * Math.PI / 180) / 2;
       ctx.save();
       ctx.globalAlpha = (1 - k) * 0.85;
