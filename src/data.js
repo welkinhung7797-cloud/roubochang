@@ -895,7 +895,10 @@ const BOSS_MAP = {};
 BOSSES.forEach(b => BOSS_MAP[b.id] = b);
 
 /* ---------- 波次 / 難度 ---------- */
-const MAX_WAVE = 30;   // 總監 2026-08-04：先設計 30 關為目標
+/* 總監 2026-08-04 定案：退回 20 關。實測 30 關版本的後段（22-29 波）最低生命 98%、
+   低於一半生命的時間 0.0 秒——多出來的那十關玩家是無風險走完的，只是把謝幕演出
+   從 8 關拉長到 18 關，一局還變成 36 分鐘。等「剝奪型」結構驗證過再擴回去。 */
+const MAX_WAVE = 20;
 const DANGER_LEVELS = [
   { lv: 0, name: '危險 0', hp: 1.00, dmg: 1.00, count: 1.00, mat: 1.00 },
   { lv: 1, name: '危險 1', hp: 1.20, dmg: 1.10, count: 1.12, mat: 1.05 },
@@ -912,7 +915,9 @@ function waveDuration(w) { return (34 + (w - 1) * 2.6) * TUNE.waveDurMul; }
 /* 每 5 關一個特殊頭目（總監 2026-08-04）。打完頭目才給特性抉擇——
    特性是會改變打法的東西，放在升級四選一裡會把那個介面撐爆，
    而升級四選一已經定案要維持樸素（一張卡一個屬性）。 */
-const BOSS_ORDER = ['ironhead_b', 'champ', 'twinfist', 'yokozuna', 'stonewall', 'thunderking'];
+// 20 關＝四隻頭目（5/10/15/20）。橫綱維持最終王，它的 10000 血是照 20 關調過的；
+// 磐石與雷王留在 BOSSES 表裡，等 30 關模式再啟用。
+const BOSS_ORDER = ['ironhead_b', 'champ', 'twinfist', 'yokozuna'];
 function isBossWave(w) { return w % 5 === 0 && w <= MAX_WAVE; }
 function bossOfWave(w) { return BOSS_ORDER[Math.min(BOSS_ORDER.length - 1, Math.floor(w / 5) - 1)]; }
 
