@@ -2363,11 +2363,244 @@ function drawHud() {
 }
 
 /* ---------- 圖示（供介面用） ---------- */
+/* 招式圖示（純向量、零素材）：每招一個「動作」的圖形化——
+   單一漢字縮寫（「戰」「勾」「肘」）對新手零幫助，因為那是招名的字不是動作的圖。 */
+const MOVE_ICON = {
+  /* 衝刺技：往右的爆發 */
+  tackle:        { g: 'ram',     c: '#c2703c' },
+  grab_spin:     { g: 'spiral',  c: '#b07a4a' },
+  flash_step:    { g: 'steps',   c: '#79d9c0' },
+  mountain_bash: { g: 'shoulder', c: '#8a8f99' },
+  knee_dash:     { g: 'knee',    c: '#d97a5a' },
+  drunk_roll:    { g: 'roll',    c: '#d9a441' },
+  suplex_grab:   { g: 'clamp',   c: '#b07a4a' },
+  iai_slash:     { g: 'draw',    c: '#4f5d75' },
+  lunge_thrust:  { g: 'fist',    c: '#e8e4dc' },
+  shadow_dash:   { g: 'ghost',   c: '#7d84a0' },
+  sumo_press:    { g: 'palms',   c: '#c9576b' },
+  /* 移動技：流動、拖尾 */
+  cyclone_kick:  { g: 'whirl',   c: '#c9d96a' },
+  jodan_kick:    { g: 'legfan',  c: '#c9d96a' },
+  twin_slash:    { g: 'twin',    c: '#8fa8d4' },
+  lariat_run:    { g: 'arm',     c: '#c98a3c' },
+  sway_step:     { g: 'wave',    c: '#e0a458' },
+  gale_step:     { g: 'boot',    c: '#8fd4e0' },
+  tail_wake:     { g: 'tail',    c: '#8fa89a' },
+  phantom_press: { g: 'rings',   c: '#c9576b' },
+  /* 站樁技：扎根、蓄勢 */
+  sanchin:       { g: 'root',    c: '#e8e4dc' },
+  triple_slash:  { g: 'tri',     c: '#b8c6dc' },
+  elbow_drop:    { g: 'elbow',   c: '#b8453c' },
+  counter_stance:{ g: 'deflect', c: '#5a8ac9' },
+  iron_bell:     { g: 'bell',    c: '#d9b06a' },
+  quake_pulse:   { g: 'quake',   c: '#8c6239' },
+  focus_strike:  { g: 'charge',  c: '#e8964a' },
+  palm_flurry:   { g: 'palms3',  c: '#e8d8b0' },
+  breath_heal:   { g: 'breath',  c: '#77c47f' },
+};
+
+function drawMoveIcon(c, id, size) {
+  const def = MOVE_ICON[id];
+  const m = MOVE_MAP[id];
+  const col = (def && def.c) || (m && m.color) || '#e8e4dc';
+  const g = def ? def.g : 'fist';
+  const S = size / 2;
+  c.save();
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  const ink = '#17110a';
+  // 統一畫法：先描粗黑邊再上色，跟裝備 icon 的厚描邊風格一致
+  function stroke(path, w, color) {
+    c.strokeStyle = ink; c.lineWidth = w + 3; path(); c.stroke();
+    c.strokeStyle = color; c.lineWidth = w; path(); c.stroke();
+  }
+  function fill(path, color) {
+    c.lineWidth = 3; c.strokeStyle = ink;
+    path(); c.fillStyle = color; c.fill(); c.stroke();
+  }
+  const speedLines = (x0, n2) => {
+    c.strokeStyle = 'rgba(255,255,255,0.5)'; c.lineWidth = 1.6;
+    for (let i = 0; i < n2; i++) {
+      c.beginPath();
+      c.moveTo(-S * x0, -S * 0.3 + i * S * 0.3);
+      c.lineTo(-S * (x0 + 0.35), -S * 0.3 + i * S * 0.3);
+      c.stroke();
+    }
+  };
+  switch (g) {
+    case 'fist':
+      fill(() => { c.beginPath(); c.ellipse(S * 0.25, 0, S * 0.42, S * 0.34, 0, 0, Math.PI * 2); c.closePath(); }, col);
+      speedLines(0.25, 3);
+      break;
+    case 'ram':
+      fill(() => { c.beginPath(); c.moveTo(-S * 0.1, -S * 0.45); c.lineTo(S * 0.55, -S * 0.12);
+        c.lineTo(S * 0.55, S * 0.12); c.lineTo(-S * 0.1, S * 0.45); c.closePath(); }, col);
+      speedLines(0.2, 3);
+      break;
+    case 'shoulder':
+      fill(() => { c.beginPath(); c.moveTo(-S * 0.5, S * 0.35); c.lineTo(0, -S * 0.5);
+        c.lineTo(S * 0.5, S * 0.35); c.closePath(); }, col);
+      break;
+    case 'spiral':
+      stroke(() => { c.beginPath();
+        for (let a = 0; a < Math.PI * 3.4; a += 0.15) {
+          const rr = S * 0.12 + a * S * 0.11;
+          if (a === 0) c.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
+          else c.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+        } }, 4, col);
+      break;
+    case 'steps':
+      fill(() => { c.beginPath(); c.ellipse(-S * 0.4, S * 0.2, S * 0.2, S * 0.28, 0, 0, Math.PI * 2); c.closePath(); }, col);
+      c.globalAlpha = 0.5;
+      fill(() => { c.beginPath(); c.ellipse(S * 0.35, -S * 0.15, S * 0.2, S * 0.28, 0, 0, Math.PI * 2); c.closePath(); }, col);
+      c.globalAlpha = 1;
+      break;
+    case 'knee':
+      fill(() => { c.beginPath(); c.moveTo(-S * 0.45, S * 0.5); c.lineTo(-S * 0.1, -S * 0.2);
+        c.lineTo(S * 0.5, -S * 0.35); c.lineTo(S * 0.35, S * 0.05); c.lineTo(0, S * 0.15);
+        c.lineTo(S * 0.05, S * 0.5); c.closePath(); }, col);
+      break;
+    case 'roll':
+      stroke(() => { c.beginPath(); c.arc(0, 0, S * 0.5, 0.5, Math.PI * 1.8); }, 5, col);
+      fill(() => { c.beginPath(); c.moveTo(S * 0.45, -S * 0.28); c.lineTo(S * 0.2, -S * 0.5);
+        c.lineTo(S * 0.12, -S * 0.12); c.closePath(); }, col);
+      break;
+    case 'clamp':
+      stroke(() => { c.beginPath(); c.arc(0, 0, S * 0.45, -2.4, 2.4); }, 6, col);
+      stroke(() => { c.beginPath(); c.moveTo(0, S * 0.15); c.lineTo(0, S * 0.6); }, 4, col);
+      break;
+    case 'draw':
+      fill(() => { c.beginPath(); c.moveTo(-S * 0.55, S * 0.3); c.lineTo(-S * 0.1, S * 0.15);
+        c.lineTo(-S * 0.05, S * 0.42); c.lineTo(-S * 0.55, S * 0.55); c.closePath(); }, '#3a4152');
+      stroke(() => { c.beginPath(); c.moveTo(-S * 0.15, S * 0.2); c.lineTo(S * 0.6, -S * 0.45); }, 4, col);
+      break;
+    case 'ghost':
+      c.globalAlpha = 0.4;
+      fill(() => { c.beginPath(); c.ellipse(-S * 0.35, 0, S * 0.24, S * 0.34, 0, 0, Math.PI * 2); c.closePath(); }, col);
+      c.globalAlpha = 0.7;
+      fill(() => { c.beginPath(); c.ellipse(0, 0, S * 0.24, S * 0.34, 0, 0, Math.PI * 2); c.closePath(); }, col);
+      c.globalAlpha = 1;
+      fill(() => { c.beginPath(); c.ellipse(S * 0.35, 0, S * 0.24, S * 0.34, 0, 0, Math.PI * 2); c.closePath(); }, col);
+      break;
+    case 'palms':
+    case 'palms3': {
+      const cnt = g === 'palms3' ? 3 : 2;
+      for (let i = 0; i < cnt; i++) {
+        c.globalAlpha = 0.45 + 0.55 * (i / Math.max(1, cnt - 1));
+        const ox = -S * 0.25 + i * S * 0.28;
+        fill(() => { c.beginPath(); c.roundRect ? c.roundRect(ox, -S * 0.34, S * 0.26, S * 0.68, 5)
+          : c.rect(ox, -S * 0.34, S * 0.26, S * 0.68); c.closePath(); }, col);
+      }
+      c.globalAlpha = 1;
+      break;
+    }
+    case 'whirl':
+      stroke(() => { c.beginPath(); c.arc(0, 0, S * 0.5, 0, Math.PI * 2); }, 5, col);
+      stroke(() => { c.beginPath(); c.arc(0, 0, S * 0.26, 0.6, Math.PI * 1.9); }, 3, col);
+      break;
+    case 'legfan':
+      stroke(() => { c.beginPath(); c.arc(-S * 0.3, S * 0.3, S * 0.75, -1.15, -0.1); }, 5, col);
+      fill(() => { c.beginPath(); c.moveTo(-S * 0.4, S * 0.45); c.lineTo(S * 0.15, -S * 0.3);
+        c.lineTo(S * 0.45, -S * 0.05); c.lineTo(-S * 0.15, S * 0.55); c.closePath(); }, col);
+      break;
+    case 'twin':
+      stroke(() => { c.beginPath(); c.arc(-S * 0.15, S * 0.1, S * 0.6, -1.5, -0.2); }, 4, col);
+      stroke(() => { c.beginPath(); c.arc(S * 0.15, -S * 0.1, S * 0.6, 1.6, 2.9); }, 4, col);
+      break;
+    case 'arm':
+      fill(() => { c.beginPath(); c.moveTo(-S * 0.55, -S * 0.16); c.lineTo(S * 0.4, -S * 0.2);
+        c.lineTo(S * 0.55, 0); c.lineTo(S * 0.4, S * 0.2); c.lineTo(-S * 0.55, S * 0.16); c.closePath(); }, col);
+      speedLines(0.55, 3);
+      break;
+    case 'wave':
+      stroke(() => { c.beginPath(); c.moveTo(-S * 0.55, S * 0.3);
+        c.bezierCurveTo(-S * 0.1, -S * 0.6, S * 0.1, S * 0.6, S * 0.55, -S * 0.3); }, 5, col);
+      break;
+    case 'boot':
+      fill(() => { c.beginPath(); c.moveTo(-S * 0.1, -S * 0.45); c.lineTo(S * 0.25, -S * 0.45);
+        c.lineTo(S * 0.3, S * 0.1); c.lineTo(S * 0.55, S * 0.45); c.lineTo(-S * 0.15, S * 0.45); c.closePath(); }, col);
+      speedLines(0.15, 3);
+      break;
+    case 'tail':
+      stroke(() => { c.beginPath(); c.moveTo(S * 0.45, -S * 0.35);
+        c.quadraticCurveTo(-S * 0.2, -S * 0.1, -S * 0.5, S * 0.4); }, 6, col);
+      break;
+    case 'rings':
+      for (let i = 3; i >= 1; i--) {
+        c.globalAlpha = 0.35 + i * 0.2;
+        stroke(() => { c.beginPath(); c.arc(0, 0, S * 0.18 * i, 0, Math.PI * 2); }, 3, col);
+      }
+      c.globalAlpha = 1;
+      break;
+    case 'root':
+      fill(() => { c.beginPath(); c.ellipse(0, -S * 0.15, S * 0.3, S * 0.24, 0, 0, Math.PI * 2); c.closePath(); }, col);
+      stroke(() => { c.beginPath();
+        c.moveTo(-S * 0.3, S * 0.1); c.lineTo(-S * 0.45, S * 0.55);
+        c.moveTo(0, S * 0.12); c.lineTo(0, S * 0.6);
+        c.moveTo(S * 0.3, S * 0.1); c.lineTo(S * 0.45, S * 0.55); }, 4, col);
+      break;
+    case 'tri':
+      for (let i = 0; i < 3; i++) {
+        c.globalAlpha = 0.55 + i * 0.22;
+        const off = -S * 0.3 + i * S * 0.3;
+        stroke(() => { c.beginPath(); c.moveTo(off - S * 0.22, -S * 0.45); c.lineTo(off + S * 0.22, S * 0.45); },
+          i === 2 ? 5 : 3, col);
+      }
+      c.globalAlpha = 1;
+      break;
+    case 'elbow':
+      fill(() => { c.beginPath(); c.moveTo(-S * 0.45, -S * 0.4); c.lineTo(S * 0.1, -S * 0.15);
+        c.lineTo(S * 0.1, S * 0.25); c.lineTo(-S * 0.15, S * 0.05); c.closePath(); }, col);
+      stroke(() => { c.beginPath(); c.moveTo(-S * 0.35, S * 0.5); c.lineTo(S * 0.35, S * 0.5); }, 3, col);
+      break;
+    case 'deflect':
+      fill(() => { c.beginPath(); c.roundRect ? c.roundRect(-S * 0.5, -S * 0.3, S * 0.3, S * 0.6, 5)
+        : c.rect(-S * 0.5, -S * 0.3, S * 0.3, S * 0.6); c.closePath(); }, col);
+      stroke(() => { c.beginPath(); c.moveTo(-S * 0.1, -S * 0.35);
+        c.quadraticCurveTo(S * 0.45, 0, S * 0.15, S * 0.45); }, 4, col);
+      break;
+    case 'bell':
+      fill(() => { c.beginPath(); c.moveTo(-S * 0.35, S * 0.3);
+        c.quadraticCurveTo(-S * 0.35, -S * 0.45, 0, -S * 0.45);
+        c.quadraticCurveTo(S * 0.35, -S * 0.45, S * 0.35, S * 0.3); c.closePath(); }, col);
+      stroke(() => { c.beginPath(); c.moveTo(-S * 0.45, S * 0.35); c.lineTo(S * 0.45, S * 0.35); }, 4, col);
+      break;
+    case 'quake':
+      fill(() => { c.beginPath(); c.moveTo(-S * 0.2, -S * 0.5); c.lineTo(S * 0.15, -S * 0.5);
+        c.lineTo(S * 0.1, -S * 0.05); c.lineTo(-S * 0.15, -S * 0.05); c.closePath(); }, col);
+      stroke(() => { c.beginPath(); c.ellipse(0, S * 0.25, S * 0.5, S * 0.2, 0, 0, Math.PI * 2); }, 4, col);
+      stroke(() => { c.beginPath(); c.ellipse(0, S * 0.25, S * 0.26, S * 0.1, 0, 0, Math.PI * 2); }, 3, col);
+      break;
+    case 'charge':
+      fill(() => { c.beginPath(); c.ellipse(0, S * 0.1, S * 0.34, S * 0.28, 0, 0, Math.PI * 2); c.closePath(); }, col);
+      stroke(() => { c.beginPath();
+        c.moveTo(-S * 0.5, -S * 0.5); c.lineTo(-S * 0.22, -S * 0.2);
+        c.moveTo(0, -S * 0.6); c.lineTo(0, -S * 0.28);
+        c.moveTo(S * 0.5, -S * 0.5); c.lineTo(S * 0.22, -S * 0.2); }, 3, col);
+      break;
+    case 'breath':
+      stroke(() => { c.beginPath();
+        for (let a = 0; a < Math.PI * 2.6; a += 0.15) {
+          const rr = S * 0.1 + a * S * 0.12;
+          const xx = Math.cos(a) * rr, yy = Math.sin(a) * rr * 0.7 - S * 0.1;
+          if (a === 0) c.moveTo(xx, yy); else c.lineTo(xx, yy);
+        } }, 4, col);
+      break;
+    default:
+      fill(() => { c.beginPath(); c.arc(0, 0, S * 0.4, 0, Math.PI * 2); c.closePath(); }, col);
+  }
+  c.restore();
+}
+
 function drawIconTo(canvasEl, kind, id, tier) {
   const c = canvasEl.getContext('2d');
   c.clearRect(0, 0, canvasEl.width, canvasEl.height);
   c.save();
   c.translate(canvasEl.width / 2, canvasEl.height / 2);
+  if (kind === 'tech' || kind === 'move') {
+    drawMoveIcon(c, id, Math.min(canvasEl.width, canvasEl.height));
+    c.restore();
+    return;
+  }
   if (kind === 'gear') {
     const g = GEAR_MAP[id];
     c.strokeStyle = '#d98a3c'; c.lineWidth = 2.5;

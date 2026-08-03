@@ -96,6 +96,39 @@ function sigNameOf(chId) {
   return OUGI[chId] ? OUGI[chId].name : null;
 }
 
+/* 連段表（分行版，商店與暫停用）：chip 跟槽位卡的 beat badge 是同一個 class 同一個色 */
+function comboLinesHtml(chId) {
+  const list = (typeof COMBOS !== 'undefined' && COMBOS[chId]) ? COMBOS[chId] : null;
+  const KEY = { S: 'still', M: 'move', D: 'dash' };
+  if (!list || !list.length) {
+    const o = OUGI[chId];
+    if (!o) return '';
+    const seq = o.seq[o.seq.length - 1] === 'D' ? o.seq : o.seq.concat('D');
+    return '<div class="combo-line sig">' +
+      seq.slice(0, -1).map(b => '<b class="beat beat-' + KEY[b] + '">' + SLOT_UI[KEY[b]].beat + '</b>').join('') +
+      '<span class="arrow">→</span><span class="act">' + SLOT_UI[KEY[seq[seq.length - 1]]].act +
+      '</span><span class="eq">＝</span><span class="nm">' + o.name + '</span>' +
+      '<span class="combo-sig-tag">招牌</span></div>';
+  }
+  // 排序：前綴短的在前、同長度依 站→移→衝，讀起來才是一張表不是一堆行
+  const ord = { S: 0, M: 1, D: 2 };
+  const sorted = list.slice().sort((a, b) =>
+    (a.seq.length - b.seq.length) ||
+    (ord[a.seq[0]] - ord[b.seq[0]]) ||
+    (ord[a.seq[a.seq.length - 1]] - ord[b.seq[b.seq.length - 1]]));
+  return sorted.map(c => {
+    const last = c.seq[c.seq.length - 1];
+    return '<div class="combo-line' + (c.sig ? ' sig' : '') + '">' +
+      c.seq.slice(0, -1).map(b => '<b class="beat beat-' + KEY[b] + '">' + SLOT_UI[KEY[b]].beat + '</b>').join('') +
+      '<span class="arrow">→</span>' +
+      '<span class="act">' + SLOT_UI[KEY[last]].act + '</span>' +
+      '<span class="eq">＝</span><span class="nm">' + c.name + '</span>' +
+      (c.sig ? '<span class="combo-sig-tag">招牌</span>' : '') +
+      (c.extName ? '<span class="combo-ext">接 C＝' + c.extName + '</span>' : '') +
+      '</div>';
+  }).join('');
+}
+
 /* 全專案共用的連段表 HTML（選角詳情/商店/暫停選單都用同一份，不准各講各的） */
 function comboTableHtml(chId) {
   const ACT = { S: '站定打中', M: '移動打中', D: '按 Space' };
@@ -211,6 +244,7 @@ function renderLevelUp() {
 
 /* ---------- 商店 ---------- */
 function renderShop() {
+  openPickSlot = openPickSlot || null;
   const s = G.shop;
   $('shop-wave').textContent = '第 ' + G.wave + ' 波結束';
   $('shop-next-label').textContent = '進入第 ' + (G.wave + 1) + ' 波' + (isBossWave(G.wave + 1) ? '（頭目）' : '');
@@ -285,13 +319,17 @@ function weaponShopInfo(e) {
 
 function techShopInfo(e) {
   const t = moveDef(e.id);
+  const u = SLOT_UI[t.slot];
+  const cur = moveDef(G.player.moves[t.slot]);
   let extra = '';
   if (t.slot === 'dash') extra = '<div class="kv"><span>冷卻</span><b>' + t.cd + ' 秒</b></div>';
   else if (t.interval) extra = '<div class="kv"><span>觸發</span><b>每 ' + t.interval + ' 秒</b></div>';
   const sig = t.slot === 'dash' ? sigNameOf(G.char.id) : null;
-  return '<div class="kv"><span>類型</span><b>' + SLOT_NAME[t.slot] + '　' + SLOT_KEY[t.slot] + '</b></div>' +
+  return '<div class="kv"><span>觸發</span><b><i class="beat beat-' + t.slot + '">' + u.beat + '</i>　' + u.trig + '</b></div>' +
     extra +
-    (sig ? '<div class="kv"><span>連段</span><b>換裝不影響：湊齊前綴按 Space 仍是「' + sig + '」</b></div>' : '') +
+    '<div class="kv"><span>目前' + u.full + '</span><b>' + cur.name + '</b></div>' +
+    (sig ? '<div class="kv"><span>連段</span><b>換裝不影響：湊齊前綴按 SPACE 仍是「' + sig + '」</b></div>' : '') +
+    '<div class="buy-note">買下不會自動裝上，到下面「招式與連段」點卡片換</div>' +
     '<div class="flavor">' + t.desc + '</div>';
 }
 
@@ -306,34 +344,71 @@ function itemShopInfo(e) {
   return lines + sp;
 }
 
+let openPickSlot = null;   // 目前展開的換裝選單
+
 function renderLoadout() {
   const p = G.player;
   const wrap = $('loadout');
   wrap.innerHTML = '';
-  // 三態招式欄：點擊換同類型的已學招式
-  const ougi = OUGI[G.char.id];
+  // ---- 招式與連段 ----
   const tTitle = document.createElement('div');
   tTitle.className = 'sec-title';
-  tTitle.innerHTML = '招式（點擊換裝）　·　招式庫 ' + p.knownMoves.length + ' 式　·　連段　' +
-    comboTableHtml(G.char.id);
+  tTitle.innerHTML = '招式與連段　<span style="font-weight:400;letter-spacing:.02em;color:#8a795e">' +
+    '招式庫 ' + p.knownMoves.length + ' ／ ' + MOVES.length + ' 式</span>';
   wrap.appendChild(tTitle);
   const tRow = document.createElement('div');
-  tRow.className = 'loadout-row combo-row';
-  ['dash', 'move', 'still'].forEach(slot => {
+  tRow.className = 'mv-row';
+  // 順序統一成 站→移→衝，跟連段的書寫方向一致（之前是反的）
+  SLOT_ORDER.forEach(slot => {
     const def = moveDef(p.moves[slot]);
+    const u = SLOT_UI[slot];
     const pool = movesBySlot(slot).filter(x => p.knownMoves.includes(x.id));
-    const el = document.createElement('div');
-    el.className = 'slot tech-slot' + (pool.length > 1 ? ' clickable' : '');
-    el.style.borderColor = def.color;
-    el.innerHTML = '<div class="tech-glyph" style="color:' + def.color + '">' + def.short + '</div>' +
-      '<div class="slot-name">' + def.name + '</div>' +
-      '<div class="slot-tier">' + SLOT_NAME[slot] + (pool.length > 1 ? ' ⟳' : '') + '</div>';
-    el.title = SLOT_KEY[slot] + '\n' + def.desc +
-      (pool.length > 1 ? '\n（點擊切換：' + pool.map(x => x.name).join('、') + '）' : '');
-    if (pool.length > 1) el.onclick = () => { cycleMoveSlot(slot); renderShop(); };
-    tRow.appendChild(el);
+    const card = document.createElement('div');
+    card.className = 'mv-card' + (pool.length > 1 ? ' clickable' : '') +
+      (openPickSlot === slot ? ' open' : '');
+    const swap = pool.length > 1
+      ? '<em class="mv-swap">' + pool.length + ' 式可換 ⟳</em>'
+      : '<em class="mv-swap none">商店可習得</em>';
+    card.innerHTML =
+      '<div class="mv-trig"><b class="beat beat-' + slot + '">' + u.beat + '</b>' +
+        '<span>' + u.trig + '</span>' + swap + '</div>' +
+      '<div class="mv-body"><canvas class="mv-icon" width="46" height="46"></canvas>' +
+        '<div class="mv-text"><div class="mv-name">' + def.name + '</div>' +
+        '<div class="mv-brief">' + (MOVE_BRIEF[def.id] || def.desc) + '</div></div></div>';
+    tRow.appendChild(card);
+    drawIconTo(card.querySelector('canvas'), 'tech', def.id);
+    if (pool.length > 1) {
+      card.onclick = (ev) => {
+        if (ev.target.closest('.mv-pick')) return;
+        openPickSlot = openPickSlot === slot ? null : slot;
+        renderShop();
+      };
+      if (openPickSlot === slot) {
+        const pick = document.createElement('div');
+        pick.className = 'mv-pick';
+        pick.innerHTML = pool.map(x =>
+          '<button class="mv-opt' + (x.id === def.id ? ' on' : '') + '" data-id="' + x.id + '">' +
+          '<b>' + x.name + '</b><span>' + (MOVE_BRIEF[x.id] || x.desc) + '</span></button>').join('') +
+          '<div class="mv-pick-foot">換下來的招不會消失，隨時可以換回來</div>';
+        pick.querySelectorAll('.mv-opt').forEach(b => {
+          b.onclick = (ev) => {
+            ev.stopPropagation();
+            setMoveSlot(slot, b.dataset.id);
+            openPickSlot = null;
+            renderShop();
+          };
+        });
+        card.appendChild(pick);
+      }
+    }
   });
   wrap.appendChild(tRow);
+  // ---- 連段表：chip 跟上面的槽位共用同一顆顏色與同一個字 ----
+  const cb = document.createElement('div');
+  cb.className = 'combo-block';
+  cb.innerHTML = '<div class="combo-head">連段<span>前面幾拍要「打中」才算數，湊到了不會消失</span></div>' +
+    comboLinesHtml(G.char.id);
+  wrap.appendChild(cb);
 
   const wTitle = document.createElement('div');
   wTitle.className = 'sec-title';
@@ -623,7 +698,7 @@ function showPause(on) {
   }
   if (on && G.char) {
     const row = $('pause-combo');
-    if (row) row.innerHTML = comboTableHtml(G.char.id);
+    if (row) row.innerHTML = comboLinesHtml(G.char.id);
   }
 }
 

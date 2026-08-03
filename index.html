@@ -223,6 +223,56 @@ button:disabled{cursor:not-allowed;opacity:.45}
 #panel-pause .pause-row span{font-size:15px;font-weight:800;width:40px;text-align:right}
 #panel-pause .pause-btns{display:flex;gap:12px;margin-top:18px}
 
+/* ---- 招式與連段（重設計）---- */
+.mv-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-items:start}
+.mv-card{border:2px solid var(--line);background:var(--panel2);position:relative;
+  box-shadow:0 3px 0 rgba(8,5,2,.4)}
+.mv-card.clickable{cursor:pointer}
+.mv-card.clickable:hover{background:#2c2418;border-color:var(--accent)}
+.mv-card.open{border-color:var(--accent)}
+.mv-trig{display:flex;align-items:center;gap:6px;background:#17110a;
+  border-bottom:2px solid var(--line);padding:3px 6px}
+.mv-trig span{font-size:11px;color:#c3b295;letter-spacing:.04em}
+.mv-trig em{font-style:normal;margin-left:auto;font-size:10px;color:var(--accent);white-space:nowrap}
+.mv-trig em.none{color:#7d6c55}
+.beat{display:inline-block;width:20px;height:20px;line-height:20px;text-align:center;
+  font-size:13px;font-weight:900;color:#17110a;flex:none;font-style:normal}
+.beat-still{background:#e8964a}
+.beat-move{background:#8fd4e0}
+.beat-dash{background:#ffd44a}
+.mv-body{display:flex;gap:7px;align-items:center;padding:7px}
+.mv-icon{width:46px;height:46px;flex:none}
+.mv-name{font-size:15px;font-weight:800;letter-spacing:.04em}
+.mv-brief{font-size:11px;color:var(--muted);line-height:1.5;margin-top:2px}
+.mv-pick{position:absolute;left:-2px;right:-2px;top:100%;z-index:8;background:#1a140d;
+  border:2px solid var(--accent);box-shadow:0 4px 0 rgba(8,5,2,.5)}
+.mv-opt{display:block;width:100%;text-align:left;background:none;padding:5px 8px;
+  border-bottom:1px solid #2c2318;cursor:pointer}
+.mv-opt:hover{background:#2c2418}
+.mv-opt.on{background:#332715;border-left:3px solid var(--accent);padding-left:5px}
+.mv-opt b{font-size:12.5px;font-weight:800;display:block;color:var(--text)}
+.mv-opt span{font-size:10.5px;color:var(--muted);line-height:1.5}
+.mv-pick-foot{font-size:10px;color:#8a795e;padding:4px 8px;background:#14100a}
+
+.combo-block{margin-top:9px;border:2px solid var(--line);background:#17110a;padding:7px 9px;
+  box-shadow:0 3px 0 rgba(8,5,2,.4)}
+.combo-head{font-size:12px;font-weight:800;letter-spacing:.16em;color:#c3b295;
+  border-bottom:1px solid var(--line);padding-bottom:5px;margin-bottom:4px}
+.combo-head span{font-weight:400;letter-spacing:.02em;font-size:10.5px;color:#8a795e;margin-left:10px}
+.combo-line{display:flex;align-items:center;gap:4px;padding:3px 0}
+.combo-line+.combo-line{border-top:1px solid #2c2318}
+.combo-line .arrow{color:#6b5c46;font-weight:900;padding:0 2px}
+.combo-line .act{font-size:11.5px;color:#c3b295;letter-spacing:.04em;min-width:76px}
+.combo-line .eq{color:#6b5c46}
+.combo-line .nm{font-size:14px;font-weight:800;letter-spacing:.04em}
+.combo-line.sig .nm{color:var(--gold)}
+.combo-sig-tag{font-size:9.5px;font-weight:800;color:#241405;background:var(--gold);
+  padding:1px 5px;margin-left:3px;letter-spacing:.08em}
+.combo-ext{font-size:10.5px;color:#8fd4e0;margin-left:auto;letter-spacing:.02em}
+.buy-note{font-size:10.5px;color:#8a795e;line-height:1.5;margin-top:5px;
+  border-left:2px solid var(--line);padding-left:6px}
+#pause-combo .combo-line{padding:2px 0}
+
 /* ---- 像素道場皮膚：硬邊、木質、落影 ---- */
 .btn,.danger-btn{box-shadow:0 3px 0 rgba(8,5,2,.55),inset 0 2px 0 rgba(255,255,255,.06)}
 .btn:active:not(:disabled),.danger-btn:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(8,5,2,.55)}

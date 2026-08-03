@@ -205,9 +205,10 @@ const COMBOS = {
     { seq: ['M', 'S', 'D'], name: '一本拳', kind: 'shock_nova',
       params: { dmg: 66, rings: 2, radius: 70, falloff: 0.3, critNext: true, pose: 'jab' },
       desc: 'BAC：衝過來急停站死，食指節突出的一拳點進要害，勁在他身體裡面擴開。' },
-    { seq: ['M', 'M', 'D'], name: '飛蹴', kind: 'pierce_line',
-      params: { dmg: 62, len: 400, width: 70, stun: 1.0, blink: true, pose: 'kekomi' },
-      desc: 'BBC：跑滿兩拍之後整個人離地飛出去，腳尖過處的人全部被穿成一直線。' },
+    { seq: ['M', 'M', 'D'], name: '飛蹴', kind: 'flying_kick',
+      params: { dmg: 58, spd: 1150, len: 430, width: 46, pierce: 3, falloff: 0.6,
+        stun: 1.0, slowPerHit: 0.8, knock: 60, pose: 'tobiushiro' },
+      desc: 'BBC：跑滿兩拍之後整個人離地飛出去，腳尖過處一個一個被穿過去——但人擋得夠多，飛行會被生生擋下來。' },
     { seq: ['S', 'D'], name: '寄足突', kind: 'pierce_line',
       params: { dmg: 30, len: 150, width: 52, stun: 0.5, pose: 'jab' },
       desc: 'AC：後腳滑上半步，人跟拳一起到——最短的距離，最快的一下。' },
@@ -330,6 +331,46 @@ const RESON_NAME = {
   karate:   { SSS: '氣合', MMM: '運足', DASH3: '連突', TRI: '殘心' },
   kenshi:   { SSS: '殘心', MMM: '流水', DASH3: '連拔', TRI: '輪斬' },
   wrestler: { SSS: '壓制', MMM: '助跑', DASH3: '連撞', TRI: '亂鬥' },
+};
+
+/* 三種行為模式的唯一詞彙表——UI 只准查這裡，不准各講各的。
+   （之前站/移/衝在不同畫面有四五種叫法，玩家得自己在腦內做對照表。） */
+const SLOT_UI = {
+  still: { beat: '站', trig: '站定 0.5 秒自動', act: '站定時打中', full: '站樁技', color: '#e8964a' },
+  move:  { beat: '移', trig: '移動中自動',     act: '移動中打中', full: '移動技', color: '#8fd4e0' },
+  dash:  { beat: '衝', trig: '按 SPACE',       act: '按 SPACE',   full: '衝刺技', color: '#ffd44a' },
+};
+const SLOT_ORDER = ['still', 'move', 'dash'];   // 全專案統一順序，跟連段書寫方向一致
+
+const MOVE_BRIEF = {
+  tackle: '把敵人推去撞牆，撞空會踉蹌',
+  grab_spin: '抓住一個掄一圈半再扔出去',
+  flash_step: '閃到背後，下一擊必爆擊',
+  mountain_bash: '肩撞撞飛正面一排，順便硬化',
+  knee_dash: '落點一記飛膝，命中會僵直',
+  drunk_roll: '翻滾後甩尾掃倒一圈，沒有無敵',
+  suplex_grab: '抓住後移動甩打、站定砸地',
+  iai_slash: '收刀一秒，換瞬身三連斬',
+  lunge_thrust: '釘住第一個，下一拳必爆擊',
+  shadow_dash: '衝最遠但沒傷害，純機動',
+  sumo_press: '把周圍一整圈撞飛震傷',
+  cyclone_kick: '每 2.2 秒自動掃一圈旋風腿',
+  jodan_kick: '每 1.7 秒踢一記，把人掀開',
+  twin_slash: '每 1.8 秒朝最近敵人補兩刀',
+  lariat_run: '每 1.6 秒橫掃，跑越久掛越飛',
+  sway_step: '閃避 +18%，每閃掉一下回敬刺拳',
+  gale_step: '跑越久攻速越快，最多 +30%',
+  tail_wake: '尾巴持續掃傷身後的追兵',
+  phantom_press: '碰到的敵人持續受傷並被推開',
+  sanchin: '每 0.5 秒蓄一分，滿五分必爆擊',
+  triple_slash: '每 2.6 秒踏前連斬三刀',
+  elbow_drop: '每 2.2 秒砸一記肘擊，範圍趴下',
+  counter_stance: '挨打歸零並過肩摔砸傷別人',
+  iron_bell: '護甲 +20，反震八成傷害',
+  quake_pulse: '每 2.6 秒震一次，掀翻並定身',
+  focus_strike: '每 0.6 秒 +25% 傷害，最多 +150%',
+  palm_flurry: '每 3 秒推三掌，把人群推開',
+  breath_heal: '每秒回復最大生命 1.2%',
 };
 
 const MOVE_MAP = {};

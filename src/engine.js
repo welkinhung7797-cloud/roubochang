@@ -918,6 +918,16 @@ function techSumoPress(d) {
 }
 
 /* 招式更換：同槽位循環切換已學的招 */
+/* 招式更換：直接指定。輪換式選擇器在選項超過兩個時是最差解——
+   玩家不知道池子裡有誰、要看第三個得點兩次、而且沒有回上一個。 */
+function setMoveSlot(slot, id) {
+  const p = G.player;
+  if (!p.knownMoves.includes(id)) return false;
+  if (moveDef(id).slot !== slot) return false;
+  p.moves[slot] = id;
+  return true;
+}
+
 function cycleMoveSlot(slot) {
   const p = G.player;
   const pool = movesBySlot(slot).map(m => m.id).filter(id => p.knownMoves.includes(id));
@@ -2047,6 +2057,32 @@ function updateTechniques(dt) {
           p.pose = { type: 'ddtp', ang: Math.atan2(s.dy, s.dx), t: 0, dur: 0.34, prio: 1 };
           sfx('grab');
           break;
+        } else if (s.id === 'tobigeri' && !e.hitByDash) {
+          // 飛蹴穿人：只給極小擊退（釘身），被踢中的人留在原地變成下一個路障
+          e.hitByDash = true; s.hitAny = true;
+          const aK = Math.atan2(s.dy, s.dx);
+          hurtEnemy(e, techDmg(s.kickDmg * Math.pow(s.falloff, s.hitIdx)) * (s.boost || 1),
+            { crit: true, fromAngle: aK });
+          s.hitIdx++;
+          if (!e.dead) {
+            e.stun = Math.max(e.stun, e.boss ? s.kickStun * 0.4 : s.kickStun);
+            e.knockX += Math.cos(aK) * s.kickKnock;
+            e.knockY += Math.sin(aK) * s.kickKnock;
+            e.hitSquash = Math.max(e.hitSquash || 0, 0.26);
+          }
+          spawnFx('spark', e.x, e.y, '#ffd44a', e.r, { angle: aK });
+          addHitstop(s.firstHitDone ? 0.03 : 0.07, true);
+          s.firstHitDone = true;
+          s.spd *= s.slowPerHit;   // 越飛越慢＝中止有預告，不是系統突然抽掉控制權
+          s.pierceLeft -= e.boss ? 99 : (e.elite ? 2 : 1);
+          if (s.pierceLeft <= 0) {
+            s.t = 0;
+            spawnFx('explode', p.x, p.y, '#ffd44a', 60);
+            G.screenShake = Math.max(G.screenShake, 9);
+            sfx('hit_heavy');
+            p.staggerT = Math.max(p.staggerT, 0.18);   // 往人堆裡飛是要付代價的
+            break;
+          }
         } else if (s.id === 'rebound' && !e.hitByDash) {
           // 跑繩輾過去：橫向撥開（你是從他們中間輾過去的，不是往後撞飛）
           e.hitByDash = true; s.hitAny = true;
@@ -2841,6 +2877,27 @@ function castOugi(o, target) {
       if (!list.length) break;
       p.rushMulti = { targets: list, tick: 0, dmg: pr.dmg };
       p.iframe = Math.max(p.iframe, pr.count * 0.11 + 0.3);
+      ok = true; break;
+    }
+    case 'flying_kick': {
+      // 真實飛行（不瞬移）：貫穿額度用完就被人牆生生擋下來。
+      // 妙的是這個「人牆」是玩家自己造的——空手道不轟飛，被踢中的人留在原地就變成路障。
+      const dirF = dashDir();
+      const spdF = pr.spd || 1150;
+      const aF = Math.atan2(dirF.y, dirF.x);
+      p.dashState = {
+        id: 'tobigeri', dx: dirF.x, dy: dirF.y,
+        t: (pr.len || 430) / spdF, spd: spdF,
+        pierceLeft: pr.pierce || 3, hitIdx: 0,
+        kickDmg: pr.dmg || 58, kickStun: pr.stun || 1.0,
+        kickW: (pr.width || 46) / 2, kickKnock: pr.knock || 60,
+        falloff: pr.falloff || 0.6, slowPerHit: pr.slowPerHit || 0.8,
+        boost: 1,
+      };
+      p.pose = { type: pr.pose || 'kick', ang: aF, t: 0, dur: (pr.len || 430) / spdF + 0.12, prio: 1 };
+      p.iframe = Math.max(p.iframe, 0.15);   // 只有 0.15 秒：這是攻擊不是無敵穿場
+      spawnFx('slide', p.x, p.y, '#ffd44a', 44, { angle: aF });
+      sfx('swing_leg');
       ok = true; break;
     }
     case 'dive_splash': {
