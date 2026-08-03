@@ -1731,8 +1731,37 @@ function drawStrikes() {
         ctx.beginPath();
         ctx.moveTo(2, -4); ctx.lineTo(9, 0); ctx.lineTo(2, 4); ctx.closePath();
         ctx.fill();
+      } else if ((s.kind === 'sweep' || s.kind === 'orbit') && w.klass === '摔技' && false) {
+        // 手刀不畫刀光也不畫手臂——畫漫畫的速度線（總監指令）：
+        // 幾道黃線聚在手的位置、順著揮過去的方向拖出來，被打的人身上另有受擊特效。
+        // 以玩家為圓心的大月牙是武士刀的語言，套在手刀上就變成企鵝在揮空氣刀。
+        const a0A = s.kind === 'sweep' ? s.ang0 : s.cur;
+        const handR = s.reach * 0.72;
+        const swept = s.cur - a0A;
+        // 手刀有 110ms 引手才開始掃，共用的 kL 沒扣掉這段，
+        // 算出來的透明度在接觸窗裡已經是負的——線畫了等於沒畫。
+        const kC = 1 - Math.min(1, Math.max(0, s.t - (s.windup || 0)) / (s.dur || 0.06));
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(s.cur);
+        ctx.lineCap = 'round';
+        // 五道長短不一的線：漫畫的速度線從來不是等長等距的
+        const LN = [1, 0.62, 0.84, 0.45, 0.72];
+        const OFF = [0, -5.5, 5, -9.5, 9];
+        for (let i = 0; i < LN.length; i++) {
+          const tail = Math.max(10, Math.abs(swept) * handR * LN[i] + 12);
+          ctx.globalAlpha = (i === 0 ? 0.95 : 0.5) * (0.35 + 0.65 * kC);
+          ctx.strokeStyle = i === 0 ? '#fff6d0' : '#ffd44a';
+          ctx.lineWidth = i === 0 ? 3.4 : 2;
+          ctx.beginPath();
+          ctx.moveTo(handR + 4, OFF[i] * 0.45);
+          ctx.lineTo(handR - tail, OFF[i]);
+          ctx.stroke();
+        }
+        ctx.restore();
+        ctx.globalAlpha = 1;
       } else if (s.kind === 'sweep' || s.kind === 'orbit') {
-        // 手刀/掃技：白墨雙弧線，順著揮向一格格畫出來
+        // 刃／棍等掃技：白墨雙弧線，順著揮向一格格畫出來
         const ccw = s.kind === 'sweep' ? s.ang1 < s.ang0 : (s.spd || 1) < 0;
         const a0b = s.kind === 'sweep' ? s.ang0 : s.cur + (ccw ? 1.2 : -1.2);
         ctx.globalAlpha = 0.4 + 0.5 * kL;
@@ -2074,6 +2103,35 @@ function drawFxOver() {
       ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.moveTo(f.x, f.y + 2); ctx.lineTo(f.tx, f.ty + 2); ctx.stroke();
       ctx.restore();
+    } else if (f.type === 'mangaline') {
+      // 漫畫的速度線：長短不一、疏密不均。等長等距就變成雷達圖不是漫畫。
+      const wait = f.delay || 0;
+      if (f.t >= wait) {
+        const k = 1 - Math.min(1, (f.t - wait) / Math.max(0.01, f.life - wait));
+        const sweep = f.ang1 - f.ang0;
+        ctx.translate(f.x, f.y);
+        ctx.rotate(f.ang1);
+        ctx.lineCap = 'round';
+        const LN = [1, 0.55, 0.8, 0.38, 0.66, 0.46];
+        const OFF = [0, -6, 5.5, -11, 10, 15];
+        for (let i = 0; i < LN.length; i++) {
+          const tail = Math.abs(sweep) * f.size * 0.55 * LN[i] + 14;
+          ctx.globalAlpha = (i === 0 ? 1 : 0.75) * (0.25 + 0.75 * k);
+          ctx.strokeStyle = INK;
+          ctx.lineWidth = i === 0 ? 5.6 : 3.8;
+          ctx.beginPath();
+          ctx.moveTo(f.size + 5, OFF[i] * 0.4);
+          ctx.lineTo(f.size - tail, OFF[i]);
+          ctx.stroke();
+          ctx.strokeStyle = i === 0 ? '#fff4c8' : f.color;
+          ctx.lineWidth = i === 0 ? 3.4 : 1.9;
+          ctx.beginPath();
+          ctx.moveTo(f.size + 5, OFF[i] * 0.4);
+          ctx.lineTo(f.size - tail, OFF[i]);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      }
     } else if (f.type === 'slide') {
       // 企鵝滑行的冰痕：兩道短平行線淡出
       ctx.save();
@@ -2238,11 +2296,13 @@ function drawHud() {
     ctx.strokeStyle = lit ? def.color : '#3a4050';
     ctx.lineWidth = lit ? 3 : 2;
     roundRect(ctx, x, baseY, TS, TS, 6); ctx.stroke();
-    ctx.fillStyle = lit ? def.color : '#5f6878';
-    ctx.font = 'bold 20px ' + FONT;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(def.short, x + TS / 2, baseY + TS / 2 + 1);
-    ctx.textBaseline = 'alphabetic';
+    // 畫動作圖示，不是招名裡挑一個字——「勾」「肘」「擒」單看是認不出招式的
+    ctx.save();
+    ctx.globalAlpha = lit ? 1 : 0.42;
+    ctx.translate(x + TS / 2, baseY + TS / 2);
+    drawMoveIcon(ctx, p.moves[slot], TS - 12);
+    ctx.restore();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
     if (slot === 'dash' && p.dashCd > 0) {
       const k = Math.min(1, p.dashCd / (def.cd || 6));
       ctx.fillStyle = 'rgba(0,0,0,0.65)';
@@ -2283,24 +2343,39 @@ function drawHud() {
         ctx.fillText(BEAT_TXT[beat], bx + 13, beatY + 14);
       }
     }
-    // 連段表（底）：每條一行「前綴 → 動作＝招名」，就緒亮、冷卻壓暗＋秒數
-    ctx.font = 'bold 10px ' + FONT;
-    ctx.textAlign = 'left';
-    const ACT_TXT = { S: '站打', M: '移打', D: 'Space' };
-    combos.forEach((c, i) => {
-      const ly = beatY - 14 - (combos.length - 1 - i) * 13;
-      const pre = c.seq.slice(0, -1).map(b => BEAT_TXT[b]).join('·');
-      const act = c.seq[c.seq.length - 1];
-      const r2 = rdy2.find(r => r.name === c.name);
-      const onCd = r2 && r2.cd > 0;
-      ctx.fillStyle = r2
-        ? (onCd ? 'rgba(138,121,94,0.75)' : (c.sig ? '#ffd44a' : '#e8e4dc'))
-        : '#6d7583';
-      ctx.fillText(
-        pre + '→' + ACT_TXT[act] + '＝' + c.name + (c.sig ? '★' : '') +
-        (onCd ? '（' + r2.cd.toFixed(0) + 's）' : (r2 ? '　可出！' : '')),
-        baseX - 66, ly);
-    });
+    // 打鬥中沒人讀得完十行對照表。只講「現在按什麼、會出什麼」——
+    // 全表留在商店與暫停選單，那裡才是研究招式的地方。
+    const ACT_TXT = { S: '站著打中', M: '移動中打中', D: '按 SPACE' };
+    const listX = baseX - 74;
+    if (rdy2.length) {
+      rdy2.forEach((r, i) => {
+        const ly = beatY - 12 - (rdy2.length - 1 - i) * 19;
+        const onCd = r.cd > 0;
+        const key = r.act;
+        // 鍵位色塊：跟節拍格、跟商店卡是同一組顏色，玩家對得起來
+        ctx.fillStyle = onCd ? 'rgba(58,64,80,0.85)' : BEAT_COL[key];
+        roundRect(ctx, listX, ly - 12, 15, 15, 3); ctx.fill();
+        ctx.fillStyle = onCd ? '#8a795e' : '#17110a';
+        ctx.font = 'bold 11px ' + FONT;
+        ctx.textAlign = 'center';
+        ctx.fillText(BEAT_TXT[key], listX + 7.5, ly - 1);
+        ctx.textAlign = 'left';
+        ctx.font = 'bold 12px ' + FONT;
+        ctx.fillStyle = onCd ? 'rgba(138,121,94,0.8)' : '#c8ccd6';
+        ctx.fillText(ACT_TXT[key], listX + 20, ly);
+        const w0 = ctx.measureText(ACT_TXT[key]).width;
+        ctx.fillStyle = onCd ? 'rgba(138,121,94,0.7)' : '#6d7583';
+        ctx.fillText('＝', listX + 22 + w0, ly);
+        ctx.font = 'bold 13px ' + FONT;
+        ctx.fillStyle = onCd ? 'rgba(138,121,94,0.9)' : (r.sig ? '#ffd44a' : '#ffffff');
+        ctx.fillText(r.name + (onCd ? '（還要 ' + r.cd.toFixed(0) + ' 秒）' : ''),
+          listX + 22 + w0 + 16, ly);
+      });
+    } else if (!p.beatLog.length) {
+      ctx.font = 'bold 11px ' + FONT;
+      ctx.fillStyle = '#6d7583';
+      ctx.fillText('打中敵人開始累積連段', listX, beatY - 12);
+    }
     ctx.textAlign = 'left';
   }
 

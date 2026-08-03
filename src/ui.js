@@ -97,34 +97,60 @@ function sigNameOf(chId) {
 }
 
 /* 連段表（分行版，商店與暫停用）：chip 跟槽位卡的 beat badge 是同一個 class 同一個色 */
+/* 把拍譜翻成一句人話。「移移站」是給程式看的縮寫，不是給人看的句子。 */
+const BEAT_WORD = { S: '站著不動', M: '一邊移動' };
+const CN_NUM = ['', '一', '兩', '三', '四', '五'];
+function beatSpan(b) {
+  return '<b class="bw bw-' + (b === 'S' ? 'still' : 'move') + '">' + BEAT_WORD[b] + '</b>';
+}
+function comboHowTo(seq) {
+  const last = seq[seq.length - 1];
+  const pre = seq.slice(0, -1);
+  // 整段同一種拍子：講「連打三下」比逐拍念一遍好懂
+  if (last !== 'D' && pre.length && pre.every(b => b === last)) {
+    return beatSpan(last) + '連打' + CN_NUM[seq.length] + '下';
+  }
+  const head = pre.length
+    ? (pre.every(b => b === pre[0])
+        ? beatSpan(pre[0]) + '打' + CN_NUM[pre.length] + '下'
+        : pre.map(b => beatSpan(b) + '打一下').join('，再'))
+    : '';
+  const nth = ['', '第一下', '第二下', '第三下', '第四下', '第五下'][seq.length];
+  const tail = last === 'D'
+    ? '接著按 <b class="bw bw-dash">SPACE</b> 衝刺'
+    : nth + '換成' + beatSpan(last) + '打中';
+  return head ? head + '，' + tail : tail.replace(/^接著/, '');
+}
+
 function comboLinesHtml(chId) {
   const list = (typeof COMBOS !== 'undefined' && COMBOS[chId]) ? COMBOS[chId] : null;
-  const KEY = { S: 'still', M: 'move', D: 'dash' };
-  if (!list || !list.length) {
-    const o = OUGI[chId];
-    if (!o) return '';
-    const seq = o.seq[o.seq.length - 1] === 'D' ? o.seq : o.seq.concat('D');
-    return '<div class="combo-line sig">' +
-      seq.slice(0, -1).map(b => '<b class="beat beat-' + KEY[b] + '">' + SLOT_UI[KEY[b]].beat + '</b>').join('') +
-      '<span class="arrow">→</span><span class="act">' + SLOT_UI[KEY[seq[seq.length - 1]]].act +
-      '</span><span class="eq">＝</span><span class="nm">' + o.name + '</span>' +
-      '<span class="combo-sig-tag">招牌</span></div>';
-  }
-  // 排序：前綴短的在前、同長度依 站→移→衝，讀起來才是一張表不是一堆行
+  const rows = list && list.length
+    ? list.slice()
+    : (OUGI[chId] ? [{ seq: OUGI[chId].seq[OUGI[chId].seq.length - 1] === 'D'
+        ? OUGI[chId].seq : OUGI[chId].seq.concat('D'),
+        name: OUGI[chId].name, desc: OUGI[chId].desc, sig: true }] : []);
+  if (!rows.length) return '';
+  // 排序：拍數少的在前、同拍數依 站→移→衝，讀起來是一張表不是一堆行
   const ord = { S: 0, M: 1, D: 2 };
-  const sorted = list.slice().sort((a, b) =>
-    (a.seq.length - b.seq.length) ||
+  rows.sort((a, b) => (a.seq.length - b.seq.length) ||
     (ord[a.seq[0]] - ord[b.seq[0]]) ||
     (ord[a.seq[a.seq.length - 1]] - ord[b.seq[b.seq.length - 1]]));
-  return sorted.map(c => {
-    const last = c.seq[c.seq.length - 1];
-    return '<div class="combo-line' + (c.sig ? ' sig' : '') + '">' +
-      c.seq.slice(0, -1).map(b => '<b class="beat beat-' + KEY[b] + '">' + SLOT_UI[KEY[b]].beat + '</b>').join('') +
-      '<span class="arrow">→</span>' +
-      '<span class="act">' + SLOT_UI[KEY[last]].act + '</span>' +
-      '<span class="eq">＝</span><span class="nm">' + c.name + '</span>' +
-      (c.sig ? '<span class="combo-sig-tag">招牌</span>' : '') +
-      (c.extName ? '<span class="combo-ext">接 C＝' + c.extName + '</span>' : '') +
+  return rows.map(c => {
+    // desc 開頭的「AAA：」是寫給我自己的代號，畫面上不該出現；
+    // 「馬上按 C＝」之後那半段是延伸技的說明，拆到自己的行去
+    const raw = String(c.desc || '').replace(/^[A-Z]{1,4}：/, '');
+    const cut = raw.indexOf('馬上按 C＝');
+    const body = (cut >= 0 ? raw.slice(0, cut) : raw).trim();
+    const extBody = cut >= 0 ? raw.slice(cut + 6).trim() : '';
+    return '<div class="cb' + (c.sig ? ' sig' : '') + '">' +
+      '<div class="cb-top"><span class="cb-nm">' + c.name + '</span>' +
+      (c.sig ? '<span class="combo-sig-tag">招牌</span>' : '') + '</div>' +
+      '<div class="cb-how">' + comboHowTo(c.seq) + '</div>' +
+      (body ? '<div class="cb-desc">' + body + '</div>' : '') +
+      (c.extName
+        ? '<div class="cb-ext"><span class="cb-ext-key">打中後馬上按 SPACE</span>' +
+          '<b>' + c.extName + '</b>' + (extBody ? '<span>' + extBody + '</span>' : '') + '</div>'
+        : '') +
       '</div>';
   }).join('');
 }

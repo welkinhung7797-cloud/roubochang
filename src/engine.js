@@ -861,11 +861,16 @@ function castDash() {
 
 function dashDir() {
   const p = G.player;
-  const tgt = nearestEnemy(p.x, p.y, 600);
-  if (tgt) {
-    const dd = Math.hypot(tgt.x - p.x, tgt.y - p.y) || 1;
-    return { x: (tgt.x - p.x) / dd, y: (tgt.y - p.y) / dd };
-  }
+  // 方向盤在玩家手上：按著方向鍵就往那邊衝，沒按方向就照最後一次走的方向。
+  // 以前是自動導向最近的敵人——那等於系統幫你決定要往哪跑，走位就不是玩家的事了。
+  const k = G.keys || {};
+  let dx = 0, dy = 0;
+  if (k['a'] || k['arrowleft']) dx -= 1;
+  if (k['d'] || k['arrowright']) dx += 1;
+  if (k['w'] || k['arrowup']) dy -= 1;
+  if (k['s'] || k['arrowdown']) dy += 1;
+  const l = Math.hypot(dx, dy);
+  if (l > 0) return { x: dx / l, y: dy / l };
   const ml = Math.hypot(p.lastMoveX, p.lastMoveY) || 1;
   return { x: p.lastMoveX / ml, y: p.lastMoveY / ml };
 }
@@ -2197,9 +2202,15 @@ function updateTechniques(dt) {
    S＝原地打中、M＝移動中打中、D＝衝刺技打中。
    光走不打、光站不打，都不會累積——連段是打出來的。
 */
-function addBeat(type, auto) {
+function addBeat(type, auto, swingId) {
   const p = G.player;
-  if (p.dead || p.beatCd > 0) return;
+  if (p.dead) return;
+  // 同一次揮擊掃到好幾個人只算一拍（本來就該這樣）；
+  // 不同次揮擊一律各算一拍，不管間隔多短——那是玩家真的又打了一下。
+  if (swingId !== undefined) {
+    if (p.beatSwing === swingId) return;
+    p.beatSwing = swingId;
+  } else if (p.beatCd > 0) return;
   // 連段樹：這個動作剛好補滿某條連段的最後一格 → 當場變招，這一拍不入譜。
   // auto=true（站樁技/移動技自動命中）只能鋪前綴——收尾那一下必須是玩家自己打的，
   // 連段才是玩家「做出來」的，不是自己噴出來的。
@@ -3159,6 +3170,11 @@ function updateWeapons(dt) {
 function fireWeapon(w, reach) {
   const p = G.player;
   w.swing = 1;
+  // 一次揮擊發一個號碼牌：記拍去重要看「這是第幾次揮」，不能看時間。
+  // 看時間的話，攻速一快、連段一加速，兩次揮擊落進同一個時間窗，
+  // 第二下就被當成同一擊吃掉——玩家看到打中了，連段卻沒進。
+  p.swingSeq = (p.swingSeq || 0) + 1;
+  w.swingId = p.swingSeq;
   if (w.klass !== '摔技') w.swingDir *= -1;   // 摔技鎖定揮向：圖與刀路不准反向
   // 揮武器時手臂跟著出去（起手式姿勢優先，不覆蓋）
   if (!p.pose || p.pose.prio !== 1) {
@@ -3180,7 +3196,7 @@ function fireWeapon(w, reach) {
     }
     spawnGhostStrike(w, reach);   // 抓技的可見劈砍（純視覺，命中判定照舊走即時抓取）
     if (best) {
-      applyWeaponHit(w, best, reach);
+      applyWeaponHit(w, best, reach, undefined, false, w.swingId);
       if (G.char.special === 'flurry' && !best.dead) applyWeaponHit(w, best, reach, 0.4, true);
     }
     return;
@@ -3193,7 +3209,7 @@ function spawnGhostStrike(w, reach) {
   const p = G.player;
   const half = (Math.max(w.arc || 90, 90) * Math.PI / 180) / 2;
   G.strikes.push({
-    w, reach, t: 0, hit: [], ghost: true, kind: 'sweep',
+    w, reach, t: 0, hit: [], ghost: true, kind: 'sweep', swingId: w.swingId,
     ang0: w.angle - half * w.swingDir,
     ang1: w.angle + half * w.swingDir,
     cur: w.angle - half * w.swingDir,
@@ -3203,7 +3219,7 @@ function spawnGhostStrike(w, reach) {
 
 function spawnStrike(w, reach) {
   const p = G.player;
-  const s = { w, reach, t: 0, hit: [] };
+  const s = { w, reach, t: 0, hit: [], swingId: w.swingId };
   if (w.type === 'thrust') {
     s.kind = 'thrust';
     s.x = p.x + Math.cos(w.angle) * (p.r + 8);
@@ -3236,6 +3252,12 @@ function spawnStrike(w, reach) {
     s.delay = Math.max(0.08, Math.min(0.26, w.cd * 0.13));
     w.swingDur = s.delay + 0.08;
   }
+  if (w.klass === '摔技' && s.kind === 'sweep') {
+    // 漫畫速度線（總監指令）：線聚在手邊、順著揮向拖出去。
+    // 特效自己有壽命，不跟著 60ms 的接觸窗一起消失——不然畫面上等於沒畫。
+    spawnFx('mangaline', p.x, p.y, '#ffd44a', s.reach * 0.74,
+      { ang0: s.ang0, ang1: s.ang1, delay: s.windup || 0 });
+  }
   G.strikes.push(s);
   if (G.strikes.length > 40) G.strikes.shift();
   // 揮擊風聲
@@ -3247,7 +3269,7 @@ function spawnStrike(w, reach) {
 function strikeHit(s, e) {
   if (e.dead || s.hit.includes(e)) return;
   s.hit.push(e);
-  applyWeaponHit(s.w, e, s.reach);
+  applyWeaponHit(s.w, e, s.reach, undefined, false, s.swingId);
   if (G.char.special === 'flurry' && !e.dead) applyWeaponHit(s.w, e, s.reach, 0.4, true);
 }
 
@@ -3333,7 +3355,7 @@ function addHitstop(sec, heavy) {
   G.hitstop = Math.max(G.hitstop, sec);
 }
 
-function applyWeaponHit(w, e, reach, mulOverride, isEcho) {
+function applyWeaponHit(w, e, reach, mulOverride, isEcho, swingId) {
   const p = G.player;
   if (e.dead) return;
 
@@ -3392,7 +3414,7 @@ function applyWeaponHit(w, e, reach, mulOverride, isEcho) {
   // 記拍：這一下是在什麼狀態打中的（連段收尾判定統一在 addBeat 內）
   if (!isEcho) {
     const b = beatFromState();
-    if (b) addBeat(b);
+    if (b) addBeat(b, false, swingId);
   }
 
   // 手刀是以「受方反應＋那聲啪」定義的招：橫壓後仰不位移、胸口白閃、脆響
@@ -4239,6 +4261,7 @@ function spawnFx(type, x, y, color, size, extra) {
   const f = { type, x, y, color, size: size || 20, t: 0, life: 0.4 };
   if (extra) Object.assign(f, extra);
   if (type === 'swing') f.life = 0.22;
+  if (type === 'mangaline') f.life = 0.26;   // 手邊的速度線：要留得住一眼，不能跟 60ms 接觸窗同生共死
   if (type === 'spark') f.life = 0.2;
   if (type === 'slide') f.life = 0.5;
   if (type === 'iailine') f.life = 0.6;
