@@ -235,6 +235,7 @@ const BASE_FRAMES = { loaded: 0, ready: false };
 const FRAME_DEFS = {
   idle: 2, walk: 4, punch: 3, grab: 2, hurt: 2, dash: 2, ko: 1,
   stance: 2,     // 站樁架式（各職業自己的蓄勢語言）
+  suplex: 2, ddt: 2, frontslam: 2, press: 2, roll: 1,   // 摔技組
   headbutt: 2,   // 頭槌（連段收尾要用頭，不是揮手）
   bigboot: 2,    // 大足踢（用腿）
   elbow: 2,      // 肘擊墜落（用肘）
@@ -244,7 +245,7 @@ const FRAME_DEFS = {
    缺圖一律退回 punch（絕不退回 idle）。 */
 const POSE_FRAMESET = {
   head: 'headbutt', kick: 'bigboot', knee: 'bigboot', elbow: 'elbow', hold: 'grab',
-  slamland: 'slam',
+  slamland: 'slam', suplexp: 'suplex', hiptossp: 'frontslam', ddtp: 'ddt', press: 'press',
 };
 const ACC_IMGS = {};   // charId -> Image（頭部配件）
 const FX_IMGS = {};    // fx 名 -> Image（招式特效貼圖，黑底發光）
@@ -323,8 +324,9 @@ function pickFrame(p) {
   }
   if (p.dead) return pick('ko', 0);
   if (p.hurtT > 0) return pick('hurt', p.hurtT > 0.15 ? 0 : 1);
+  if (p.gutRoll) return pick('roll', 0);
   if (p.dashState) {
-    if (p.dashState.id === 'clothesline') return pick('dash', 1);   // 蹲低前傾＋程式彈跳＝奔跑
+    if (p.dashState.id === 'clothesline' || p.dashState.id === 'ddt') return pick('dash', 1);
     return pick('dash', Math.floor(t * 10) % 2);
   }
   if (p.grabState) return pick('grab', p.grabState.mode === 'hold' && p.stillHold > 0.2 ? 1 : 0);
@@ -361,6 +363,7 @@ function pickFrame(p) {
   if (p.moveTime > 0.05) return pick('walk', Math.floor((p.walkAnim / Math.PI) * 2) % 4);
   // 連段進行中不回中立：停在跟隨幀，下一招從上一招結束的地方開始
   if (p.comboStep > 0 && p.moveTime < 0.05) return pick('punch', 2);
+  // 延伸窗口就緒：這裡不畫（畫在 drawPlayer 的環），只是佔位註解
   // 站樁蓄力：專屬架式幀、越接近觸發拍得越急——「站著就有魔法」的解方
   if (stillActive() && p.stillT > 0.5) {
     const def = MOVE_MAP[p.moves.still];
@@ -395,6 +398,14 @@ function drawPlayerFramed(p, c) {
       const pk = p.stancePopT / 0.08;
       ctx.scale(1 + 0.1 * pk, 1 - 0.06 * pk);
     }
+  }
+  // 抱腰翻滾：企鵝是圓的，單幀＋程式旋轉就成立；撞地壓一下＋轉心偏向受方
+  if (p.gutRoll) {
+    const gr = p.gutRoll;
+    const ph = (gr.t % 0.28) / 0.28;
+    ctx.translate(gr.dx * 8, gr.dy * 8);
+    ctx.rotate(gr.ang);
+    if (ph < 0.22) { const sq = 1 - ph / 0.22; ctx.scale(1 + 0.12 * sq, 1 - 0.12 * sq); }
   }
   // 飛奔金臂勾的奔跑循環：上下彈跳＋前傾搖擺——單幀也要看得出在跑
   if (p.dashState && p.dashState.id === 'clothesline') {
@@ -872,6 +883,24 @@ function drawPlayer() {
     }
   }
 
+  // 延伸窗口：腳下收縮環＝剩餘時間（環收完就沒了），最後 120ms 轉紅急閃
+  if (p.extWindow && p.extWindow.delay <= 0) {
+    const rem = Math.max(0, p.extWindow.t / 0.4);
+    const late = p.extWindow.t < 0.12;
+    ctx.strokeStyle = late
+      ? 'rgba(230,90,60,' + (0.5 + Math.sin(G.time * 24) * 0.4) + ')'
+      : 'rgba(255,212,74,' + (0.3 + rem * 0.5) + ')';
+    ctx.lineWidth = 1 + rem * 2;
+    ctx.beginPath(); ctx.arc(0, 0, 8 + 36 * rem, 0, Math.PI * 2); ctx.stroke();
+    ctx.font = 'bold 9px ' + FONT;
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 3; ctx.strokeStyle = INK;
+    const txt = 'C→' + (p.extWindow.name || '延伸技');
+    ctx.strokeText(txt, 0, -46);
+    ctx.fillStyle = late ? '#e65a3c' : '#ffd44a';
+    ctx.fillText(txt, 0, -46);
+    ctx.textAlign = 'left';
+  }
   // 爆發光環
   if (p.burst > 0) {
     ctx.strokeStyle = '#ffd44a';
@@ -1183,8 +1212,20 @@ function drawEnemies() {
         }
       }
     }
+    // 影子畫在所有身體變形之前：躺平/旋轉/離地都不該扭曲地面的影子
     ctx.save();
     ctx.translate(e.x, e.y);
+    {
+      const lf = e.lift || 0;
+      const shk = lf > 0 ? Math.max(0.45, 1 - lf / 90) : 1;
+      ctx.fillStyle = 'rgba(0,0,0,' + (0.32 * shk) + ')';
+      ctx.beginPath();
+      ctx.ellipse(0, e.r * 0.82, e.r * 0.85 * shk, e.r * 0.3 * shk, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.save();
+    ctx.translate(e.x, e.y - (e.lift || 0));
     // 被掄的人：身體被離心力拉直、落後於旋轉方向——不是氣球綁在繩子上
     if (heldSwing) {
       const g = pl.grabState;
@@ -1192,14 +1233,27 @@ function drawEnemies() {
       ctx.rotate(g.ang + Math.PI / 2 - 0.3 * dir);
       ctx.scale(1.18, 0.88);
     }
-    // 被種在地上（炸彈摔落地）：翻平＋壓扁＋彈一次
+    // 被種在地上：一般＝側躺壓扁；back＝先倒立再拍平（德式）；face＝倒插進地板腳還在晃（DDT）
     if (e.flat) {
-      const done = 1.2 - e.flat.t;
+      const dur0 = e.flat.mode === 'face' ? 1.4 : 1.2;
+      const done = dur0 - e.flat.t;
       const fk = Math.min(1, done / 0.12);
-      const bounce = done < 0.32 && done > 0.12 ? Math.sin((done - 0.12) / 0.2 * Math.PI) * 6 : 0;
-      ctx.translate(0, -bounce);
-      ctx.rotate(Math.PI / 2 * fk);
-      ctx.scale(1.25, 0.55);
+      if (e.flat.mode === 'face') {
+        ctx.translate(0, e.r * 0.35 * fk);
+        const wig = done < 0.2 ? Math.sin(done * 18 * Math.PI) * 0.12 * (1 - done / 0.2) : 0;
+        ctx.rotate(Math.PI * fk + wig);
+        ctx.scale(0.88, 1.15);
+      } else if (e.flat.mode === 'back') {
+        const bounce = done < 0.32 && done > 0.12 ? Math.sin((done - 0.12) / 0.2 * Math.PI) * 6 : 0;
+        ctx.translate(0, -bounce);
+        ctx.rotate(Math.PI + (Math.PI / 2) * fk);   // 頭下腳上 → 平躺
+        ctx.scale(1.25, 0.55);
+      } else {
+        const bounce = done < 0.32 && done > 0.12 ? Math.sin((done - 0.12) / 0.2 * Math.PI) * 6 : 0;
+        ctx.translate(0, -bounce);
+        ctx.rotate(Math.PI / 2 * fk);
+        ctx.scale(1.25, 0.55);
+      }
     }
     // 挨了手刀：橫向壓縮＋上身後仰、腳不動——跟被鎚子砸是兩回事
     if (e.chopHit) {
@@ -1212,11 +1266,6 @@ function drawEnemies() {
     if (e.reel && pl) {
       ctx.rotate(e.reel.lean * (e.x < pl.x ? -1 : 1) * Math.min(1, e.reel.t / 0.2));
     }
-    ctx.fillStyle = 'rgba(0,0,0,0.32)';
-    ctx.beginPath();
-    ctx.ellipse(0, e.r * 0.82, e.r * 0.85, e.r * 0.3, 0, 0, Math.PI * 2);
-    ctx.fill();
-
     // 被金臂勾掛倒：整個人翻著飛（腳離地才叫 clothesline）
     if (e.spin) ctx.rotate(e.spin.a);
     // 妖怪貼圖模式：飄浮＋微透明＝幽靈感。

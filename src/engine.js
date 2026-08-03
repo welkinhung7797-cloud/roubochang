@@ -222,6 +222,8 @@ function startWave(w) {
   P.dashChain = 0; P.dashChainT = 0; P.dashBeatCounted = false; P.ougiCd = 0;
   P.comboCd = 0; P.comboFiring = false; P.comboReadyCue = false; P.beatPopT = 0; P.comboStep = 0;
   P.comboSettle = 0; P.poseAfter = null; P.pendingCombo = null;
+  P.extWindow = null; P.extCd = 0; P.lastComboVictim = null;
+  P.suplexAnim = null; P.hipTossAnim = null; P.ddtState = null; P.tossState = null; P.gutRoll = null;
   G.hitstopEcho = null;
   if (P.airSlam && P.airSlam.e) { P.airSlam.e.grabbed = false; P.airSlam.e.stun = 0.5; }
   P.airSlam = null;
@@ -745,8 +747,21 @@ function autoDmg(base) {
 function castDash() {
   const p = G.player;
   if (p.dead) return false;
-  if (p.airSlam) { p.airSlam.slam = true; return true; }   // 滯空中再按一次＝就地砸下去
-  if (p.grabState || p.dashState || p.staggerT > 0 || p.burstMulti || p.rushMulti || p.kneeChain) return false;
+  if (p.airSlam) { p.airSlam.slam = true; return true; }   // 扛跑中再按一次＝跳起來砸下去
+  // 延伸窗口：窗內的 C＝延伸技，不看也不消耗衝刺冷卻（連段已付過成本）
+  if (p.extWindow) {
+    if (p.extWindow.delay > 0) {
+      if (p.extWindow.delay <= 0.12) { p.extWindow.buffered = true; return true; }   // 輸入緩衝
+    } else if (p.extWindow.t > 0) {
+      const ew = p.extWindow;
+      p.extWindow = null;
+      return castExtension(ew.move, ew.victim);
+    }
+  }
+  // 掄甩滿三秒的獎勵（總監定案）：這一下 C＝螺旋摔投
+  if (p.grabState && p.grabState.mode === 'hold' && p.grabState.t >= 3.0) return castSpiralToss();
+  if (p.grabState || p.dashState || p.staggerT > 0 || p.burstMulti || p.rushMulti || p.kneeChain ||
+      p.suplexAnim || p.hipTossAnim || p.ddtState || p.tossState || p.gutRoll) return false;
   const id = p.moves.dash;
   const d = MOVE_MAP[id];
 
@@ -930,12 +945,13 @@ function doAirSlam(a) {
   G.screenShake = Math.max(G.screenShake, 16);
   e.grabbed = false;
   e.x = p.x; e.y = p.y + 6;
-  hurtEnemy(e, throwDmg(26 + e.maxHp * 0.34), { trueDmg: true });
-  if (!e.dead) { e.stun = 1.4; e.flat = { t: 1.2 }; e.knockX = 0; e.knockY = 0; }
+  hurtEnemy(e, throwDmg((26 + e.maxHp * 0.34) * (a.bigDrop ? 1.4 : 1)), { trueDmg: true });
+  if (!e.dead) { e.stun = 1.4; e.flat = { t: 1.2, mode: 'back' }; e.knockX = 0; e.knockY = 0; e.lift = 0; }
+  const RAD = a.bigDrop ? 190 : 150;
   for (const o of G.enemies) {
     if (o.dead || o === e) continue;
-    if (dist2(o.x, o.y, p.x, p.y) < 150 * 150) {
-      hurtEnemy(o, throwDmg(22), { trueDmg: true });
+    if (dist2(o.x, o.y, p.x, p.y) < RAD * RAD) {
+      hurtEnemy(o, throwDmg(a.bigDrop ? 30 : 22), { trueDmg: true });
       if (!o.dead) {
         o.stun = Math.max(o.stun, o.boss ? 0.4 : 1.0);
         const ang = Math.atan2(o.y - p.y, o.x - p.x);
@@ -1268,6 +1284,20 @@ function updateTechniques(dt) {
   if (p.comboCd > 0) p.comboCd -= dt;
   if (p.beatPopT > 0) p.beatPopT -= dt;
   if (p.comboSettle > 0) p.comboSettle -= dt;
+  if (p.extCd > 0) p.extCd -= dt;
+  if (p.extWindow) {
+    const ew = p.extWindow;
+    if (ew.delay > 0) {
+      ew.delay -= dt;
+      if (ew.delay <= 0 && ew.buffered) {   // 窗口一開就把緩衝的輸入放掉
+        p.extWindow = null;
+        castExtension(ew.move, ew.victim);
+      }
+    } else {
+      ew.t -= dt;
+      if (ew.t <= 0) p.extWindow = null;
+    }
+  }
   if (p.comboCdMsgT > 0) p.comboCdMsgT -= dt;
   // 連段窗口：停手太久前綴就散了——連段要一氣呵成，不是隔半分鐘慢慢湊。
   // 只套用在有連段表的職業：他們的前綴是純站/移拍，一兩秒就湊得出來。
@@ -1505,6 +1535,219 @@ function updateTechniques(dt) {
       e.y = Math.max(e.r, Math.min(ARENA.h - e.r, e.y));
     }
   }
+  // ---- DDT：勾頭帶跑 → 坐倒把頭釘進地板 ----
+  if (p.ddtState) {
+    const ds = p.ddtState;
+    const e = ds.e;
+    if (!e || e.dead) { p.ddtState = null; }
+    else {
+      ds.t += dt;
+      e.grabbed = true; e.stun = 99; e.knockX = 0; e.knockY = 0;
+      if (ds.t < 0.12) {
+        // 抓著頭跑那一段＝DDT 的靈魂
+        const run = 700 * dt;
+        p.x = Math.max(p.r, Math.min(ARENA.w - p.r, p.x + ds.dx * run));
+        p.y = Math.max(p.r, Math.min(ARENA.h - p.r, p.y + ds.dy * run));
+        pushOutOfWalls(p);
+        e.x = p.x + ds.dx * 22; e.y = p.y + ds.dy * 22 - 4;
+        e.lift = 8;
+        e.spin = { v: 0, t: 0.1, a: Math.sin(ds.t * 40) * 0.15 };   // 被拖行的擺動
+      } else if (ds.t < 0.2) {
+        e.x = p.x + ds.dx * 20; e.y = p.y + ds.dy * 20 - 4; e.lift = 8;
+      } else if (ds.t < 0.34) {
+        // 後倒種地：向前再滑一點——把向前的動能轉成向下的
+        const k2 = (ds.t - 0.2) / 0.14;
+        p.x = Math.max(p.r, Math.min(ARENA.w - p.r, p.x + ds.dx * 140 * dt));
+        p.y = Math.max(p.r, Math.min(ARENA.h - p.r, p.y + ds.dy * 140 * dt));
+        e.x = p.x + ds.dx * 18; e.y = p.y + ds.dy * 18;
+        e.lift = 8 * (1 - k2);
+        e.spin = { v: 0, t: 0.1, a: k2 * Math.PI * 0.9 };
+      } else {
+        e.lift = 0; e.grabbed = false; e.spin = null;
+        hurtEnemy(e, techDmg(88), { crit: true, trueDmg: true });
+        if (!e.dead) { e.stun = 1.5; e.flat = { t: 1.4, mode: 'face' }; }
+        spawnFx('explode', e.x, e.y, '#e8e4dc', 70);
+        G.screenShake = Math.max(G.screenShake, 15);
+        addHitstop(0.11, true);
+        sfx('throw_hit'); sfx('hit_heavy');
+        p.lastComboVictim = e;
+        p.ddtState = null;
+        p.staggerT = Math.max(p.staggerT, 0.25);
+      }
+    }
+  }
+  // ---- 德式背摔：抱腰 → 後仰過頂 → 受方上背著地 ----
+  if (p.suplexAnim) {
+    const sa = p.suplexAnim;
+    const e = sa.e;
+    if (!e || e.dead) { p.suplexAnim = null; }
+    else {
+      sa.t += dt;
+      e.grabbed = true; e.stun = 99; e.knockX = 0; e.knockY = 0;
+      const dirS = sa.face > 0 ? 1 : -1;
+      if (sa.t < 0.16) {
+        // 抱住：拉到身前
+        const k0 = sa.t / 0.16;
+        e.x = p.x + dirS * (26 - 4 * k0);
+        e.y = p.y;
+        e.lift = 0;
+        e.spin = { v: 0, t: 0.1, a: -0.3 * k0 };
+      } else if (sa.t < 0.42) {
+        // 後仰過頂：從身前掃到身後，頂點 62px（＝1.35 個身高，過頂讀得出來的最低值）
+        const k1 = (sa.t - 0.16) / 0.26;
+        const ease = k1 * k1 * (3 - 2 * k1);
+        e.x = p.x + dirS * (22 - 68 * ease);
+        e.y = p.y + 6 * ease;
+        e.lift = Math.sin(Math.min(1, ease / 0.75) * Math.PI * 0.85) * 62;
+        e.spin = { v: 0, t: 0.1, a: -0.3 + (Math.PI + 0.3) * ease * ease };
+      } else {
+        // 落地：上背砸地
+        e.lift = 0;
+        e.grabbed = false;
+        e.spin = null;
+        hurtEnemy(e, techDmg(sa.dmg), { trueDmg: true });
+        if (!e.dead) { e.stun = sa.stun; e.flat = { t: 1.2, mode: 'back' }; }
+        spawnFx('shock', e.x, e.y, '#b07a4a', 120, { img: 'fx_slam_ring', squash: 0.45 });
+        G.screenShake = Math.max(G.screenShake, 14);
+        addHitstop(0.1, true);
+        sfx('throw_hit');
+        p.lastComboVictim = e;
+        p.suplexAnim = null;
+      }
+    }
+  }
+  // ---- 腰投：勾臂以腰為支點往前摔，施術者保持站立 ----
+  if (p.hipTossAnim) {
+    const ha = p.hipTossAnim;
+    const e = ha.e;
+    if (!e || e.dead) { p.hipTossAnim = null; }
+    else {
+      ha.t += dt;
+      e.grabbed = true; e.stun = 99; e.knockX = 0; e.knockY = 0;
+      const dirH = ha.face > 0 ? 1 : -1;
+      if (ha.t < 0.14) {
+        e.x = p.x + dirH * 30; e.y = p.y - 4; e.lift = 6;
+      } else if (ha.t < 0.32) {
+        // 低平拋物線：頂點只有 28px——這是「摔」不是「拋」
+        const k1 = (ha.t - 0.14) / 0.18;
+        e.x = p.x + dirH * (30 + 40 * k1);
+        e.y = p.y + 4 * k1;
+        e.lift = Math.sin(k1 * Math.PI) * 28;
+        e.spin = { v: 0, t: 0.1, a: k1 * Math.PI * 1.5 };   // 側翻 3/4 圈
+      } else {
+        e.lift = 0; e.grabbed = false; e.spin = null;
+        hurtEnemy(e, techDmg(ha.dmg), { trueDmg: true });
+        if (!e.dead) { e.stun = ha.stun; e.flat = { t: 1.0 }; }
+        spawnFx('shock', e.x, e.y, '#b07a4a', 100, { img: 'fx_slam_ring', squash: 0.45 });
+        G.screenShake = Math.max(G.screenShake, 11);
+        addHitstop(0.08, true);
+        sfx('throw_hit');
+        p.lastComboVictim = e;
+        p.hipTossAnim = null;
+      }
+    }
+  }
+  // ---- 抱腰翻滾：抱著滾四圈，每次撞地一段傷害 ----
+  if (p.gutRoll) {
+    const gr = p.gutRoll;
+    gr.t += dt;
+    const PERIOD = 0.28, ROLLS = 4;
+    const phase = (gr.t % PERIOD) / PERIOD;
+    // 撞地慢、翻過去快——等速滾動會讀成輪子，不是兩個人在滾
+    const spd = 257 * (1 + 0.35 * Math.sin(phase * Math.PI * 2));
+    p.x = Math.max(p.r, Math.min(ARENA.w - p.r, p.x + gr.dx * spd * dt));
+    p.y = Math.max(p.r, Math.min(ARENA.h - p.r, p.y + gr.dy * spd * dt));
+    pushOutOfWalls(p);
+    gr.ang += (Math.PI * 2 / PERIOD) * dt;
+    if (gr.victim && !gr.victim.dead) {
+      const v = gr.victim;
+      v.grabbed = true; v.stun = 99; v.lift = 0;
+      v.x = p.x + gr.dx * 14; v.y = p.y + gr.dy * 14;
+      v.spin = { v: 0, t: 0.1, a: gr.ang };
+    }
+    const nowHit = Math.floor(gr.t / PERIOD);
+    if (nowHit > gr.hits && nowHit <= ROLLS) {
+      gr.hits = nowHit;
+      const last = nowHit >= ROLLS;
+      // 沒抓到人就沿路撿一個
+      if (!gr.victim || gr.victim.dead) {
+        for (const o of G.enemies) {
+          if (o.dead || o.boss || o.grabbed || o.thrown) continue;
+          if (dist2(o.x, o.y, p.x, p.y) < 46 * 46) { gr.victim = o; break; }
+        }
+      }
+      const mul = last ? 2.2 : 1;
+      for (const o of G.enemies) {
+        if (o.dead || o === gr.victim) continue;
+        if (dist2(o.x, o.y, p.x, p.y) < 60 * 60) {
+          hurtEnemy(o, throwDmg((8 + o.maxHp * 0.02) * mul), { trueDmg: true });
+          if (!o.dead) o.stun = Math.max(o.stun, 0.5);
+        }
+      }
+      if (gr.victim && !gr.victim.dead) {
+        hurtEnemy(gr.victim, throwDmg(32 * mul), { trueDmg: true });
+      }
+      spawnFx('shock', p.x, p.y, '#b07a4a', last ? 90 : 60, { img: 'fx_slam_ring', squash: 0.45 });
+      G.screenShake = Math.max(G.screenShake, last ? 12 : 5);
+      addHitstop(last ? 0.09 : 0.03, last);
+      sfx('hit_blunt', { pitch: 0.9 + nowHit * 0.06 });   // 越滾越快的聽覺線索
+    }
+    if (gr.t >= PERIOD * ROLLS) {
+      if (gr.victim && !gr.victim.dead) {
+        gr.victim.grabbed = false; gr.victim.spin = null;
+        gr.victim.stun = 1.0; gr.victim.flat = { t: 1.0 };
+      }
+      p.gutRoll = null;
+      p.staggerT = Math.max(p.staggerT, 0.2);
+    }
+  }
+  // ---- 拋高接空中炸彈摔：整段自動演出（總監定案），接住轉扛跑 ----
+  if (p.tossState) {
+    const ts = p.tossState;
+    const e = ts.e;
+    if (!e || e.dead) { p.tossState = null; }
+    else {
+      ts.t += dt;
+      const k = Math.min(1, ts.t / ts.dur);
+      e.grabbed = true; e.stun = 99; e.knockX = 0; e.knockY = 0;
+      e.x = ts.x0 + (ts.tx - ts.x0) * k;
+      e.y = ts.y0 + (ts.ty - ts.y0) * k;
+      // 上升 → 滯頂 → 下落
+      e.lift = k < 0.42 ? (k / 0.42) * 110
+        : (k < 0.58 ? 110 - (k - 0.42) / 0.16 * 6 : 104 * (1 - Math.pow((k - 0.58) / 0.42, 2)));
+      e.spin = { v: 0, t: 0.1, a: k * Math.PI + Math.sin(ts.t * 34) * 0.07 };   // 翻轉＋掙扎
+      // 玩家自動追：速度動態求解，鎖定在對方開始下落那一刻抵達
+      if (!ts.caught) {
+        const dxT = e.x - p.x, dyT = e.y - p.y;
+        const distT = Math.hypot(dxT, dyT) || 1;
+        const remain = Math.max(0.05, ts.dur * 0.63 - ts.t);
+        const spdT = Math.min(1400, distT / remain);
+        if (distT > 4) {
+          p.x = Math.max(p.r, Math.min(ARENA.w - p.r, p.x + dxT / distT * spdT * dt));
+          p.y = Math.max(p.r, Math.min(ARENA.h - p.r, p.y + dyT / distT * spdT * dt));
+        }
+        if (distT < p.r + e.r + 22 && e.lift > 20) {
+          // 接住：直接轉扛跑炸彈摔，高度接續不重新升空
+          ts.caught = true;
+          p.tossState = null;
+          p.airSlam = { e, t: 0, dur: 1.0, slam: false, dizzy: 0, carry: true, bigDrop: true };
+          p.pose = null;
+          addHitstop(0.06, true);
+          sfx('grab');
+        }
+      }
+      if (p.tossState && k >= 1) {
+        // 沒接到：照樣落地摔一次（招放了就是放了，不退冷卻）
+        e.lift = 0; e.grabbed = false; e.spin = null;
+        hurtEnemy(e, throwDmg(25), { trueDmg: true });
+        if (!e.dead) { e.stun = 1.0; e.flat = { t: 1.0 }; }
+        spawnFx('shock', e.x, e.y, '#b07a4a', 110, { img: 'fx_slam_ring', squash: 0.45 });
+        G.screenShake = Math.max(G.screenShake, 10);
+        sfx('throw_hit');
+        p.tossState = null;
+      }
+    }
+  }
   // ---- 飛天炸彈摔：滯空選落點 ----
   if (p.airSlam) {
     const a = p.airSlam;
@@ -1514,8 +1757,10 @@ function updateTechniques(dt) {
       a.t += dt;
       if (a.x0 === undefined) { a.x0 = p.x; a.y0 = p.y; }
       const kA = Math.min(1, a.t / a.dur);
-      a.h = Math.min(52, a.t / 0.2 * 52);
-      if (kA > 0.91) { const dK = (kA - 0.91) / 0.09; a.h *= Math.max(0, 1 - dK * dK); }   // 90ms easeIn 砸下
+      // 扛跑（總監定案）：腳踩在地上跑去選落點，只有最後 0.2 秒跳起來——落差才賣得出去
+      const jumpK = kA > 0.82 ? (kA - 0.82) / 0.18 : 0;
+      const peak = a.bigDrop ? 104 : 62;
+      a.h = jumpK <= 0 ? 0 : (jumpK < 0.5 ? peak * (jumpK / 0.5) : peak * Math.max(0, 1 - Math.pow((jumpK - 0.5) / 0.5, 2)));
       p.iframe = Math.max(p.iframe, 0.08);   // 人在空中，地面的敵人碰不到（不是衝刺無敵）
       // 滯空位移上限：這是重新定位，不是傳送
       const dx0 = p.x - a.x0, dy0 = p.y - a.y0;
@@ -1725,6 +1970,15 @@ function updateTechniques(dt) {
             spawnFx('shock', e.x, e.y, '#c2703c', 70);
             p.dashState = null;
           }
+          break;
+        } else if (s.id === 'ddt' && !e.hitByDash && !e.boss) {
+          // 勾住頭帶著跑，然後坐倒把頭釘進地板——單體處決，全表最重頓幀
+          e.hitByDash = true; s.hitAny = true;
+          e.grabbed = true; e.stun = 99;
+          p.ddtState = { e, t: 0, dx: s.dx, dy: s.dy };
+          p.dashState = null;
+          p.pose = { type: 'ddtp', ang: Math.atan2(s.dy, s.dx), t: 0, dur: 0.34, prio: 1 };
+          sfx('grab');
           break;
         } else if (s.id === 'clothesline' && !e.hitByDash) {
           // 飛奔金臂勾：金臂勾的定義是把人的腳掀離地面——掛到的人翻著飛出去，
@@ -1946,6 +2200,90 @@ function beatsMatch(log, seq) {
   const tail = log.slice(-seq.length);
   return seq.every((b, i) => tail[i] === b);
 }
+/* 延伸技（總監定案：有冷卻高威力，共用 8 秒） */
+function castExtension(move, victim) {
+  const p = G.player;
+  p.extCd = 8;
+  switch (move) {
+    case 'clothesline': {
+      const ok1 = castOugi({ kind: 'charge_line',
+        params: { dmg: 90, len: 260, width: 96, knock: 380, stun: 1.0, pose: 'lariat', chargeSpd: 820 } });
+      if (ok1) { G.ougiBanner = { name: '飛奔金臂勾', t: 1.2 }; sfx('ougi_cast'); }
+      else p.extCd = 0;
+      return ok1;
+    }
+    case 'running_ddt': {
+      // 衝過去勾住頭帶著跑，坐倒把頭釘進地板——單體處決，全表最重頓幀
+      const dirD = dashDir();
+      p.dashState = { id: 'ddt', dx: dirD.x, dy: dirD.y, t: 180 / 700, spd: 700, accel: true, boost: 1 };
+      G.ougiBanner = { name: '衝刺DDT', t: 1.2 };
+      sfx('dash');
+      return true;
+    }
+    case 'gut_roll': {
+      // 抱腰翻滾：撲抱住滾出去，滾四圈四段 hit，壓到路過的一起痛
+      const mx0 = p.lastMoveX || (p.face > 0 ? 1 : -1), my0 = p.lastMoveY || 0;
+      const ml0 = Math.hypot(mx0, my0) || 1;
+      p.gutRoll = { t: 0, dx: mx0 / ml0, dy: my0 / ml0, victim: null, hits: 0, ang: 0 };
+      G.ougiBanner = { name: '抱腰翻滾', t: 1.2 };
+      sfx('dash');
+      return true;
+    }
+    case 'toss_powerbomb': {
+      // military press 拋高＋pop-up 空中接：整段自動演出（總監定案），接住轉扛跑炸彈摔
+      let v = victim && !victim.dead && !victim.boss ? victim : null;
+      if (!v) {
+        let bd = 170 * 170;
+        for (const e2 of G.enemies) {
+          if (e2.dead || e2.boss || e2.thrown) continue;
+          const dd2 = dist2(e2.x, e2.y, p.x, p.y);
+          if (dd2 < bd) { bd = dd2; v = e2; }
+        }
+      }
+      if (!v) { p.extCd = 0; return false; }
+      const dirT = dashDir();
+      v.flat = null; v.reel = null; v.grabbed = true; v.stun = 99;
+      p.tossState = { e: v, t: 0, dur: 0.52, x0: v.x, y0: v.y,
+        tx: Math.max(v.r, Math.min(ARENA.w - v.r, p.x + dirT.x * 240)),
+        ty: Math.max(v.r, Math.min(ARENA.h - v.r, p.y + dirT.y * 240)), caught: false };
+      p.pose = { type: 'press', ang: Math.atan2(dirT.y, dirT.x), t: 0, dur: 0.3, prio: 1 };
+      G.ougiBanner = { name: '拋高炸彈摔', t: 1.2 };
+      sfx('ougi_cast');
+      return true;
+    }
+  }
+  p.extCd = 0;
+  return false;
+}
+
+/* 掄甩滿三秒按 C：螺旋摔投——一直掄累積的東西在這裡兌現 */
+function castSpiralToss() {
+  const p = G.player, g = p.grabState;
+  if (!g || !g.e || g.e.dead) return false;
+  const e = g.e;
+  const tx0 = Math.cos(g.ang + (g.spinSpd >= 0 ? Math.PI / 2 : -Math.PI / 2));
+  const ty0 = Math.sin(g.ang + (g.spinSpd >= 0 ? Math.PI / 2 : -Math.PI / 2));
+  e.grabbed = false;
+  e.thrown = { vx: tx0 * 1000, vy: ty0 * 1000, t: 0.7, decay: 2.0 };
+  e.spin = { v: (g.spinSpd >= 0 ? -16 : 16), t: 0.7, a: 0 };
+  hurtEnemy(e, throwDmg(25 + e.maxHp * 0.25), { trueDmg: true });
+  for (const o of G.enemies) {
+    if (o.dead || o === e) continue;
+    if (dist2(o.x, o.y, p.x, p.y) < 140 * 140) {
+      hurtEnemy(o, throwDmg(20), { trueDmg: true });
+      if (!o.dead) o.stun = Math.max(o.stun, 0.8);
+    }
+  }
+  spawnFx('explode', p.x, p.y, '#c2703c', 150);
+  G.ougiBanner = { name: '螺旋摔投', t: 1.3 };
+  G.screenShake = Math.max(G.screenShake, 14);
+  addHitstop(0.1, true);
+  sfx('ougi_cast'); sfx('throw_hit');
+  p.staggerT = Math.max(p.staggerT, 0.35 + 0.65 * (g.dizzy || 0));
+  p.grabState = null;
+  return true;
+}
+
 /* 這個職業的連段表：沒定義就把 OUGI 當成單條招牌連段（語意相同） */
 function comboList() {
   const id = G.char && G.char.id;
@@ -1998,6 +2336,11 @@ function castCombo(c, target) {
   const ok = castOugi(c, target);
   if (!ok) return false;
   p.beatLog = []; p.beatT = 0;
+  if (c.ext && (p.extCd || 0) <= 0) {
+    // 延伸窗口：從收尾接觸幀播完(0.18s)開 0.4 秒——「趁他還沒站直」
+    p.extWindow = { move: c.ext, name: c.extName || '', delay: 0.18, t: 0.4,
+      victim: p.lastComboVictim || null, buffered: false };
+  }
   if (c.sig) {
     p.ougiCd = 7.5;
     p.comboSettle = 0.35;
@@ -2066,6 +2409,40 @@ function castOugi(o, target) {
       if (pr.critNext) p.guaranteedCrit = true;
       if (pr.charge) p.chargeHits = Math.max(p.chargeHits || 0, pr.charge);
       sfx('hit_heavy');
+      ok = true; break;
+    }
+    case 'suplex': {
+      // 德式背摔：環抱住腰、自己向後仰倒，把人從頭頂翻到身後——受方上背著地。
+      // 辨識關鍵：只有 suplex 是「把自己也豁出去」的摔技（企鵝後仰但不躺，圍毆場活命優先）。
+      const eS = target && !target.dead ? target : nearestEnemy(p.x, p.y, 150);
+      if (!eS) break;
+      if (eS.boss) {
+        hurtEnemy(eS, techDmg(pr.dmg * 0.6), { trueDmg: true });
+        eS.stun = Math.max(eS.stun, 0.8);
+        addHitstop(0.08, true);
+        ok = true; break;
+      }
+      eS.grabbed = true; eS.stun = 99; eS.knockX = 0; eS.knockY = 0;
+      p.suplexAnim = { e: eS, t: 0, dmg: pr.dmg, stun: pr.stun, face: p.face };
+      p.lastComboVictim = eS;
+      p.pose = { type: 'suplexp', ang: p.face > 0 ? 0 : Math.PI, t: 0, dur: 0.44, prio: 1 };
+      sfx('grab');
+      ok = true; break;
+    }
+    case 'hip_toss': {
+      // 腰投：勾臂以腰為支點往前翻摔，施術者保持站立（跟 suplex 的反向對照）
+      const eH = target && !target.dead ? target : nearestEnemy(p.x, p.y, 130);
+      if (!eH) break;
+      if (eH.boss) {
+        hurtEnemy(eH, techDmg(pr.dmg * 0.6), { trueDmg: true });
+        eH.stun = Math.max(eH.stun, 0.7);
+        ok = true; break;
+      }
+      eH.grabbed = true; eH.stun = 99;
+      p.hipTossAnim = { e: eH, t: 0, dmg: pr.dmg, stun: pr.stun, face: p.face };
+      p.lastComboVictim = eH;
+      p.pose = { type: 'hiptossp', ang: p.face > 0 ? 0 : Math.PI, t: 0, dur: 0.36, prio: 1 };
+      sfx('grab');
       ok = true; break;
     }
     case 'sweep_ring': {
@@ -2357,7 +2734,8 @@ function updateWeapons(dt) {
       const base = p.face > 0 ? -0.45 : Math.PI + 0.45;
       w.angle = base + spread * (p.face > 0 ? 1 : -1) + Math.sin(G.time * 2 + idx) * 0.05;
     }
-    if (w.cdLeft <= 0 && target && (p.comboSettle || 0) <= 0.17) {
+    if (w.cdLeft <= 0 && target && (p.comboSettle || 0) <= 0.17 &&
+        !p.suplexAnim && !p.hipTossAnim && !p.ddtState && !p.tossState && !p.gutRoll) {
       const d = Math.sqrt(dist2(p.x, p.y, target.x, target.y));
       if (d <= reach + target.r) {
         fireWeapon(w, reach);
@@ -2614,6 +2992,7 @@ function applyWeaponHit(w, e, reach, mulOverride, isEcho) {
     e.chopHit = { t: 0.22, ang: angC };
     spawnFx('shock', e.x - Math.cos(angC) * e.r * 0.6, e.y - e.r * 0.35, '#ffffff', 26, { img: 'fx_chop_slap' });
   }
+  if (!isEcho && (p.comboStep || 0) > 0 && !e.dead) p.lastComboVictim = e;
   // 連段中每一下命中：受方進遞增踉蹌——對手從第一下到收尾都沒機會站直，那才叫連段
   if (!isEcho && (p.comboStep || 0) > 0 && !e.dead && !e.boss) {
     e.reel = { t: 0.35 + 0.15 * p.comboStep, lean: 0.18 * p.comboStep };
@@ -2719,7 +3098,8 @@ function updatePlayer(dt) {
   if (k['w'] || k['arrowup']) my -= 1;
   if (k['s'] || k['arrowdown']) my += 1;
   // 衝刺中身體不歸自己管；踉蹌時腿軟
-  if (p.dashState || p.staggerT > 0 || (p.iaiPhase && p.iaiPhase.phase === 'sheath')) { mx = 0; my = 0; }
+  if (p.dashState || p.staggerT > 0 || (p.iaiPhase && p.iaiPhase.phase === 'sheath') ||
+      p.suplexAnim || p.hipTossAnim || p.ddtState || p.tossState || p.gutRoll) { mx = 0; my = 0; }
   const len = Math.hypot(mx, my);
   const moving = len > 0;
   if (moving) { mx /= len; my /= len; }

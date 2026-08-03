@@ -692,6 +692,11 @@ const BOT = { on: false, dir: 0, dirT: 0 };
 /* 機器人的衝刺判斷：奧義就緒立刻放，否則依衝刺技的性質看時機 */
 function botDash() {
   const p = G.player;
+  // 延伸窗口開著就接——這是連段的最大回報，機器人不會放過
+  if (p.extWindow && p.extWindow.delay <= 0) { castDash(); return; }
+  // 掄甩滿三秒的螺旋摔投獎勵
+  if (p.grabState && p.grabState.mode === 'hold' && p.grabState.t >= 3.0) { castDash(); return; }
+  if (p.suplexAnim || p.hipTossAnim || p.ddtState || p.tossState || p.gutRoll) return;
   // 滯空中：飛到人多的地方再砸下去
   if (p.airSlam) {
     const cnt = G.enemies.filter(e => !e.dead && !e.grabbed &&

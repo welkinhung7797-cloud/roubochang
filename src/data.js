@@ -194,19 +194,26 @@ const COMBOS = {
       params: { dmg: 40, width: 76, len: 480, cross: true, crossLen: 300, crossMul: 0.8 },
       desc: '先一刀貫穿整條直線衝到底，落地再反手橫掃一刀——兩道刀光在地上交成一個十字。' },
   ],
+  /* 摔角手連段樹（總監 2026-08-03 定案，A=原地 B=移動 C=DASH）：
+     純拍＝普通傷害、混拍變體較強；每條收尾後 0.4 秒內按 C＝延伸技（有冷卻高威力）。
+     螺旋摔投退出拍序表，改掛在擒抱掄甩滿 3 秒按 C 的獎勵。 */
   wrestler: [
     { seq: ['S', 'S', 'S'], name: '頭槌', kind: 'strike_heavy',
-      params: { dmg: 38, stun: 1.0, radius: 78, cleaveMul: 0.5, pose: 'head', img: 'fx_slam' },
-      desc: '手刀、手刀之後站定的那一下，直接用頭撞上去。' },
-    { seq: ['S', 'S', 'M'], name: '大足踢', kind: 'knock_cone',
-      params: { dmg: 30, knock: 260, arc: 90, range: 128, stun: 0.6 },
-      desc: '手刀兩下之後邁步跨出去，一隻腳整片掃過去把人踢飛。' },
-    { seq: ['S', 'S', 'D'], name: '飛奔金臂勾', kind: 'charge_line', sig: true,
-      params: { dmg: 55, len: 260, width: 96, knock: 380, stun: 1.0, pose: 'lariat' },
-      desc: '兩記手刀打底之後那一下衝刺，變成整條手臂的飛奔金臂勾，路上的人全部掛在臂彎上帶走。' },
-    { seq: ['M', 'M', 'D'], name: '螺旋摔投', kind: 'grab_super', sig: true,
-      params: { dur: 2.1, orbitR: 76, spinSpd: 9, bossDmg: 80, blastDmg: 20 },
-      desc: '一直跑一直打的獎勵：兩個移動拍之後按衝刺，抓住一個人掄成螺旋，轉三大圈扔出去，落點炸出一圈震盪。' },
+      params: { dmg: 38, stun: 0.6, radius: 78, cleaveMul: 0.5, pose: 'head', img: 'fx_slam' },
+      ext: 'running_ddt', extName: '衝刺DDT',
+      desc: 'AAA：兩記手刀之後站定用頭撞上去。馬上按 C＝衝向最近的人接移動 DDT。' },
+    { seq: ['M', 'M', 'M'], name: '大足踢', kind: 'knock_cone',
+      params: { dmg: 34, knock: 260, arc: 90, range: 128, stun: 0.7 },
+      ext: 'clothesline', extName: '飛奔金臂勾',
+      desc: 'BBB：跑動兩下手刀之後抬腿硬踢。馬上按 C＝再接飛奔金臂勾。' },
+    { seq: ['M', 'M', 'S'], name: '德式背摔', kind: 'suplex',
+      params: { dmg: 62, stun: 1.2 },
+      ext: 'toss_powerbomb', extName: '拋高炸彈摔',
+      desc: 'BBA：移動兩下之後站定環抱住對手，整個人向後仰把他從頭頂翻到身後。馬上按 C＝把人拋高，追上去空中接住轉炸彈摔。' },
+    { seq: ['S', 'S', 'M'], name: '腰投', kind: 'hip_toss',
+      params: { dmg: 55, stun: 0.9 },
+      ext: 'gut_roll', extName: '抱腰翻滾',
+      desc: 'AAB：站定兩下之後踏步勾住手臂，以腰為支點把人往前摔。馬上按 C＝抱著他在地上連續翻滾輾過去。' },
   ],
 };
 
