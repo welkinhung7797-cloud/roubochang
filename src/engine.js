@@ -9,6 +9,8 @@ if (typeof window === 'undefined' || !window.AudioContext) {
   var sfxComboReady = function () {};
   var bgmPlay = function () {};
   var bgmStop = function () {};
+  var sfxHit = function () {};
+  var sfxThrow = function () {};
 }
 
 /* ---------- 亂數（可設種子，方便自動化測試重現） ---------- */
@@ -939,7 +941,8 @@ function doAirSlam(a) {
   p.airSlam = null;
   p.poseAfter = { type: 'slamland', t: 0.28 };   // 落地壓扁定格（slam_2）
   p.staggerT = Math.max(p.staggerT, 0.35 + 0.65 * (a.dizzy || 0));   // 掄越久，落地後越站不穩
-  sfx('throw_hit');
+  sfxThrow('suplex');
+  if (a.bigDrop) sfxThrow('ddt');   // 大落差再疊一層尖銳撞擊
   addHitstop(0.16, true);
   addBeat('S');
   spawnFx('explode', p.x, p.y, '#b07a4a', 150);
@@ -1571,7 +1574,7 @@ function updateTechniques(dt) {
         spawnFx('explode', e.x, e.y, '#e8e4dc', 70);
         G.screenShake = Math.max(G.screenShake, 15);
         addHitstop(0.11, true);
-        sfx('throw_hit'); sfx('hit_heavy');
+        sfxThrow('ddt');
         p.lastComboVictim = e;
         p.ddtState = null;
         p.staggerT = Math.max(p.staggerT, 0.25);
@@ -1612,7 +1615,7 @@ function updateTechniques(dt) {
         spawnFx('shock', e.x, e.y, '#b07a4a', 120, { img: 'fx_slam_ring', squash: 0.45 });
         G.screenShake = Math.max(G.screenShake, 14);
         addHitstop(0.1, true);
-        sfx('throw_hit');
+        sfxThrow('suplex');
         p.lastComboVictim = e;
         p.suplexAnim = null;
       }
@@ -1643,7 +1646,7 @@ function updateTechniques(dt) {
         spawnFx('shock', e.x, e.y, '#b07a4a', 100, { img: 'fx_slam_ring', squash: 0.45 });
         G.screenShake = Math.max(G.screenShake, 11);
         addHitstop(0.08, true);
-        sfx('throw_hit');
+        sfxThrow('hiptoss');
         p.lastComboVictim = e;
         p.hipTossAnim = null;
       }
@@ -1692,7 +1695,7 @@ function updateTechniques(dt) {
       spawnFx('shock', p.x, p.y, '#b07a4a', last ? 90 : 60, { img: 'fx_slam_ring', squash: 0.45 });
       G.screenShake = Math.max(G.screenShake, last ? 12 : 5);
       addHitstop(last ? 0.09 : 0.03, last);
-      sfx('hit_blunt', { pitch: 0.9 + nowHit * 0.06 });   // 越滾越快的聽覺線索
+      sfxThrow('roll', { pitch: 0.9 + nowHit * 0.08 });   // 越滾越快的聽覺線索
     }
     if (gr.t >= PERIOD * ROLLS) {
       if (gr.victim && !gr.victim.dead) {
@@ -1735,7 +1738,7 @@ function updateTechniques(dt) {
           p.airSlam = { e, t: 0, dur: 1.0, slam: false, dizzy: 0, carry: true, bigDrop: true };
           p.pose = null;
           addHitstop(0.06, true);
-          sfx('grab');
+          sfxThrow('catchAir');
         }
       }
       if (p.tossState && k >= 1) {
@@ -2250,7 +2253,7 @@ function castExtension(move, victim) {
         ty: Math.max(v.r, Math.min(ARENA.h - v.r, p.y + dirT.y * 240)), caught: false };
       p.pose = { type: 'press', ang: Math.atan2(dirT.y, dirT.x), t: 0, dur: 0.3, prio: 1 };
       G.ougiBanner = { name: '拋高炸彈摔', t: 1.2 };
-      sfx('ougi_cast');
+      sfxThrow('press');
       return true;
     }
   }
@@ -2280,7 +2283,7 @@ function castSpiralToss() {
   G.ougiBanner = { name: '螺旋摔投', t: 1.3 };
   G.screenShake = Math.max(G.screenShake, 14);
   addHitstop(0.1, true);
-  sfx('ougi_cast'); sfx('throw_hit');
+  sfxThrow('spiral');
   p.staggerT = Math.max(p.staggerT, 0.35 + 0.65 * (g.dizzy || 0));
   p.grabState = null;
   return true;
@@ -3004,10 +3007,14 @@ function applyWeaponHit(w, e, reach, mulOverride, isEcho) {
     addHitstop(p.comboStep >= 2 ? 0.065 : 0.045, false);
     G.screenShake = Math.max(G.screenShake, p.comboStep >= 2 ? 5 : 3);
   }
-  // 命中音：依武器類與力度分層；連段一、二下音高走揚（1、2、3 的節奏要用耳朵聽得到）
+  // 命中音：分層合成（銳利度/重量/材質）＋實錄樣本疊在上面。
+  // 力度 force 取這一擊佔對方血量的比例，同一把武器的輕重也聽得出來。
   if (!isEcho) {
     const cs = p.comboStep || 0;
     const co = cs === 1 ? { pitch: 1.0 } : (cs >= 2 ? { pitch: 1.18, vol: 1.2 } : undefined);
+    const force = Math.max(0, Math.min(1,
+      (crit ? 0.35 : 0) + base / Math.max(24, e.maxHp * 0.55)));
+    sfxHit(w.klass, force, co);
     if (w.klass === '摔技') sfx('chop_crack', co);
     else if (w.klass === '刃') sfx('hit_blade', co);
     else if (w.klass === '腿') sfx('hit_kick', co);
