@@ -38,6 +38,64 @@ function shade(hex, amt) {
 }
 
 /* ---------- 主繪製 ---------- */
+/* ---- 道場木地板貼圖 ---- */
+let FLOOR_IMG = null, FLOOR_PAT = null;
+function ensureFloorPattern() {
+  if (typeof Image === 'undefined') return null;
+  if (FLOOR_IMG === null) {
+    FLOOR_IMG = new Image();
+    FLOOR_IMG.src = 'assets/ui/dojo_floor.jpg';
+  }
+  if (!FLOOR_PAT && FLOOR_IMG.complete && FLOOR_IMG.naturalWidth) {
+    try { FLOOR_PAT = ctx.createPattern(FLOOR_IMG, 'repeat'); } catch (e) {}
+  }
+  return FLOOR_PAT;
+}
+
+/* ---- 收刀動畫：0~1 進度，-1＝沒在收刀 ----
+   兩個來源：居合鏈的反手收刀段（0.3s）、奧義居合結束的收刀硬直（0.5s） */
+function sheatheK(p) {
+  if (!p) return -1;
+  if (p.iaiPhase && p.iaiPhase.phase === 'sheath') return 1 - Math.max(0, p.iaiPhase.t) / 0.3;
+  if (p.sheathing > 0) return 1 - p.sheathing / 0.5;
+  return -1;
+}
+
+function drawSheatheAnim(p) {
+  const k = sheatheK(p);
+  if (k < 0) return;
+  loadWeaponImg('katana');
+  const img = WEAPON_IMGS['katana'];
+  if (!img) return;
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  if (p.face < 0) ctx.scale(-1, 1);
+  const kw = 52, kh = kw * (img.height / img.width);
+  const hx = -4, hy = 4;   // 腰間鞘口
+  if (k < 0.42) {
+    // 第一拍：反手甩刀——刀在身前快速翻轉 180°
+    const f = k / 0.42;
+    const ee = 1 - (1 - f) * (1 - f);   // easeOut，甩得快收得穩
+    ctx.translate(hx + 12, hy - 8);
+    ctx.rotate(-0.9 + ee * (Math.PI + 0.9));
+    ctx.drawImage(img, -6, -kh / 2, kw, kh);
+  } else {
+    // 第二拍：水平收刀——刀尖先進鞘，露在外面的越來越短
+    const f = (k - 0.42) / 0.58;
+    const vis = Math.max(0.06, 1 - f);
+    ctx.save();
+    ctx.translate(hx, hy);
+    ctx.rotate(Math.PI);   // 反握、刀尖指向背後
+    ctx.drawImage(img, 0, 0, img.width * vis, img.height, 0, -kh / 2, kw * vis, kh);
+    ctx.restore();
+    // 鞘口摩擦的白光
+    ctx.globalAlpha = 0.35 + 0.55 * Math.sin(f * Math.PI);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(hx - 2, hy - 6, 3, 12);
+  }
+  ctx.restore();
+}
+
 function drawGame() {
   if (!ctx) return;
   ctx.save();
@@ -59,6 +117,7 @@ function drawGame() {
   if (G.player) drawWeaponsBehind();
   drawEnemies();
   if (G.player) drawPlayer();
+  if (G.player) drawSheatheAnim(G.player);
   if (G.player) drawWeaponsFront();
   if (G.player) drawStrikes();
   drawProjectiles();
@@ -73,22 +132,27 @@ function drawGame() {
 function drawArena() {
   const x0 = Math.max(0, Math.floor(G.cam.x / 60) * 60);
   const y0 = Math.max(0, Math.floor(G.cam.y / 60) * 60);
-  ctx.fillStyle = '#191c23';
-  ctx.fillRect(0, 0, ARENA.w, ARENA.h);
-
-  ctx.strokeStyle = '#20242d';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  for (let x = x0; x <= Math.min(ARENA.w, G.cam.x + VIEW.ww); x += 60) {
-    ctx.moveTo(x, 0); ctx.lineTo(x, ARENA.h);
+  const floorPat = ensureFloorPattern();
+  if (floorPat) {
+    ctx.fillStyle = floorPat;
+    ctx.fillRect(0, 0, ARENA.w, ARENA.h);
+  } else {
+    ctx.fillStyle = '#191c23';
+    ctx.fillRect(0, 0, ARENA.w, ARENA.h);
+    ctx.strokeStyle = '#20242d';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let x = x0; x <= Math.min(ARENA.w, G.cam.x + VIEW.ww); x += 60) {
+      ctx.moveTo(x, 0); ctx.lineTo(x, ARENA.h);
+    }
+    for (let y = y0; y <= Math.min(ARENA.h, G.cam.y + VIEW.wh); y += 60) {
+      ctx.moveTo(0, y); ctx.lineTo(ARENA.w, y);
+    }
+    ctx.stroke();
   }
-  for (let y = y0; y <= Math.min(ARENA.h, G.cam.y + VIEW.wh); y += 60) {
-    ctx.moveTo(0, y); ctx.lineTo(ARENA.w, y);
-  }
-  ctx.stroke();
 
-  // 場中圓
-  ctx.strokeStyle = '#242935';
+  // 場中圓：漆在木地板上的道場圈
+  ctx.strokeStyle = floorPat ? 'rgba(46,30,16,0.55)' : '#242935';
   ctx.lineWidth = 6;
   ctx.beginPath();
   ctx.arc(ARENA.w / 2, ARENA.h / 2, 210, 0, Math.PI * 2);
@@ -799,6 +863,7 @@ function drawWeaponSet(behind) {
   p.weapons.forEach((w, i) => {
     const isBehind = Math.sin(w.angle) < 0;
     if (isBehind !== behind) return;
+    if (w.id === 'katana' && sheatheK(G.player) >= 0) return;   // 收刀動畫期間刀不在手上
     const reach = w.range * rangeMul;
     const swingP = Math.max(0, w.swing);
     const holdD = 16 + i * 1.5;

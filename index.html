@@ -6,9 +6,9 @@
 <title>Penguin Can Fight</title>
 <style>
 :root{
-  --bg:#0d0f14; --panel:#171a21; --panel2:#1e222c; --line:#2c3340;
-  --ink:#0d0f14; --text:#e2e4e9; --muted:#8d95a5;
-  --accent:#d98a3c; --good:#77c47f; --bad:#d9564f; --gold:#e0c341;
+  --bg:#0c0a07; --panel:#1c1610; --panel2:#271e14; --line:#4a3826;
+  --ink:#0d0a08; --text:#efe6d4; --muted:#a3927a;
+  --accent:#e0913c; --good:#8fc47f; --bad:#d9564f; --gold:#e0c341;
   --font:"Noto Sans TC","Microsoft JhengHei","PingFang TC",sans-serif;
 }
 *{box-sizing:border-box;margin:0;padding:0}
@@ -22,7 +22,7 @@ button{font-family:var(--font);cursor:pointer;border:none;color:inherit}
 button:disabled{cursor:not-allowed;opacity:.45}
 
 /* ---- 覆蓋面板共用 ---- */
-.overlay{position:absolute;inset:0;background:rgba(8,9,13,.9);display:flex;flex-direction:column;
+.overlay{position:absolute;inset:0;background:rgba(11,8,5,.92);display:flex;flex-direction:column;
   align-items:center;justify-content:center;padding:26px}
 .title-xl{font-size:62px;font-weight:900;letter-spacing:.22em;text-indent:.22em;line-height:1}
 .title-md{font-size:26px;font-weight:800;letter-spacing:.16em;text-indent:.16em}
@@ -36,13 +36,22 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .btn.primary:hover:not(:disabled){background:#e8994a;border-color:#e8994a;color:#181008}
 .btn.ghost{background:transparent}
 
-/* ---- 主選單 ---- */
+/* ---- 主選單：雪夜道場 ---- */
+#panel-menu{background:#0c0a07 url('assets/ui/menu_bg.jpg') center/cover no-repeat;
+  justify-content:flex-start;padding-top:52px}
 #panel-menu .logo{position:relative;text-align:center}
 #panel-menu .logo .cn{font-size:88px;font-weight:900;letter-spacing:.3em;text-indent:.3em}
-#panel-menu .logo .cn.en{font-size:64px;letter-spacing:.08em;text-indent:.08em;line-height:1.15}
-#panel-menu .logo .bar{height:5px;background:var(--accent);margin:14px auto 0;width:340px}
-#panel-menu .tagline{margin-top:18px;color:var(--muted);font-size:15px;letter-spacing:.2em}
-#panel-menu .keys{margin-top:38px;color:#5f6878;font-size:12.5px;letter-spacing:.1em;line-height:2.1;text-align:center}
+#panel-menu .logo .cn.en{font-size:58px;letter-spacing:.08em;text-indent:.08em;line-height:1.12;
+  color:#fff;text-shadow:0 4px 0 #1a1008,4px 0 0 #1a1008,-4px 0 0 #1a1008,0 -4px 0 #1a1008,
+  3px 3px 0 #1a1008,-3px 3px 0 #1a1008,3px -3px 0 #1a1008,-3px -3px 0 #1a1008}
+#panel-menu .logo .bar{height:5px;background:var(--accent);margin:12px auto 0;width:320px;
+  box-shadow:0 3px 0 rgba(10,6,3,.6)}
+#panel-menu .rule{display:none}
+#panel-menu .tagline{margin-top:16px;color:#f5ead2;font-size:15px;letter-spacing:.2em;
+  background:rgba(16,10,5,.6);border:1px solid rgba(224,145,60,.45);padding:7px 20px}
+#panel-menu #btn-play{margin-top:26px;font-size:18px;padding:14px 60px}
+#panel-menu .keys{position:absolute;left:18px;bottom:14px;margin:0;color:#d8cdb8;font-size:12px;
+  letter-spacing:.08em;line-height:1.95;text-align:left;background:rgba(14,9,5,.66);padding:8px 16px}
 
 /* ---- 角色選擇 ---- */
 #panel-select{justify-content:flex-start;padding:18px 26px}
@@ -52,18 +61,18 @@ button:disabled{cursor:not-allowed;opacity:.45}
 #char-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:7px;width:100%;max-width:1200px;
   overflow-y:auto;max-height:592px;padding-right:4px}
 #char-grid::-webkit-scrollbar{width:8px}
-#char-grid::-webkit-scrollbar-thumb{background:#2c3340}
+#char-grid::-webkit-scrollbar-thumb{background:#4a3826}
 .char-card{background:var(--panel);border:2px solid var(--line);padding:6px;cursor:pointer;transition:.12s;
   display:flex;flex-direction:column;align-items:center;text-align:center}
-.char-card:hover{border-color:#4a5568}
-.char-card.active{border-color:var(--accent);background:#20242e}
+.char-card:hover{border-color:#6b5636}
+.char-card.active{border-color:var(--accent);background:#2a2116}
 .char-card .portrait{height:56px;width:auto;max-width:72px;object-fit:contain;image-rendering:auto}
 .char-card.locked{opacity:.55;cursor:not-allowed}
 .char-card .portrait.dim{filter:grayscale(1) brightness(.6)}
-.char-lock{font-size:10.5px;color:#8d95a5;line-height:1.6;margin-top:4px;text-align:center}
+.char-lock{font-size:10.5px;color:#a3927a;line-height:1.6;margin-top:4px;text-align:center}
 .char-name{font-size:14px;font-weight:800;letter-spacing:.04em;line-height:1.25}
 .char-tag{font-size:9.5px;color:var(--accent);letter-spacing:.02em;margin-bottom:3px;text-align:center;line-height:1.2}
-.char-tag i{font-style:normal;color:#7d8698}
+.char-tag i{font-style:normal;color:#9c8b72}
 .char-stats{display:flex;flex-wrap:wrap;gap:2px;justify-content:center;margin-bottom:4px}
 .char-stats span{font-size:9.5px;padding:0 3px;border:1px solid;line-height:1.45}
 .char-stats .up{color:var(--good);border-color:#2f4a35}
@@ -76,27 +85,27 @@ button:disabled{cursor:not-allowed;opacity:.45}
 #danger-row{display:flex;gap:6px}
 .danger-btn{width:40px;height:40px;background:var(--panel);border:2px solid var(--line);
   font-size:17px;font-weight:800;color:var(--text)}
-.danger-btn.active{border-color:var(--bad);color:var(--bad);background:#241a1c}
+.danger-btn.active{border-color:var(--bad);color:var(--bad);background:#2a1712}
 .danger-btn.locked{opacity:.3;cursor:not-allowed}
 #danger-note{font-size:11.5px;color:var(--muted)}
 .foot-label{font-size:12px;color:var(--muted);letter-spacing:.14em}
 
 /* ---- 升級 ---- */
-#panel-levelup{background:rgba(8,9,13,.94)}
+#panel-levelup{background:rgba(11,8,5,.94)}
 #levelup-title{font-size:30px;font-weight:900;letter-spacing:.18em}
 #levelup-cards{display:flex;gap:14px;margin-top:26px}
 .lv-card{width:214px;background:var(--panel);border:2px solid var(--line);padding:20px 16px;
   text-align:left;transition:.12s}
-.lv-card:hover{background:#20242e;transform:translateY(-3px)}
+.lv-card:hover{background:#2a2116;transform:translateY(-3px)}
 .lv-stat{font-size:15px;font-weight:800;letter-spacing:.1em}
 .lv-icon{height:52px;width:auto;max-width:70px;object-fit:contain;display:block;margin:0 auto 8px}
 .chip-icon{height:30px;width:auto;max-width:34px;object-fit:contain}
 .lv-val{font-size:34px;font-weight:900;margin:6px 0 10px}
 .lv-desc{font-size:11.5px;color:var(--muted);line-height:1.7;min-height:38px}
-.lv-cur{font-size:11px;color:#5f6878;margin-top:8px;border-top:1px solid var(--line);padding-top:7px}
+.lv-cur{font-size:11px;color:#8a795e;margin-top:8px;border-top:1px solid var(--line);padding-top:7px}
 
 /* ---- 商店 ---- */
-#panel-shop{justify-content:flex-start;padding:14px 22px;background:#0b0d12}
+#panel-shop{justify-content:flex-start;padding:14px 22px;background:#0f0b07}
 .shop-head{display:flex;align-items:center;gap:16px;width:100%;max-width:1200px;margin-bottom:10px}
 .shop-head h2{font-size:20px;font-weight:800;letter-spacing:.16em}
 .shop-head .mat{font-size:18px;font-weight:800;color:var(--good);margin-left:auto}
@@ -112,15 +121,15 @@ button:disabled{cursor:not-allowed;opacity:.45}
   background:#221d10;padding:3px 7px;letter-spacing:.05em}
 .shop-info{margin:8px 0;flex:1}
 .kv{display:flex;justify-content:space-between;font-size:12.5px;padding:2.5px 0;
-  border-bottom:1px solid #23272f;color:var(--muted)}
+  border-bottom:1px solid #2c2318;color:var(--muted)}
 .kv b{color:var(--text);font-weight:700}
 .kv b.up{color:var(--good)} .kv b.down{color:var(--bad)}
 .tagrow{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
 .tagrow i{font-style:normal;font-size:10.5px;color:var(--accent);border:1px solid #4a3a22;padding:1px 5px}
-.flavor{font-size:11px;color:#6d7583;line-height:1.6;margin-top:7px}
+.flavor{font-size:11px;color:#8f7f68;line-height:1.6;margin-top:7px}
 .shop-bottom{display:flex;gap:6px}
 .buy-btn{flex:1;background:var(--accent);color:#181008;font-weight:800;font-size:13.5px;padding:8px}
-.buy-btn:disabled{background:#2a3040;color:#5f6878}
+.buy-btn:disabled{background:#33291c;color:#8a795e}
 .lock-btn{background:var(--panel2);border:1px solid var(--line);color:var(--muted);font-size:12px;padding:8px 10px}
 .lock-btn.on{background:#3a2f18;border-color:var(--gold);color:var(--gold)}
 
@@ -140,15 +149,15 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .sell-btn:hover{background:#5c3239;color:#fff}
 .tech-slot{padding-bottom:4px}
 .tech-glyph{font-size:30px;font-weight:900;line-height:48px;height:48px}
-.tech-glyph.empty{color:#3a4050}
+.tech-glyph.empty{color:#4a4030}
 .combo-row{align-items:center}
-.combo-arrow{font-size:20px;font-weight:900;color:#5f6878;padding:0 2px}
+.combo-arrow{font-size:20px;font-weight:900;color:#8a795e;padding:0 2px}
 .tech-slot.clickable{cursor:pointer}
-.tech-slot.clickable:hover{background:#242a36}
+.tech-slot.clickable:hover{background:#2c2418}
 .char-combo{display:flex;align-items:center;gap:2px;font-size:14px;font-weight:900;margin-bottom:3px;line-height:1.2}
-.char-combo i{font-style:normal;color:#4f5766;font-size:11px}
+.char-combo i{font-style:normal;color:#6b5c46;font-size:11px}
 #char-detail{position:absolute;left:50%;transform:translateX(-50%);bottom:104px;
-  width:calc(100% - 52px);max-width:1200px;background:#141821;
+  width:calc(100% - 52px);max-width:1200px;background:#1a140d;
   border:2px solid var(--accent);padding:6px 14px;font-size:12.5px;line-height:1.6;z-index:5;
   pointer-events:none;max-height:96px;overflow:hidden}
 #char-detail b{font-size:15px;letter-spacing:.08em}
@@ -162,11 +171,11 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .item-chip span{font-size:11.5px}
 .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px 12px}
 .stat-cell{display:flex;justify-content:space-between;font-size:12.5px;padding:2.5px 0;
-  border-bottom:1px solid #23272f}
+  border-bottom:1px solid #2c2318}
 .stat-cell.zero{opacity:.35}
 .stat-cell .sn{color:var(--muted)}
 .shop-foot{display:flex;gap:10px;align-items:center;width:100%;max-width:1200px;margin-top:10px}
-.shop-foot .keyhint{font-size:11px;color:#5f6878;margin-left:auto;letter-spacing:.06em}
+.shop-foot .keyhint{font-size:11px;color:#8a795e;margin-left:auto;letter-spacing:.06em}
 
 /* ---- 結算 ---- */
 #end-title{font-size:70px;font-weight:900;letter-spacing:.24em;text-indent:.24em}
@@ -178,7 +187,7 @@ button:disabled{cursor:not-allowed;opacity:.45}
 
 /* ---- 提示 ---- */
 /* ---- F2 調參面板 ---- */
-#tune-panel{position:absolute;right:8px;top:8px;bottom:8px;width:300px;background:#141821;
+#tune-panel{position:absolute;right:8px;top:8px;bottom:8px;width:300px;background:#1a140d;
   border:2px solid var(--accent);z-index:50;display:flex;flex-direction:column;font-size:12px}
 .tune-head{display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line)}
 .tune-head b{font-size:14px;letter-spacing:.1em}
@@ -188,11 +197,11 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .tune-head button:hover{border-color:var(--accent)}
 #tune-body{flex:1;overflow-y:auto;padding:6px 10px}
 #tune-body::-webkit-scrollbar{width:8px}
-#tune-body::-webkit-scrollbar-thumb{background:#2c3340}
+#tune-body::-webkit-scrollbar-thumb{background:#4a3826}
 .tune-group{font-size:11px;font-weight:800;letter-spacing:.14em;color:var(--accent);
   margin:10px 0 4px;border-bottom:1px solid var(--line);padding-bottom:3px}
 .tune-row{display:flex;align-items:center;gap:8px;padding:3px 0}
-.tune-row label{flex:1;color:#c8ccd6}
+.tune-row label{flex:1;color:#dfd4bd}
 .tune-row input[type=range]{width:90px}
 .tune-row input[type=number]{width:62px;background:var(--panel2);border:1px solid var(--line);
   color:var(--text);font-size:12px;padding:2px 4px;text-align:right}
@@ -205,6 +214,14 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .toast.bad{border-color:var(--bad);color:#e89a9a}
 #hud-hint{display:none !important}
+/* ---- 像素道場皮膚：硬邊、木質、落影 ---- */
+.btn,.danger-btn{box-shadow:0 3px 0 rgba(8,5,2,.55),inset 0 2px 0 rgba(255,255,255,.06)}
+.btn:active:not(:disabled),.danger-btn:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(8,5,2,.55)}
+.btn.primary{border-color:#8a5622;color:#241405}
+.btn.primary:hover:not(:disabled){color:#241405}
+.char-card,.lv-card,.shop-card,#loadout,#stats-panel{box-shadow:0 3px 0 rgba(8,5,2,.4)}
+.select-head h2,.shop-head h2,#levelup-title{color:#e8cf9f}
+
 #errbox{position:absolute;left:12px;bottom:12px;background:#3a1c1c;border:2px solid #d9564f;
   color:#ffb3b3;font-size:12px;padding:8px 12px;max-width:600px;z-index:99}
 </style>
