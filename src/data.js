@@ -999,22 +999,26 @@ function tierUnlock(wave) {
    拍譜前綴收斂成三族 × 收尾三種 = 九格，每格是一個可以塞收尾招的插槽。
    開局只開「站站」「移移」兩排（六格），混拍那排後期解鎖——不要讓玩家一開始就苦惱招式障礙。
    收尾招從原本寫死的 COMBOS 轉出來當池子，玩家自己決定哪一招放哪一格。 */
+/* 連段盤 2×2（總監 2026-08-04 二次簡化）。
+   兩個定案：
+   (1) 每個角色最多 4 種連段——實測十條裡有兩條吃掉 96% 的使用率，另外五到七條是 0 次，
+       而且十條共用同一個 2.5 秒冷卻，本來就不是十條招，是一個招的十種外觀。
+   (2) 看「站」與「移」的數量決定，不看順序——移站站站 跟 站站站 是同一條。
+       這把「第三下要在 0.34 秒內放開方向鍵」那個手忙腳亂的要求整個拿掉
+       （實測那是德式背摔 39 次誤觸的來源）。 */
 const BOARD_ROWS = [
-  { key: 'SS', name: '站站', hint: '站著不動打兩下', beats: ['S', 'S'] },
-  { key: 'MM', name: '移移', hint: '一邊移動打兩下', beats: ['M', 'M'] },
-  { key: 'MX', name: '混拍', hint: '一站一移各打一下', beats: null, lateUnlock: true },
+  { key: 'S', name: '站多', hint: '這幾下裡站著打的比較多' },
+  { key: 'M', name: '移多', hint: '這幾下裡移動打的比較多' },
 ];
 const BOARD_COLS = [
-  { key: 'S', name: '站', act: '第三下站著不動打中' },
-  { key: 'M', name: '移', act: '第三下一邊移動打中' },
-  { key: 'D', name: '衝', act: '接著按 SPACE' },
+  { key: 'H', name: '打', act: '再打中一下' },
+  { key: 'D', name: '衝', act: '按 SPACE' },
 ];
 const BOARD_ROW_KEYS = BOARD_ROWS.map(r => r.key);
-/* 混拍加成：純拍（站站站／移移移）普通，其餘變體較強——沿用總監 2026-08-03 定案 */
+/* 第三下換一個狀態打中＝變體加成。同一格同一招，但獎勵你在收尾那下變一下——
+   複雜度從「記十條表」變成「四招＋一個手感技巧」（沿用總監 8/3 的純拍/混拍精神）。 */
 const BOARD_MIX_MUL = 1.25;
-/* 收尾招放進非本命格：可以放，但打折。製造「這條線只剩衝格，要不要硬塞」的取捨 */
 const BOARD_OFFHOME_MUL = 0.7;
-
 /* 收尾招池：從既有連段表轉出來（params 與 kind 都是已經調過、測過的，不重寫） */
 const FINISHER_POOL = {};
 const FINISHER_MAP = {};
@@ -1037,15 +1041,19 @@ const FINISHER_MAP = {};
 
 /* 開局盤面：把原本的三拍連段放回它原本的位置，兩拍的（實測結構性打不出來）改成池子裡的備品 */
 function defaultBoard(clsId) {
+  // 四格各挑一招：站多→打／站多→衝／移多→打／移多→衝。
+  // 用原本連段表裡對應收尾拍的招來填，玩家原本的肌肉記憶不作廢。
   const b = {};
-  (COMBOS[clsId] || []).forEach((c, i) => {
-    if (c.seq.length !== 3) return;              // 兩拍的不進開局盤
-    const pre = c.seq[0] + c.seq[1];
-    const row = pre === 'SS' ? 'SS' : pre === 'MM' ? 'MM' : 'MX';
-    const col = c.seq[2];
-    if (row === 'MX') return;                    // 混拍排開局沒解鎖
-    if (!b[row + '_' + col]) b[row + '_' + col] = clsId + '_f' + i;
-  });
+  const list = COMBOS[clsId] || [];
+  const find = (pre, last) => {
+    const i = list.findIndex(c => c.seq.length === 3 && c.seq[0] === pre && c.seq[2] === last);
+    return i >= 0 ? clsId + '_f' + i : null;
+  };
+  b['S_H'] = find('S', 'S') || find('S', 'M');
+  b['S_D'] = find('S', 'D');
+  b['M_H'] = find('M', 'M') || find('M', 'S');
+  b['M_D'] = find('M', 'D');
+  for (const k in b) if (!b[k]) delete b[k];
   return b;
 }
 

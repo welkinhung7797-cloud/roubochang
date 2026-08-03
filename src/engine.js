@@ -217,7 +217,7 @@ function startRun(charId, danger) {
   // 連段盤是整局的資產（玩家買招、換格都存在這裡），不跨波重建。
   // 開局只開「站站」「移移」兩排六格且全部填滿——不要讓玩家一開始就苦惱空格。
   G.player.comboBoard = defaultBoard(charId);
-  G.player.boardRows = ['SS', 'MM'];
+  G.player.boardRows = ['S', 'M'];
   G.player.traits = [];
   G.traitChoices = null;
   // 擁有池：盤上的六招開局就有，其餘靠商店買。同一招只能上一格，所以要記誰在盤上。
@@ -231,12 +231,6 @@ function startWave(w) {
   G.waveTime = 0;
   G.spawnClosed = false;   // 出兵時間到了沒
   G.clearT = 0;
-  // 混拍那排到第 6 波才開：前五波先讓玩家把兩排六格玩熟（總監：不要一開始就苦惱招式障礙）
-  if (G.player && G.player.boardRows && w >= BOARD_MX_UNLOCK_WAVE
-      && G.player.boardRows.indexOf('MX') < 0) {
-    G.player.boardRows.push('MX');
-    G.boardUnlockT = 3.0;
-  }
   G.waveKills = 0; G.waveMat = 0; G.waveDmg = 0;
   G.tally = null;
   G.waveDur = waveDuration(w);
@@ -2527,11 +2521,11 @@ function comboList() {
   if (p && p.comboBoard) {
     const out = [];
     for (const row of (p.boardRows || [])) {
-      for (const col of ['S', 'M', 'D']) {
+      for (const col of ['H', 'D']) {
         const f = FINISHER_MAP[p.comboBoard[row + '_' + col]];
         if (!f) continue;
         out.push({
-          seq: (row === 'MX' ? ['S', 'M'] : row.split('')).concat(col),
+          seq: [row, row].concat(col === 'D' ? 'D' : row),
           name: f.name, kind: f.kind, params: f.params,
           ext: f.ext, extName: f.extName, sig: f.sig, desc: f.desc,
           row, col, fid: f.id, home: f.home,
@@ -2556,35 +2550,41 @@ function comboList() {
 }
 
 /* 前綴符合、且第三個動作＝action 的連段。action 是玩家「正在做的動作」不是已記錄的拍。 */
-/* 前綴兩拍 → 盤面哪一排。含 D 的前綴不成族（衝刺拍不當前綴用）。 */
-function boardRowOf(a, b) {
-  if (a === 'S' && b === 'S') return 'SS';
-  if (a === 'M' && b === 'M') return 'MM';
-  if ((a === 'S' && b === 'M') || (a === 'M' && b === 'S')) return 'MX';
+/* 哪一排：數「站」與「移」的數量，多的那邊贏，不看順序（總監 2026-08-04）。
+   移·站·站 跟 站·站 是同一排——玩家不用記順序，只要記「我最近偏站還是偏移」。
+   平手時由最近那一拍決定（最後做的事最能代表你現在的狀態）。 */
+function boardRowOf(log) {
+  let s = 0, m = 0;
+  for (const b of log) { if (b === 'S') s++; else if (b === 'M') m++; }
+  if (s === 0 && m === 0) return null;
+  if (s > m) return 'S';
+  if (m > s) return 'M';
+  for (let i = log.length - 1; i >= 0; i--) if (log[i] === 'S' || log[i] === 'M') return log[i];
   return null;
 }
 
-/* 查連段盤：前綴兩拍決定「哪一排」，玩家這一下的動作決定「哪一格」。
-   舊版是在寫死的十條裡取最長前綴——那讓連段變成「這個職業長這樣」而不是
-   「我把它組成這樣」，而且兩拍的連段（SD／MD）在數學上被三拍的永遠遮蔽。 */
 function matchCombo(action) {
   const p = G.player;
   if (!p || !p.comboBoard) return null;
   const log = p.beatLog;
-  if (log.length < 2) return null;
-  const row = boardRowOf(log[log.length - 2], log[log.length - 1]);
+  if (log.length < 2) return null;          // 至少要先打中兩下
+  const row = boardRowOf(log);
   if (!row) return null;
-  if ((p.boardRows || []).indexOf(row) < 0) return null;   // 那一排還沒解鎖
-  const f = FINISHER_MAP[p.comboBoard[row + '_' + action]];
-  if (!f) return null;                                     // 空格：只出普攻，不變招
-  // 純拍（站站站／移移移）普通，混拍變體較強；放進非本命格打折但可以放
-  const pure = (row === 'SS' && action === 'S') || (row === 'MM' && action === 'M');
-  const boardMul = (pure ? 1 : BOARD_MIX_MUL) * (f.home === action ? 1 : BOARD_OFFHOME_MUL);
+  const col = (action === 'D') ? 'D' : 'H';   // 收尾只分「再打中一下」與「按 SPACE」
+  const f = FINISHER_MAP[p.comboBoard[row + '_' + col]];
+  if (!f) return null;                        // 空格：只出普攻，不變招
+  // 變體加成：收尾那一下換一個狀態打中。同一格同一招，獎勵你在最後一下變一下。
+  const last = log[log.length - 1];
+  const varied = (col === 'H') && (action !== last);
+  // 本命只分兩欄：原本收尾拍是 D 的招本命在「衝」欄，其餘（站/移收尾）本命在「打」欄。
+  // 舊的三欄本命判定套進 2×2 會讓「站站+移動打中」誤判成非本命而吃 0.7 折。
+  const homeCol = (f.home === 'D') ? 'D' : 'H';
+  const boardMul = (varied ? BOARD_MIX_MUL : 1) * (homeCol === col ? 1 : BOARD_OFFHOME_MUL);
   return {
-    seq: (row === 'MX' ? ['S', 'M'] : row.split('')).concat(action),
+    seq: [row, row].concat(action),
     name: f.name, kind: f.kind, params: f.params,
     ext: f.ext, extName: f.extName, sig: f.sig, desc: f.desc,
-    boardMul, row, col: action, fid: f.id, home: f.home,
+    boardMul, row, col, fid: f.id, home: f.home, varied,
   };
 }
 

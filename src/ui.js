@@ -1148,7 +1148,7 @@ function boardHtml() {
   const rows = BOARD_ROWS;
   const cols = BOARD_COLS;
   let h = '<div class="combo-head">連段盤' +
-    '<span>前兩下打在什麼狀態決定「哪一排」，第三下你做什麼決定「哪一格」</span></div>';
+    '<span>數「站」跟「移」哪個多，決定哪一排（不看順序）；收尾是再打一下還是按 SPACE，決定哪一欄</span></div>';
   h += '<div class="bd">';
   h += '<div class="bd-r bd-h"><div class="bd-c bd-lab"></div>' +
     cols.map(c => '<div class="bd-c bd-hd"><b class="bw bw-' +
@@ -1162,13 +1162,13 @@ function boardHtml() {
     for (const c of cols) {
       const key = r.key + '_' + c.key;
       const f = FINISHER_MAP[p.comboBoard[key]];
-      const pure = (r.key === 'SS' && c.key === 'S') || (r.key === 'MM' && c.key === 'M');
-      const off = f && f.home !== c.key;
+      // 變體加成是「收尾那一下換狀態」，跟格子無關，所以格子上只標本命與否
+      const off = f && ((f.home === 'D' ? 'D' : 'H') !== c.key);
       h += '<div class="bd-c bd-slot' + (locked ? '' : ' on') + (f ? ' filled' : '') +
         '" data-slot="' + key + '">';
       if (f) {
         h += '<b>' + f.name + '</b>';
-        h += '<i>' + (pure ? '基本' : '變體 ×' + BOARD_MIX_MUL) +
+        h += '<i>' + (c.key === 'D' ? '按 SPACE 收尾' : '收尾換狀態 ×' + BOARD_MIX_MUL) +
           (off ? '　非本命 ×' + BOARD_OFFHOME_MUL : '') + '</i>';
       } else {
         h += '<b class="empty">' + (locked ? '—' : '空格') + '</b>' +
@@ -1177,7 +1177,7 @@ function boardHtml() {
       h += '</div>';
     }
     h += '</div>';
-    if (!locked && openBoardSlot && openBoardSlot.slice(0, 2) === r.key) h += boardPickHtml();
+    if (!locked && openBoardSlot && openBoardSlot.split('_')[0] === r.key) h += boardPickHtml();
   }
   h += '</div>';
   return h;
@@ -1191,7 +1191,7 @@ function boardPickHtml() {
   let h = '<div class="bd-pick"><div class="bd-pick-h">放進「' + openBoardSlot.replace('_', ' → ') + '」</div>';
   owned.forEach(f => {
     const at = boardSlotOf(f.id);
-    const off = f.home !== col;
+    const off = (f.home === 'D' ? 'D' : 'H') !== col;
     h += '<button class="bd-opt' + (f.id === cur ? ' on' : '') + '" data-fin="' + f.id + '">' +
       '<b>' + f.name + '</b>' +
       '<em>' + (off ? '非本命 ×' + BOARD_OFFHOME_MUL : '本命') + '</em>' +
