@@ -71,7 +71,7 @@ function buildCharSelect() {
         const d = moveDef(ch.moves[slot]);
         return '<b style="color:' + d.color + '" title="' + SLOT_NAME[slot] + '">' + d.short + '</b>';
       }).join('<i>·</i>') +
-      (OUGI[ch.id] ? '<i>｜</i><b style="color:#ffd44a" title="奧義">' + OUGI[ch.id].name.slice(0, 2) + '</b>' : '') +
+      (sigNameOf(ch.id) ? '<i>｜</i><b style="color:#ffd44a" title="招牌連段">' + sigNameOf(ch.id).slice(0, 2) + '</b>' : '') +
       '</div>' +
       '<div class="char-stats">' + statLine(ch.stats) + '</div>' +
       (best ? '<div class="char-best">最佳　第 ' + best.wave + ' 波 · 危險 ' + best.danger + '</div>' : '');
@@ -79,6 +79,34 @@ function buildCharSelect() {
     el.onclick = () => { selectedChar = ch.id; buildCharSelect(); updateStartBtn(); updateCharDetail(ch); };
     wrap.appendChild(el);
   });
+}
+
+/* 這個職業的招牌連段名（COMBOS 的 sig 條優先，退回 OUGI） */
+function sigNameOf(chId) {
+  if (typeof COMBOS !== 'undefined' && COMBOS[chId]) {
+    const s = COMBOS[chId].find(c => c.sig);
+    if (s) return s.name;
+  }
+  return OUGI[chId] ? OUGI[chId].name : null;
+}
+
+/* 全專案共用的連段表 HTML（選角詳情/商店/暫停選單都用同一份，不准各講各的） */
+function comboTableHtml(chId) {
+  const ACT = { S: '站定打中', M: '移動打中', D: '按 Space' };
+  const B = { S: '站', M: '移', D: '衝' };
+  const list = (typeof COMBOS !== 'undefined' && COMBOS[chId]) ? COMBOS[chId] : null;
+  if (list) {
+    return list.map(c => {
+      const pre = c.seq.slice(0, -1).map(b => B[b]).join('·');
+      return pre + ' → ' + ACT[c.seq[c.seq.length - 1]] + '＝<b style="color:' +
+        (c.sig ? '#ffd44a' : '#e8e4dc') + '">' + c.name + (c.sig ? '★' : '') + '</b>';
+    }).join('　／　');
+  }
+  const o = OUGI[chId];
+  if (!o) return '';
+  const seq = o.seq[o.seq.length - 1] === 'D' ? o.seq : o.seq.concat('D');
+  const pre = seq.slice(0, -1).map(b => B[b]).join('·');
+  return pre + ' → ' + ACT[seq[seq.length - 1]] + '＝<b style="color:#ffd44a">' + o.name + '★</b>';
 }
 
 /* 點選職業後，下方大字顯示完整說明與連段全名——特色要讀得到，不是擠在小卡裡 */
@@ -254,8 +282,10 @@ function techShopInfo(e) {
   let extra = '';
   if (t.slot === 'dash') extra = '<div class="kv"><span>冷卻</span><b>' + t.cd + ' 秒</b></div>';
   else if (t.interval) extra = '<div class="kv"><span>觸發</span><b>每 ' + t.interval + ' 秒</b></div>';
+  const sig = t.slot === 'dash' ? sigNameOf(G.char.id) : null;
   return '<div class="kv"><span>類型</span><b>' + SLOT_NAME[t.slot] + '　' + SLOT_KEY[t.slot] + '</b></div>' +
     extra +
+    (sig ? '<div class="kv"><span>連段</span><b>換裝不影響：湊齊前綴按 Space 仍是「' + sig + '」</b></div>' : '') +
     '<div class="flavor">' + t.desc + '</div>';
 }
 
@@ -278,8 +308,8 @@ function renderLoadout() {
   const ougi = OUGI[G.char.id];
   const tTitle = document.createElement('div');
   tTitle.className = 'sec-title';
-  tTitle.textContent = '招式（點擊換裝）　·　招式庫 ' + p.knownMoves.length + ' 式' +
-    (ougi ? '　·　奧義「' + ougi.name + '」＝' + ougi.seq.map(b => b === 'S' ? '站' : (b === 'D' ? '衝' : '移')).join('·') + '＋衝' : '');
+  tTitle.innerHTML = '招式（點擊換裝）　·　招式庫 ' + p.knownMoves.length + ' 式　·　連段　' +
+    comboTableHtml(G.char.id);
   wrap.appendChild(tTitle);
   const tRow = document.createElement('div');
   tRow.className = 'loadout-row combo-row';
@@ -580,6 +610,10 @@ function showPause(on) {
     $('opt-vol').value = v;
     $('opt-vol-val').textContent = v;
   }
+  if (on && G.char) {
+    const row = $('pause-combo');
+    if (row) row.innerHTML = comboTableHtml(G.char.id);
+  }
 }
 
 function initPauseMenu() {
@@ -668,8 +702,13 @@ function botDash() {
   if (p.dashState || p.grabState) return;
   const near = r => G.enemies.filter(e => !e.dead && !e.grabbed && !e.thrown &&
     dist2(e.x, e.y, p.x, p.y) < r * r).length;
-  // 奧義不吃衝刺冷卻——湊齊就搶著放
-  if (ougiReady() && near(300) >= 1) { castDash(); return; }
+  // 招牌連段不吃衝刺冷卻——但別亂放：有遠程壓力時 Space 要留著當機動，
+  // 除非人堆夠密值得換（掄人/定點型招牌在彈幕下放＝站著捱打）
+  if (ougiReady() && near(300) >= 1) {
+    const ranged = G.projectiles.length > 0 ||
+      G.enemies.some(e => !e.dead && e.behavior === 'thrower');
+    if (!ranged || near(160) >= 3) { castDash(); return; }
+  }
   if (p.dashCd > 0) return;
   let go = false;
   switch (p.moves.dash) {

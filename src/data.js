@@ -126,7 +126,7 @@ const MOVES = [
     radius: 100 },
   { id: 'jodan_kick', name: '上段迴蹴', short: '蹴', slot: 'move', color: '#c9d96a', interval: 1.7, price: 40,
     desc: '移動中每 1.7 秒踢出一記上段迴旋踢，掃過面前一個扇形，踢中的人會被掀開。',
-    radius: 118, arc: 150, dmg: 13, knock: 90, img: 'fx_geri_arc' },
+    radius: 118, arc: 150, dmg: 13, knock: 90 },
   { id: 'twin_slash', name: '二連斬', short: '連', slot: 'move', color: '#8fa8d4', interval: 1.8, price: 40,
     desc: '走位的時候刀也沒閒著：每 1.8 秒朝最近的敵人補上兩刀，一刀橫掃、一刀反手，腳步完全不用停。' },
   { id: 'lariat_run', name: '金臂勾', short: '勾', slot: 'move', color: '#c98a3c', interval: 1.6, price: 42,
@@ -174,10 +174,10 @@ const MOVES = [
 const COMBOS = {
   karate: [
     { seq: ['S', 'S', 'S'], name: '貫手', kind: 'strike_heavy',
-      params: { dmg: 40, range: 140, stun: 0.4, critNext: true, pose: 'jab', img: 'fx_nukite' },
+      params: { dmg: 40, range: 140, stun: 0.4, critNext: true, pose: 'jab' },
       desc: '兩拳定住對手，第三下五指併攏直接貫進去——最深的一擊，也是最沒有退路的一擊。' },
     { seq: ['S', 'S', 'M'], name: '後迴蹴', kind: 'sweep_ring',
-      params: { dmg: 22, radius: 130, knock: 240, stun: 0.35, color: '#c9d96a', img: 'fx_geri_arc' },
+      params: { dmg: 22, radius: 130, knock: 240, stun: 0.35, color: '#c9d96a' },
       desc: '站穩兩拳之後踏出去，整個人轉一圈，腳背從背後掃回來——被圍住時唯一的出路。' },
     { seq: ['S', 'S', 'D'], name: '極正拳', kind: 'burst_single', sig: true,
       params: { dmg: 110, critNext: true },
@@ -203,7 +203,10 @@ const COMBOS = {
       desc: '手刀兩下之後邁步跨出去，一隻腳整片掃過去把人踢飛。' },
     { seq: ['S', 'S', 'D'], name: '飛奔金臂勾', kind: 'charge_line', sig: true,
       params: { dmg: 55, len: 260, width: 96, knock: 380, stun: 1.0, pose: 'lariat' },
-      desc: '兩記手刀打底之後按衝刺，擒抱變成整條手臂的飛奔金臂勾，路上的人全部掛在臂彎上帶走。' },
+      desc: '兩記手刀打底之後那一下衝刺，變成整條手臂的飛奔金臂勾，路上的人全部掛在臂彎上帶走。' },
+    { seq: ['M', 'M', 'D'], name: '螺旋摔投', kind: 'grab_super', sig: true,
+      params: { dur: 2.1, orbitR: 76, spinSpd: 9, bossDmg: 80, blastDmg: 20 },
+      desc: '一直跑一直打的獎勵：兩個移動拍之後按衝刺，抓住一個人掄成螺旋，轉三大圈扔出去，落點炸出一圈震盪。' },
   ],
 };
 

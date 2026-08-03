@@ -329,6 +329,8 @@ function drawPlayerFramed(p, c) {
   const w = FRAME_H * (img.width / img.height);
   ctx.save();
   if (p.face < 0) ctx.scale(-1, 1);
+  const vAim = p.aimAng !== undefined ? Math.sin(p.aimAng) : 0;
+  if (vAim) { ctx.rotate(vAim * 0.2); ctx.scale(1, 1 - 0.08 * Math.abs(vAim)); }
   if (p.iframe > 0 && Math.floor(G.time * 20) % 2 === 0) ctx.filter = 'brightness(2.2)';
   ctx.drawImage(img, -w / 2, -FRAME_H * 0.62, w, FRAME_H);
   // 配件：疊在頭部（基底幀構圖固定，錨點統一）
@@ -760,7 +762,8 @@ function drawPlayer() {
 
   // 頭上連段提示：目前拍列＋奧義就緒閃光——玩家不用看角落也知道連段打到哪
   {
-    const rdy = typeof comboReady === 'function' ? comboReady() : [];
+    const rdyAll = typeof comboReady === 'function' ? comboReady() : [];
+    const rdy = rdyAll.filter(r => r.cd <= 0);
     const bl = p.beatLog;
     const y0 = -34;
     if (rdy.length) {
@@ -900,7 +903,8 @@ function drawWeaponSet(behind) {
     const reach = w.range * rangeMul;
     const swingP = Math.max(0, w.swing);
     const holdD = 16 + i * 1.5;
-    const a = w.angle + (swingP > 0 ? w.swingDir * swingP * 0.5 : 0);
+    const halfSw = ((w.arc || 60) * Math.PI / 180) / 2;
+    const a = swingP > 0 ? w.angle + w.swingDir * ((1 - swingP) * 2 - 1) * halfSw : w.angle;
     ctx.save();
     ctx.translate(p.x + Math.cos(a) * holdD, p.y + Math.sin(a) * holdD);
     ctx.rotate(a);
@@ -937,7 +941,9 @@ function loadWeaponImg(name) {
   img.src = 'assets/weapons/' + name + '.png';
 }
 
+const BARE_ICONS = { fist: 1, palm: 1, leg: 1, elbow: 1, head: 1, grab: 1 };
 function drawWeaponShape(c, w, reach, swing) {
+  if (BARE_ICONS[w.icon]) return;   // 拳腳不畫外掛物件（總監指令），交給角色動畫與特效
   const L = Math.min(reach * 0.55, 46);
   c.strokeStyle = INK;
   c.lineWidth = 3;
@@ -1371,13 +1377,9 @@ function drawBoss(e, col, flash) {
 
 /* 武器類別 → 特效貼圖（招式差異的本體：同一套動畫，不同的靈氣） */
 function fxForWeapon(w) {
+  // 拳腳類不給發光貼圖（總監：空手道家不是射光波）——他們的畫面語言是速度線＋逐格動畫
+  if (BARE_ICONS[w.icon]) return null;
   if (w.klass === '刃') return 'fx_slash';
-  if (w.klass === '摔技') {
-    if (FX_IMGS.fx_chop_gyaku) return 'fx_chop_gyaku';   // 逆水平手刀專用圖（到貨自動切換）
-    return FX_IMGS.fx_tegatana ? 'fx_tegatana' : 'fx_chop';
-  }
-  if (w.klass === '掌' || w.klass === '相撲') return 'fx_chop';
-  if (w.klass === '拳') return FX_IMGS.fx_seiken ? 'fx_seiken' : 'fx_punch';        // 空手道的正拳
   return 'fx_punch';
 }
 
@@ -1390,7 +1392,53 @@ function drawStrikes() {
     loadFx('fx_tegatana'); loadFx('fx_seiken'); loadFx('fx_chop_gyaku');
     const fxName = fxForWeapon(w);
     loadFx(fxName); loadFx('fx_impact');
-    const fxImg = FX_IMGS[fxName];
+    const fxImg = fxName && FX_IMGS[fxName];
+    // 拳腳＝速度線（「咻」），跟著拳頭的當下位置，不射光波
+    if (BARE_ICONS[w.icon]) {
+      ctx.save();
+      const kL = s.kind === 'thrust'
+        ? 1 - s.traveled / s.maxDist
+        : 1 - Math.min(1, s.t / (s.dur || 0.16));
+      if (s.kind === 'thrust') {
+        ctx.translate(s.x, s.y);
+        ctx.rotate(s.ang);
+        ctx.globalAlpha = 0.35 + 0.55 * kL;
+        // 三條漸細的速度線拖在拳後，長度隨行程拉長
+        const ln = Math.min(34, 10 + s.traveled * 0.8);
+        for (let i = -1; i <= 1; i++) {
+          ctx.strokeStyle = i === 0 ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.55)';
+          ctx.lineWidth = i === 0 ? 2.6 : 1.6;
+          ctx.beginPath();
+          ctx.moveTo(-4, i * 5);
+          ctx.lineTo(-4 - ln * (i === 0 ? 1 : 0.72), i * 6.5);
+          ctx.stroke();
+        }
+        // 拳頭前緣的小衝擊楔（暗示打擊點，不是能量彈）
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.beginPath();
+        ctx.moveTo(2, -4); ctx.lineTo(9, 0); ctx.lineTo(2, 4); ctx.closePath();
+        ctx.fill();
+      } else if (s.kind === 'sweep' || s.kind === 'orbit') {
+        // 手刀/掃技：白墨雙弧線，順著揮向一格格畫出來
+        const ccw = s.kind === 'sweep' ? s.ang1 < s.ang0 : (s.spd || 1) < 0;
+        const a0b = s.kind === 'sweep' ? s.ang0 : s.cur + (ccw ? 1.2 : -1.2);
+        ctx.globalAlpha = 0.4 + 0.5 * kL;
+        ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(p.x, p.y, s.reach * 0.82, a0b, s.cur, ccw); ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.arc(p.x, p.y, s.reach * 0.66, a0b, s.cur, ccw); ctx.stroke();
+      } else if (s.kind === 'slam') {
+        const k2 = Math.min(1, s.t / s.delay);
+        ctx.globalAlpha = 0.5;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.arc(p.x, p.y, s.reach * k2, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.restore();
+      continue;
+    }
     if (fxImg) {
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
@@ -1406,23 +1454,24 @@ function drawStrikes() {
         ctx.rotate(s.ang);
         ctx.drawImage(fxImg, -sz / 2, -sz / 2, sz, sz);
       } else if (s.kind === 'sweep' || s.kind === 'orbit') {
-        // 斬擊＝一條乾淨的薄月牙：長度從 0 長出來、跟著刀路掃。
-        // 只留兩層——壓扁的刀光貼圖＋刀鋒後一小段白色殘線。不再鋪整片扇形。
+        // 揮刀的方向性：整條月牙躺在完整刀路上不動，
+        // 用「已經掃過的扇形」當遮罩一格格揭開——上往下砍，線就從上往下長。
         ctx.translate(p.x, p.y);
         const ccw = s.kind === 'sweep' ? s.ang1 < s.ang0 : (s.spd || 1) < 0;
-        const grow = Math.min(1, s.t / ((s.dur || 0.16) * 0.55));
-        const eased = 1 - (1 - grow) * (1 - grow);
-        const rNow = s.reach * 0.92 * eased;
-        // 殘線：刀鋒後方 0.5 rad 的細白弧，一閃即逝
-        const trailSpan = 0.5 * eased;
-        ctx.strokeStyle = 'rgba(255,255,255,' + (0.5 * (0.55 + 0.45 * kLife)) + ')';
-        ctx.lineWidth = 2.5;
+        const a0v = s.kind === 'sweep' ? s.ang0 : s.cur + (ccw ? 1.6 : -1.6);
+        const a1v = s.kind === 'sweep' ? s.ang1 : s.cur;
         ctx.beginPath();
-        ctx.arc(0, 0, rNow * 0.86, s.cur + (ccw ? trailSpan : -trailSpan), s.cur, ccw);
-        ctx.stroke();
-        // 刀鋒：貼圖壓扁成薄月牙（高度 62%），跟著角度走
-        ctx.rotate(s.cur);
-        ctx.drawImage(fxImg, -rNow * 0.08, -rNow * 0.31, rNow, rNow * 0.62);
+        ctx.moveTo(0, 0);
+        ctx.arc(0, 0, s.reach * 1.35, a0v, s.cur, ccw);
+        ctx.closePath();
+        ctx.clip();
+        ctx.rotate((a0v + a1v) / 2);
+        const rFull = s.reach * 0.95;
+        ctx.drawImage(fxImg, -rFull * 0.05, -rFull * 0.5, rFull, rFull);
+        // 刀鋒尖上的小亮點，跟著掃
+        ctx.rotate(-((a0v + a1v) / 2) + s.cur);
+        ctx.fillStyle = 'rgba(255,255,255,0.95)';
+        ctx.beginPath(); ctx.arc(rFull * 0.86, 0, 2.6, 0, Math.PI * 2); ctx.fill();
       } else if (s.kind === 'slam') {
         const k = Math.min(1, s.t / s.delay);
         const sz = s.reach * 2 * k;
@@ -1896,34 +1945,48 @@ function drawHud() {
     ctx.fillText(def.name, x + TS / 2, baseY - 4);
   });
 
-  // ---- 節拍條與奧義指令（醍醐味的回饋核心）----
-  const o = OUGI[G.char.id];
-  if (o) {
+  // ---- 節拍條與連段指令（醍醐味的回饋核心）----
+  // 讀 comboList()：跟引擎判定同一份資料，HUD 不准教玩家錯的指令。
+  const combos = typeof comboList === 'function' ? comboList() : [];
+  if (combos.length) {
     const beatY = baseY - 34;
-    const ready = ougiReady();
-    // 自家奧義指令（底）與目前節拍（上）對照
+    const rdy2 = comboReady();
+    const BEAT_TXT = { S: '站', M: '移', D: '衝' };
+    const BEAT_COL = { S: '#e8964a', M: '#8fd4e0', D: '#ffd44a' };
+    // 目前已敲出的節拍（上排）
     ctx.textAlign = 'center';
-    ctx.font = 'bold 11px ' + FONT;
-    ctx.fillStyle = ready ? '#ffd44a' : '#6d7583';
-    const seqStr = o.seq.map(b => b === 'S' ? '站' : (b === 'D' ? '衝' : '移')).join('·') + '→按衝刺';
-    ctx.fillText((ready ? '奧義就緒！' : o.name + '　') + seqStr, baseX + (3 * (TS + 8) - 8) / 2, beatY - 12);
-    // 目前已敲出的節拍
     for (let i = 0; i < 3; i++) {
       const bx = baseX + 26 + i * 34;
-      const beat = p.beatLog.length >= 3 ? p.beatLog[i] : p.beatLog[i];
+      const beat = p.beatLog[i];
       ctx.fillStyle = 'rgba(10,12,16,0.8)';
       roundRect(ctx, bx, beatY, 26, 18, 4); ctx.fill();
-      const want = o.seq[i];
-      const match = beat && beat === want;
-      ctx.strokeStyle = ready ? '#ffd44a' : (match ? '#77c47f' : '#3a4050');
+      ctx.strokeStyle = rdy2.length ? '#ffd44a' : '#3a4050';
       ctx.lineWidth = 1.6;
       roundRect(ctx, bx, beatY, 26, 18, 4); ctx.stroke();
       if (beat) {
-        ctx.fillStyle = beat === 'S' ? '#e8964a' : (beat === 'D' ? '#ffd44a' : '#8fd4e0');
+        ctx.fillStyle = BEAT_COL[beat];
         ctx.font = 'bold 12px ' + FONT;
-        ctx.fillText(beat === 'S' ? '站' : (beat === 'D' ? '衝' : '移'), bx + 13, beatY + 14);
+        ctx.fillText(BEAT_TXT[beat], bx + 13, beatY + 14);
       }
     }
+    // 連段表（底）：每條一行「前綴 → 動作＝招名」，就緒亮、冷卻壓暗＋秒數
+    ctx.font = 'bold 10px ' + FONT;
+    ctx.textAlign = 'left';
+    const ACT_TXT = { S: '站打', M: '移打', D: 'Space' };
+    combos.forEach((c, i) => {
+      const ly = beatY - 14 - (combos.length - 1 - i) * 13;
+      const pre = c.seq.slice(0, -1).map(b => BEAT_TXT[b]).join('·');
+      const act = c.seq[c.seq.length - 1];
+      const r2 = rdy2.find(r => r.name === c.name);
+      const onCd = r2 && r2.cd > 0;
+      ctx.fillStyle = r2
+        ? (onCd ? 'rgba(138,121,94,0.75)' : (c.sig ? '#ffd44a' : '#e8e4dc'))
+        : '#6d7583';
+      ctx.fillText(
+        pre + '→' + ACT_TXT[act] + '＝' + c.name + (c.sig ? '★' : '') +
+        (onCd ? '（' + r2.cd.toFixed(0) + 's）' : (r2 ? '　可出！' : '')),
+        baseX - 66, ly);
+    });
     ctx.textAlign = 'left';
   }
 

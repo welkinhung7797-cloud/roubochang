@@ -116,7 +116,7 @@
     o.type = 'triangle';
     o.frequency.value = [523, 659, 784][Math.max(0, Math.min(2, step - 1))];
     g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(0.20, t0 + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.34, t0 + 0.008);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.13);
     o.connect(g); g.connect(master);
     o.start(t0); o.stop(t0 + 0.14);
@@ -131,7 +131,7 @@
       o.type = 'triangle';
       o.frequency.value = f;
       g.gain.setValueAtTime(0.0001, t0 + d);
-      g.gain.exponentialRampToValueAtTime(0.24, t0 + d + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.4, t0 + d + 0.008);
       g.gain.exponentialRampToValueAtTime(0.0001, t0 + d + 0.16);
       o.connect(g); g.connect(master);
       o.start(t0 + d); o.stop(t0 + d + 0.17);

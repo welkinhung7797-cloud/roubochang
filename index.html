@@ -312,6 +312,9 @@ button:disabled{cursor:not-allowed;opacity:.45}
   <div id="panel-pause" class="overlay hidden">
     <div class="title-md">暫停</div>
     <div class="rule"></div>
+    <div class="pause-row" id="pause-combo-row" style="max-width:760px;font-size:13px;line-height:1.8">
+      <label>連段</label><span id="pause-combo" style="width:auto;text-align:left;font-weight:400"></span>
+    </div>
     <div class="pause-row">
       <label>音量</label>
       <input id="opt-vol" type="range" min="0" max="100" step="5">
@@ -336,7 +339,7 @@ button:disabled{cursor:not-allowed;opacity:.45}
   </div>
 
   <div id="toast" class="toast"></div>
-  <div id="hud-hint">WASD 移動　·　Space／E 絕技　·　Esc 暫停</div>
+  <div id="hud-hint">WASD 移動　·　Space 衝刺／連段　·　Esc 暫停</div>
   <div id="errbox" class="hidden"></div>
 </div>
 

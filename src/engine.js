@@ -220,7 +220,7 @@ function startWave(w) {
   P.burstMulti = null; P.rushMulti = null; P.kneeChain = null; P.ougiField = 0;
   P.beatLog = []; P.beatT = 0; P.beatState = null; P.beatCd = 0; P.triCd = 0; P.stillHold = 0;
   P.dashChain = 0; P.dashChainT = 0; P.dashBeatCounted = false; P.ougiCd = 0;
-  P.comboCd = 0; P.comboFiring = false; P.comboReadyCue = false; P.beatPopT = 0;
+  P.comboCd = 0; P.comboFiring = false; P.comboReadyCue = false; P.beatPopT = 0; P.comboStep = 0;
   if (P.airSlam && P.airSlam.e) { P.airSlam.e.grabbed = false; P.airSlam.e.stun = 0.5; }
   P.airSlam = null;
   P.dashCd = 0; P.moveTechTimer = 0; P.stillTechTimer = 0; P.counterProcCd = 0;
@@ -474,6 +474,7 @@ function hurtEnemy(e, amount, opts) {
   e.hitFlash = 0.12;
   // 打擊感：壓扁回彈＋火花＋頓幀分級（微量持續傷不觸發）
   if (dmg >= 3) {
+    G.screenShake = Math.max(G.screenShake, Math.min(9, 1 + dmg * 0.12));
     G.comboHits = (G.comboHits || 0) + 1;
     G.comboT = 2;
     G.comboPop = 0.18;
@@ -949,7 +950,7 @@ function quakePulse(d) {
       }
     }
   }
-  if (hitAny) addBeat('S');
+  if (hitAny) addBeat('S', true);
 }
 
 /* 移動技：旋風掃腿 */
@@ -974,7 +975,7 @@ function cycloneSweep(d) {
       }
     }
   }
-  if (hitAny) addBeat('M');
+  if (hitAny) addBeat('M', true);
 }
 
 /* 移動技：金臂勾——朝奔跑方向橫掃，助跑越久掛得越飛 */
@@ -984,7 +985,7 @@ function lariatRun(d) {
   const ang = Math.atan2(p.lastMoveY / ml, p.lastMoveX / ml);
   const runK = Math.min(1, p.moveTime / 2.0);
   const half = (d.arc * Math.PI / 180) / 2;
-  spawnFx('swing', p.x, p.y, d.color, d.radius, { angle: ang, arc: d.arc, type: 'arc', img: 'fx_lariat' });
+  spawnFx('swing', p.x, p.y, d.color, d.radius, { angle: ang, arc: d.arc, type: 'arc' });
   p.pose = { type: 'lariat', ang, t: 0, dur: 0.25, prio: 1 };
   sfx('wind');
   let hitAny = false;
@@ -1001,7 +1002,7 @@ function lariatRun(d) {
       if (!e.boss && d.stun) e.stun = Math.max(e.stun, d.stun * runK);
     }
   }
-  if (hitAny) addBeat('M');
+  if (hitAny) addBeat('M', true);
 }
 
 /* 站樁技：肘擊墜落——騰空落肘，砸到的連旁邊一起趴 */
@@ -1027,7 +1028,7 @@ function elbowDrop(d) {
       }
     }
   }
-  if (hitAny) addBeat('S');
+  if (hitAny) addBeat('S', true);
 }
 
 /* 移動技：曳尾勁——掃傷身後 */
@@ -1233,12 +1234,13 @@ function updateTechniques(dt) {
   if (p.ougiCd > 0) p.ougiCd -= dt;
   if (p.comboCd > 0) p.comboCd -= dt;
   if (p.beatPopT > 0) p.beatPopT -= dt;
+  if (p.comboCdMsgT > 0) p.comboCdMsgT -= dt;
   // 連段窗口：停手太久前綴就散了——連段要一氣呵成，不是隔半分鐘慢慢湊。
   // 只套用在有連段表的職業：他們的前綴是純站/移拍，一兩秒就湊得出來。
   // 還在用舊奧義的職業前綴含衝刺拍（衝刺冷卻 5~9 秒），加窗口等於直接廢掉他們的奧義。
   if (p.beatLog.length && COMBOS[G.char.id]) {
     p.beatT += dt;
-    if (p.beatT > 2.5) { p.beatLog = []; p.beatT = 0; }
+    if (p.beatT > 2.5) { p.beatLog = []; p.beatT = 0; p.comboStep = 0; p.comboReadyCue = false; }
   }
   if (p.flowT > 0) p.flowT -= dt;
 
@@ -1333,7 +1335,7 @@ function updateTechniques(dt) {
         const ea = Math.atan2(e.y - p.y, e.x - p.x);
         if (Math.abs(angDiff(ea, ang)) > (f.halfArc || 1.05)) continue;
         hurtEnemy(e, autoDmg(dmgN), { fromAngle: ang });
-        addBeat(f.beat || 'S');
+        addBeat(f.beat || 'S', true);
         if (!e.dead) {
           const kb = e.boss ? 25 : knockN;
           e.knockX += Math.cos(ea) * kb; e.knockY += Math.sin(ea) * kb;
@@ -1701,18 +1703,25 @@ function updateTechniques(dt) {
    S＝原地打中、M＝移動中打中、D＝衝刺技打中。
    光走不打、光站不打，都不會累積——連段是打出來的。
 */
-function addBeat(type) {
+function addBeat(type, auto) {
   const p = G.player;
   if (p.dead || p.beatCd > 0) return;
   // 連段樹：這個動作剛好補滿某條連段的最後一格 → 當場變招，這一拍不入譜。
+  // auto=true（站樁技/移動技自動命中）只能鋪前綴——收尾那一下必須是玩家自己打的，
+  // 連段才是玩家「做出來」的，不是自己噴出來的。
   // comboFiring 防遞迴：連段招本身命中時不會再去觸發連段。
-  if (!p.comboFiring && (type === 'S' || type === 'M')) {
+  if (!auto && !p.comboFiring && (type === 'S' || type === 'M')) {
     const c = matchCombo(type);
     if (c) {
       p.comboFiring = true;
       const fired = castCombo(c);
       p.comboFiring = false;
-      if (fired) return;
+      if (fired) { p.comboStep = 0; return; }
+      const cdLeft = c.sig ? (p.ougiCd || 0) : (p.comboCd || 0);
+      if (cdLeft > 0.15 && (p.comboCdMsgT || 0) <= 0) {
+        p.comboCdMsgT = 1.2;
+        addDmgNum(p.x, p.y - 46, c.name + ' 還有 ' + cdLeft.toFixed(1) + 's', '#8a795e');
+      }
     }
   }
   p.beatCd = 0.4;   // 同一瞬間的多段命中只記一拍
@@ -1732,6 +1741,7 @@ function addBeat(type) {
       }
     }
     p.beatPopT = 0.22;
+    p.comboStep = full ? 2 : prog;   // 命中音分層用：0=散手 1=第一拍 2=就緒
     if (full && !p.comboReadyCue) { p.comboReadyCue = true; sfxComboReady(); }
     else if (!full) { p.comboReadyCue = false; if (prog >= 1) sfxBeat(prog); }
   }
@@ -1835,12 +1845,16 @@ function matchCombo(action) {
   return null;
 }
 
-/* 目前打得出來的連段（頭上提示用） */
+/* 目前打得出來的連段（頭上提示用）。cd>0＝招還沒好，提示要照實講。 */
 function comboReady() {
+  const p = G.player;
   const out = [];
   for (const act of ['S', 'M', 'D']) {
     const c = matchCombo(act);
-    if (c) out.push({ act, name: c.name, sig: !!c.sig });
+    if (c) {
+      const cd = c.sig ? Math.max(0, p.ougiCd || 0) : Math.max(0, p.comboCd || 0);
+      out.push({ act, name: c.name, sig: !!c.sig, cd });
+    }
   }
   return out;
 }
@@ -1889,6 +1903,7 @@ function castOugi(o, target) {
       if (!e0) break;
       const a0 = Math.atan2(e0.y - p.y, e0.x - p.x);
       p.pose = { type: pr.pose || 'head', ang: a0, t: 0, dur: 0.3, prio: 1 };
+      sfx('hit_blunt', { pitch: 0.62, vol: 1.3 });   // 頭槌／貫手類：低沉的「咚」，跟前兩下分家
       // 重心真的壓過去：朝目標撞進一步（頭槌沒有位移就沒有頭槌的感覺）
       const lunge = pr.lunge !== undefined ? pr.lunge : 20;
       p.x = Math.max(p.r, Math.min(ARENA.w - p.r, p.x + Math.cos(a0) * lunge));
@@ -1934,6 +1949,7 @@ function castOugi(o, target) {
         }
       }
       sfx('swing_leg');
+      sfx('hit_kick', { pitch: 0.8, vol: 1.25 });   // 迴旋踢收尾：重踢聲
       ok = true; break;
     }
     case 'knock_cone': {
@@ -1942,7 +1958,7 @@ function castOugi(o, target) {
       const a1 = e1 ? Math.atan2(e1.y - p.y, e1.x - p.x) : (p.face > 0 ? 0 : Math.PI);
       const half = (pr.arc * Math.PI / 180) / 2;
       p.pose = { type: 'kick', ang: a1, t: 0, dur: 0.3, prio: 1 };
-      spawnFx('swing', p.x, p.y, '#c98a3c', pr.range, { angle: a1, arc: pr.arc, type: 'arc', img: 'fx_lariat' });
+      spawnFx('swing', p.x, p.y, '#c98a3c', pr.range, { angle: a1, arc: pr.arc, type: 'arc' });
       for (const o2 of G.enemies) {
         if (o2.dead) continue;
         if (dist2(o2.x, o2.y, p.x, p.y) > (pr.range + o2.r) * (pr.range + o2.r)) continue;
@@ -1980,7 +1996,7 @@ function castOugi(o, target) {
           }
         }
       }
-      spawnFx('swing', p.x, p.y, '#c98a3c', 130, { angle: aC, arc: 150, type: 'arc', img: 'fx_lariat' });
+      spawnFx('swing', p.x, p.y, '#c98a3c', 130, { angle: aC, arc: 150, type: 'arc' });
       p.pose = { type: pr.pose || 'swing', ang: aC, t: 0, dur: 0.35, prio: 1 };
       p.x = ex2; p.y = ey2;
       pushOutOfWalls(p);
@@ -2203,7 +2219,7 @@ function updateWeapons(dt) {
   p.weapons.forEach((w, idx) => {
     const wMul = (galeBonus && (w.klass === '拳' || w.klass === '肘膝')) ? 1.15 : 1;
     w.cdLeft -= dt * spdMul * wMul;
-    if (w.swing > 0) w.swing -= dt * 6;
+    if (w.swing > 0) w.swing -= dt / (w.swingDur || 0.167);
     const reach = w.range * rangeMul;
     const target = nearestEnemy(p.x, p.y, reach + 26);
     if (target) {
@@ -2277,10 +2293,10 @@ function spawnStrike(w, reach) {
   const s = { w, reach, t: 0, hit: [] };
   if (w.type === 'thrust') {
     s.kind = 'thrust';
-    s.x = p.x + Math.cos(w.angle) * 14;
-    s.y = p.y + Math.sin(w.angle) * 14;
+    s.x = p.x + Math.cos(w.angle) * (p.r + 8);
+    s.y = p.y + Math.sin(w.angle) * (p.r + 8);
     s.ang = w.angle;
-    s.speed = w.strikeSpd || 820;
+    s.speed = w.strikeSpd || Math.max(560, 1200 - w.dmg * 12);   // 短打快、重擊沉
     s.maxDist = reach + 14;
     s.traveled = 0;
   } else if (w.type === 'arc') {
@@ -2289,15 +2305,17 @@ function spawnStrike(w, reach) {
     s.ang0 = w.angle - half * w.swingDir;
     s.ang1 = w.angle + half * w.swingDir;
     s.cur = s.ang0;
-    s.dur = 0.16;
+    s.dur = Math.max(0.12, Math.min(0.3, w.cd * 0.24));   // 勾拳快、打刀沉、重械慢
+    w.swingDur = s.dur;
   } else if (w.type === 'spin') {
     s.kind = 'orbit';
     s.cur = w.angle;
     s.dur = 0.42;
     s.spd = (Math.PI * 2 / 0.42) * (w.swingDir > 0 ? 1 : -1);
-  } else {   // slam：延遲爆發，先給預兆
+  } else {   // slam：延遲爆發，先給預兆——越重的傢伙預告越長
     s.kind = 'slam';
-    s.delay = 0.12;
+    s.delay = Math.max(0.08, Math.min(0.26, w.cd * 0.13));
+    w.swingDur = s.delay + 0.08;
   }
   G.strikes.push(s);
   if (G.strikes.length > 40) G.strikes.shift();
@@ -2374,7 +2392,7 @@ function updateStrikes(dt) {
       if (s.t >= s.delay && !s.boomed) {
         s.boomed = true;
         spawnFx('shock', p.x, p.y, s.w.color, s.reach);
-        G.screenShake = Math.max(G.screenShake, 5);
+        G.screenShake = Math.max(G.screenShake, 4 + s.w.dmg * 0.12);
         for (const e of G.enemies) {
           if (e.dead || e.grabbed || e.thrown) continue;
           if (dist2(e.x, e.y, p.x, p.y) < (s.reach + e.r) * (s.reach + e.r)) strikeHit(s, e);
@@ -2390,7 +2408,7 @@ function updateStrikes(dt) {
 function addHitstop(sec, heavy) {
   if (!heavy) {
     if (G.hitstopCd > 0) return;
-    G.hitstopCd = 0.12;
+    G.hitstopCd = 0.12 + Math.min(0.2, G.enemies.length * 0.008);
   }
   G.hitstop = Math.max(G.hitstop, sec);
 }
@@ -2457,14 +2475,16 @@ function applyWeaponHit(w, e, reach, mulOverride, isEcho) {
     if (b) addBeat(b);
   }
 
-  // 命中音：依武器類與力度分層
+  // 命中音：依武器類與力度分層；連段一、二下音高走揚（1、2、3 的節奏要用耳朵聽得到）
   if (!isEcho) {
-    if (w.klass === '刃') sfx('hit_blade');
-    else if (w.klass === '腿') sfx('hit_kick');
-    else if (w.klass === '棍' || w.klass === '重械' || w.klass === '軟兵') sfx('hit_blunt');
-    else if (crit || base >= e.maxHp * 0.3) sfx('hit_heavy');
-    else if (base >= 20) sfx('hit_mid');
-    else sfx('hit_light');
+    const cs = p.comboStep || 0;
+    const co = cs === 1 ? { pitch: 1.0 } : (cs >= 2 ? { pitch: 1.18, vol: 1.2 } : undefined);
+    if (w.klass === '刃') sfx('hit_blade', co);
+    else if (w.klass === '腿') sfx('hit_kick', co);
+    else if (w.klass === '棍' || w.klass === '重械' || w.klass === '軟兵') sfx('hit_blunt', co);
+    else if (crit || base >= e.maxHp * 0.3) sfx('hit_heavy', co);
+    else if (base >= 20) sfx('hit_mid', co);
+    else sfx('hit_light', co);
   }
 
   if (!isEcho) addMomentum(w.type === 'grab' ? 6 : 3);
@@ -2478,6 +2498,8 @@ function applyWeaponHit(w, e, reach, mulOverride, isEcho) {
     const kb = w.knock * reboundMul * (e.boss ? 0.12 : (e.elite ? 0.4 : 1)) / (1 + e.r * 0.03);
     e.knockX += Math.cos(a) * kb;
     e.knockY += Math.sin(a) * kb;
+    // 重武器推得遠、輕武器點到為止——重量要在位移上兌現
+    e.knockDecay = (w.klass === '重械' || w.klass === '摔技' || w.klass === '相撲') ? 3.2 : 4.6;
   }
   // 受擊硬直：被打會頓，連段才鎖得住人。連續硬直太久觸發霸體（防無限壓制），頭目免疫輕硬直。
   if (!e.dead && !e.boss) {
@@ -2551,7 +2573,15 @@ function updatePlayer(dt) {
   if (p.dashState || p.staggerT > 0 || (p.iaiPhase && p.iaiPhase.phase === 'sheath')) { mx = 0; my = 0; }
   const len = Math.hypot(mx, my);
   const moving = len > 0;
-  if (moving) { mx /= len; my /= len; if (mx !== 0) p.face = mx > 0 ? 1 : -1; }
+  if (moving) { mx /= len; my /= len; }
+  // 面向打擊目標，不是面向移動方向——身體要參與戰鬥
+  const aimT = nearestEnemy(p.x, p.y, 320);
+  if (aimT) p.aimAng = Math.atan2(aimT.y - p.y, aimT.x - p.x);
+  else if (moving) p.aimAng = Math.atan2(my, mx);
+  if (p.aimAng !== undefined) {
+    const ca = Math.cos(p.aimAng);
+    if (Math.abs(ca) > 0.25) p.face = ca > 0 ? 1 : -1;
+  }
 
   let spd = BASE_SPEED_F() * liveSpeedMult();
   if (p.grabState) spd *= 0.7;          // 掄著人跑比較慢
@@ -2692,7 +2722,8 @@ function updateEnemies(dt) {
         e.knockX = 0; e.knockY = 0;
       }
     }
-    e.knockX *= Math.pow(0.0016, dt); e.knockY *= Math.pow(0.0016, dt);
+    const kdcy = Math.exp(-(e.knockDecay || 6.44) * dt);
+    e.knockX *= kdcy; e.knockY *= kdcy;
 
     if (e.stun > 0) { e.stun -= dt; clampEnemy(e); continue; }
 
