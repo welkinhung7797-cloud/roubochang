@@ -199,13 +199,13 @@ const COMBOS = {
      螺旋摔投退出拍序表，改掛在擒抱掄甩滿 3 秒按 C 的獎勵。 */
   wrestler: [
     { seq: ['S', 'S', 'S'], name: '頭槌', kind: 'strike_heavy',
-      params: { dmg: 38, stun: 0.6, radius: 78, cleaveMul: 0.5, pose: 'head', img: 'fx_slam' },
+      params: { dmg: 38, stun: 0.6, radius: 78, cleaveMul: 0.5, pose: 'head', img: 'fx_slam', launch: 640 },
       ext: 'running_ddt', extName: '衝刺DDT',
       desc: 'AAA：兩記手刀之後站定用頭撞上去。馬上按 C＝衝向最近的人接移動 DDT。' },
     { seq: ['M', 'M', 'M'], name: '大足踢', kind: 'knock_cone',
-      params: { dmg: 34, knock: 260, arc: 90, range: 128, stun: 0.7 },
+      params: { dmg: 34, knock: 260, arc: 90, range: 128, stun: 0.7, launch: 760 },
       ext: 'clothesline', extName: '飛奔金臂勾',
-      desc: 'BBB：跑動兩下手刀之後抬腿硬踢。馬上按 C＝再接飛奔金臂勾。' },
+      desc: 'BBB：跑動兩下手刀之後抬腿硬踢，正面的人整個被踢飛出去——撞到牆或撞到大隻的還會彈回來。馬上按 C＝再接飛奔金臂勾。' },
     { seq: ['M', 'M', 'S'], name: '德式背摔', kind: 'suplex',
       params: { dmg: 62, stun: 1.2 },
       ext: 'toss_powerbomb', extName: '拋高炸彈摔',

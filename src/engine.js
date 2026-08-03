@@ -11,6 +11,8 @@ if (typeof window === 'undefined' || !window.AudioContext) {
   var bgmStop = function () {};
   var sfxHit = function () {};
   var sfxThrow = function () {};
+  var sfxComboBreak = function () {};
+  var sfxWallCrash = function () {};
 }
 
 /* ---------- 亂數（可設種子，方便自動化測試重現） ---------- */
@@ -225,7 +227,7 @@ function startWave(w) {
   P.beatLog = []; P.beatT = 0; P.beatState = null; P.beatCd = 0; P.triCd = 0; P.stillHold = 0;
   P.dashChain = 0; P.dashChainT = 0; P.dashBeatCounted = false; P.ougiCd = 0;
   P.comboCd = 0; P.comboFiring = false; P.comboReadyCue = false; P.beatPopT = 0; P.comboStep = 0;
-  P.comboSettle = 0; P.poseAfter = null; P.pendingCombo = null;
+  P.comboSettle = 0; P.poseAfter = null; P.pendingCombo = null; P.comboFlash = 0; P.comboBreakT = 0;
   P.extWindow = null; P.extCd = 0; P.lastComboVictim = null;
   P.suplexAnim = null; P.hipTossAnim = null; P.ddtState = null; P.tossState = null; P.gutRoll = null;
   G.hitstopEcho = null;
@@ -650,7 +652,10 @@ function hurtPlayer(amount, source) {
     noteDmg(source && source.name ? source.name : '其他', dmg);
     sfx('hit_blunt', { pitch: 0.75, vol: 0.7 });
     p.hurtT = 0.3;   // 受擊動畫幀
-    G.comboHits = 0; G.comboT = 0;   // 挨打斷連
+    G.comboHits = 0; G.comboT = 0;   // 挨打斷 HITS 計數
+    // 註：挨打不斷連段拍譜。這是自動戰鬥、玩家沒有防禦手段，挨打是常態；
+    // 而且合氣道這類「借力打力」流派本來就靠挨打累積拍，斷了等於廢掉他的核心迴圈
+    // （實測通關率從 100% 崩到 63%）。連段只由「停手 2.5 秒」中斷，那才是玩家控制得了的。
     addDmgNum(p.x, p.y - 18, '-' + Math.round(dmg), '#ff6b6b', true);
     G.screenShake = Math.max(G.screenShake, 5 + dmg * 0.25);
     spawnFx('hurt', p.x, p.y, '#ff6b6b', 20);
@@ -1288,6 +1293,8 @@ function updateTechniques(dt) {
   if (p.ougiCd > 0) p.ougiCd -= dt;
   if (p.comboCd > 0) p.comboCd -= dt;
   if (p.beatPopT > 0) p.beatPopT -= dt;
+  if (p.comboFlash > 0) p.comboFlash -= dt;
+  if (p.comboBreakT > 0) p.comboBreakT -= dt;
   if (p.comboSettle > 0) p.comboSettle -= dt;
   if (p.extCd > 0) p.extCd -= dt;
   if (p.extWindow) {
@@ -1309,7 +1316,11 @@ function updateTechniques(dt) {
   // 還在用舊奧義的職業前綴含衝刺拍（衝刺冷卻 5~9 秒），加窗口等於直接廢掉他們的奧義。
   if (p.beatLog.length && COMBOS[G.char.id]) {
     p.beatT += dt;
-    if (p.beatT > 2.5) { p.beatLog = []; p.beatT = 0; p.comboStep = 0; p.comboReadyCue = false; }
+    if (p.beatT > 2.5) {
+      // 斷連：兩拍以上才提示（打一下就散不算斷）
+      if (p.beatLog.length >= 2) { sfxComboBreak(); p.comboBreakT = 0.5; }
+      p.beatLog = []; p.beatT = 0; p.comboStep = 0; p.comboReadyCue = false;
+    }
   }
   if (p.flowT > 0) p.flowT -= dt;
 
@@ -2106,7 +2117,7 @@ function addBeat(type, auto) {
       p.comboFiring = true;
       const fired = castCombo(c);
       p.comboFiring = false;
-      if (fired) { p.comboStep = 0; return; }
+      if (fired) { p.comboStep = 0; p.beatCd = 0.4; return; }
       const cdLeft = c.sig ? (p.ougiCd || 0) : (p.comboCd || 0);
       if (cdLeft > 0.15 && (p.comboCdMsgT || 0) <= 0) {
         p.comboCdMsgT = 1.2;
@@ -2114,7 +2125,8 @@ function addBeat(type, auto) {
       }
     }
   }
-  p.beatCd = 0.4;   // 同一瞬間的多段命中只記一拍
+  // 同一瞬間的多段命中只記一拍。連段進行中放寬節流，否則加速後會卡在這個閘門上。
+  p.beatCd = (p.comboStep || 0) > 0 ? 0.22 : 0.4;
   p.beatT = 0;      // 連段窗口重新計時
   p.beatLog.push(type);
   // 連段的節奏要聽得到看得到：拍子踩進前綴就「登」一聲、pip 彈一下；
@@ -2400,6 +2412,11 @@ function castOugi(o, target) {
       spawnFx('explode', e0.x, e0.y, '#e8e4dc', 74);
       spawnFx('spark', e0.x, e0.y, '#ffffff', e0.r, { angle: a0 });
       if (pr.img) spawnFx('shock', e0.x, e0.y, '#e8e4dc', 90, { img: pr.img });
+      if (pr.launch && !e0.dead && !e0.boss) {
+        // 頭槌撞上的那一個直接轟出去
+        e0.thrown = { vx: Math.cos(a0) * pr.launch, vy: Math.sin(a0) * pr.launch, t: 0.55, decay: 2.2 };
+        e0.spin = { v: (Math.cos(a0) >= 0 ? -14 : 14), t: 0.55, a: 0 };
+      }
       if (pr.radius) {
         for (const o2 of G.enemies) {
           if (o2.dead || o2 === e0) continue;
@@ -2484,9 +2501,17 @@ function castOugi(o, target) {
         if (Math.abs(angDiff(ea, a1)) > half) continue;
         hurtEnemy(o2, techDmg(pr.dmg), { fromAngle: a1 });
         if (!o2.dead) {
-          const kb = o2.boss ? pr.knock * 0.2 : pr.knock;
-          o2.knockX += Math.cos(ea) * kb; o2.knockY += Math.sin(ea) * kb;
-          o2.stun = Math.max(o2.stun, o2.boss ? pr.stun * 0.4 : pr.stun);
+          if (o2.boss) {
+            o2.knockX += Math.cos(ea) * pr.knock * 0.2; o2.knockY += Math.sin(ea) * pr.knock * 0.2;
+            o2.stun = Math.max(o2.stun, pr.stun * 0.4);
+          } else {
+            // BIG BOOT 是把人踢飛，不是推開——飛出去撞牆撞人才有破壞性
+            o2.thrown = { vx: Math.cos(a1) * (pr.launch || 700), vy: Math.sin(a1) * (pr.launch || 700),
+              t: 0.6, decay: 2.1 };
+            o2.spin = { v: (Math.cos(a1) >= 0 ? -13 : 13), t: 0.6, a: 0 };
+            o2.stun = Math.max(o2.stun, pr.stun);
+            o2.hitSquash = Math.max(o2.hitSquash || 0, 0.26);
+          }
         }
         ok = true;
       }
@@ -2725,7 +2750,10 @@ function updateWeapons(dt) {
   const galeBonus = hasItem('gale_elbowguard');
   p.weapons.forEach((w, idx) => {
     const wMul = (galeBonus && (w.klass === '拳' || w.klass === '肘膝')) ? 1.15 : 1;
-    w.cdLeft -= dt * spdMul * wMul;
+    // 連段加速：踩進前綴之後越打越快，一套三下在一秒內打完——這才是「一二三」
+    const cs = p.comboStep || 0;
+    const comboMul = cs >= 2 ? 3.1 : (cs === 1 ? 2.3 : 1);
+    w.cdLeft -= dt * spdMul * wMul * comboMul;
     if (w.swing > 0) w.swing -= dt / (w.swingDur || 0.167);
     const reach = w.range * rangeMul;
     const target = nearestEnemy(p.x, p.y, reach + 26);
@@ -3006,6 +3034,7 @@ function applyWeaponHit(w, e, reach, mulOverride, isEcho) {
   if (!isEcho && (p.comboStep || 0) > 0) {
     addHitstop(p.comboStep >= 2 ? 0.065 : 0.045, false);
     G.screenShake = Math.max(G.screenShake, p.comboStep >= 2 ? 5 : 3);
+    p.comboFlash = 0.14;   // 身體閃一下＝這一拍進了
   }
   // 命中音：分層合成（銳利度/重量/材質）＋實錄樣本疊在上面。
   // 力度 force 取這一擊佔對方血量的比例，同一把武器的輕重也聽得出來。
@@ -3238,7 +3267,7 @@ function updateEnemies(dt) {
       e.thrown = { vx: 0, vy: 0, t: 0.1 };
     }
 
-    // 被扔出去：飛行中撞傷沿路的敵人，撞牆自己再吃一次
+    // 被扔出去：飛行中撞傷沿路的敵人；撞牆／撞大隻的會反彈（總監：強化破壞性與震撼性）
     if (e.thrown) {
       const th = e.thrown;
       th.t -= dt;
@@ -3246,25 +3275,76 @@ function updateEnemies(dt) {
       e.x += th.vx * dt; e.y += th.vy * dt;
       const thd = Math.exp(-(th.decay || 3) * dt);
       th.vx *= thd; th.vy *= thd;
+      const spd = Math.hypot(th.vx, th.vy);
       for (const o of G.enemies) {
         if (o.dead || o === e || o.thrown || o.grabbed || o.hitByThrow) continue;
         const rr = o.r + e.r + 2;
         if (dist2(o.x, o.y, e.x, e.y) < rr * rr) {
           o.hitByThrow = true;
-          hurtEnemy(o, throwDmg(12), { trueDmg: true });
+          const big = o.boss || o.elite || o.r >= e.r * 1.25;   // 中型以上撞不動，飛的人自己彈回來
+          hurtEnemy(o, throwDmg(big ? 20 : 12), { trueDmg: true });
           if (!o.dead) {
             const a = Math.atan2(o.y - e.y, o.x - e.x);
-            o.knockX += Math.cos(a) * 180; o.knockY += Math.sin(a) * 180;
+            o.knockX += Math.cos(a) * (big ? 90 : 180); o.knockY += Math.sin(a) * (big ? 90 : 180);
+            if (!big) o.stun = Math.max(o.stun, 0.4);
+          }
+          if (big && (th.bounces || 0) < 2 && spd > 180) {
+            // 撞到硬的：反彈＋雙方都痛，這是撞球式的破壞
+            th.bounces = (th.bounces || 0) + 1;
+            const nx = (e.x - o.x), ny = (e.y - o.y);
+            const nl = Math.hypot(nx, ny) || 1;
+            const dot = (th.vx * nx + th.vy * ny) / nl;
+            th.vx = (th.vx - 2 * dot * nx / nl) * 0.72;
+            th.vy = (th.vy - 2 * dot * ny / nl) * 0.72;
+            th.t = Math.max(th.t, 0.3);
+            hurtEnemy(e, throwDmg(10 + o.maxHp * 0.06), { trueDmg: true });
+            spawnFx('explode', (e.x + o.x) / 2, (e.y + o.y) / 2, '#e8964a', 76);
+            G.screenShake = Math.max(G.screenShake, 11);
+            addHitstop(0.06, true);
+            sfxWallCrash(false);
+            e.hitSquash = Math.max(e.hitSquash || 0, 0.26);
+            G.enemies.forEach(o2 => { if (o2 !== o) o2.hitByThrow = false; });
           }
         }
       }
       const hitWall = e.x <= e.r + 2 || e.x >= ARENA.w - e.r - 2 || e.y <= e.r + 2 || e.y >= ARENA.h - e.r - 2;
+      const hitBlock = pushOutOfWalls(e);
       clampEnemy(e);
-      if (hitWall) {
-        hurtEnemy(e, throwDmg(8 + e.maxHp * 0.12), { trueDmg: true });
-        if (!e.dead) e.stun = Math.max(e.stun, 0.8);
-        spawnFx('explode', e.x, e.y, '#c2703c', 70);
-        e.thrown = null;
+      if (hitWall || hitBlock) {
+        const hard = spd > 420;
+        // 撞牆傷害隨速度放大：轟得越用力、撞得越慘
+        hurtEnemy(e, throwDmg((8 + e.maxHp * 0.12) * (hard ? 1.8 : 1)), { trueDmg: true });
+        if (!e.dead) {
+          e.stun = Math.max(e.stun, hard ? 1.4 : 0.8);
+          e.hitSquash = Math.max(e.hitSquash || 0, hard ? 0.3 : 0.2);
+        }
+        spawnFx('explode', e.x, e.y, '#c2703c', hard ? 110 : 70);
+        spawnFx('shock', e.x, e.y, '#e8964a', hard ? 120 : 80, { img: 'fx_slam_ring', squash: 0.5 });
+        G.screenShake = Math.max(G.screenShake, hard ? 16 : 9);
+        if (hard) addHitstop(0.09, true);
+        sfxWallCrash(hard);
+        // 撞牆的震波掃到旁邊的人（震撼性：一個人撞牆、周圍跟著遭殃）
+        if (hard) {
+          for (const o of G.enemies) {
+            if (o.dead || o === e) continue;
+            if (dist2(o.x, o.y, e.x, e.y) < 90 * 90) {
+              hurtEnemy(o, throwDmg(10), { trueDmg: true });
+              if (!o.dead) o.stun = Math.max(o.stun, 0.5);
+            }
+          }
+        }
+        // 還有速度就從牆上彈開（不是貼著牆停死）
+        if ((th.bounces || 0) < 2 && spd > 260) {
+          th.bounces = (th.bounces || 0) + 1;
+          if (e.x <= e.r + 3 || e.x >= ARENA.w - e.r - 3) th.vx = -th.vx * 0.55;
+          if (e.y <= e.r + 3 || e.y >= ARENA.h - e.r - 3) th.vy = -th.vy * 0.55;
+          if (hitBlock) { th.vx = -th.vx * 0.55; th.vy = -th.vy * 0.55; }
+          th.t = Math.max(th.t, 0.28);
+          if (e.spin) e.spin.v *= -0.8;
+        } else {
+          e.thrown = null;
+          if (!e.dead) e.flat = { t: 0.9 };
+        }
       } else if (th.t <= 0) {
         if (!e.dead) e.stun = Math.max(e.stun, 0.5);
         e.thrown = null;

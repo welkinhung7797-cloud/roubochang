@@ -302,7 +302,7 @@
     const o = ctx.createOscillator();
     const g = ctx.createGain();
     o.type = 'triangle';
-    o.frequency.value = [523, 659, 784][Math.max(0, Math.min(2, step - 1))];
+    o.frequency.value = [523, 784, 1046][Math.max(0, Math.min(2, step - 1))];   // 純四度上行，聽得出爬升
     g.gain.setValueAtTime(0.0001, t0);
     g.gain.exponentialRampToValueAtTime(0.34, t0 + 0.008);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.13);
@@ -376,6 +376,33 @@
     if (bgmBus) bgmBus.gain.value = bgmVol;
     try { localStorage.setItem('penguin_bgmvol_v1', String(bgmVol)); } catch (e) {}
     return bgmVol;
+  };
+
+  /* 連段中斷：下行雙音——比任何 UI 文字都直接 */
+  window.sfxComboBreak = function () {
+    if (muted || !ensureCtx()) return;
+    const t0 = ctx.currentTime;
+    [[440, 0], [294, 0.06]].forEach(([f, d]) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'triangle';
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t0 + d);
+      g.gain.exponentialRampToValueAtTime(0.14, t0 + d + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + d + 0.14);
+      o.connect(g); g.connect(master);
+      o.start(t0 + d); o.stop(t0 + d + 0.15);
+    });
+  };
+
+  /* 撞牆：低頻爆＋碎裂——破壞性要用聲音賣 */
+  window.sfxWallCrash = function (hard) {
+    if (muted || !ensureCtx()) return;
+    const t0 = ctx.currentTime;
+    playNoise(0.06, 2.0, hard ? 900 : 1400, 'lowpass', hard ? 0.75 : 0.5);
+    playTone(hard ? 90 : 130, 30, hard ? 0.34 : 0.22, hard ? 0.6 : 0.42, t0, 'sine');
+    playNoise(0.2, 1.4, 2600, 'bandpass', hard ? 0.3 : 0.18, t0 + 0.02);   // 碎屑
+    if (hard) playTone(55, 24, 0.42, 0.4, t0 + 0.01, 'sine');
   };
 
   window.sfxToggleMute = function () {

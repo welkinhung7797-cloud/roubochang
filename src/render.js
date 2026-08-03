@@ -387,6 +387,12 @@ function drawPlayerFramed(p, c) {
   if (p.face < 0) ctx.scale(-1, 1);
   const vAim = p.aimAng !== undefined ? Math.sin(p.aimAng) : 0;
   if (vAim) { ctx.rotate(vAim * 0.2); ctx.scale(1, 1 - 0.08 * Math.abs(vAim)); }
+  // 連段中每一拍身體彈一下：越後面越大——玩家要「感覺到自己在堆」
+  if (p.comboFlash > 0) {
+    const cf = p.comboFlash / 0.14;
+    const amp = 0.06 + 0.05 * (p.comboStep || 0);
+    ctx.scale(1 + amp * cf, 1 - amp * 0.45 * cf);
+  }
   // 站樁蓄勢的身體語言（新幀到位前的程式版）：下沉、前傾、深呼吸、出力微顫
   const stillK = Math.max(0, Math.min(1, (p.stillT || 0) / 0.5));
   if (stillK > 0 && !p.dashState && !p.grabState) {
@@ -863,7 +869,34 @@ function drawPlayer() {
       ctx.fillText(txt, 0, y0 - 3);
       ctx.globalAlpha = 1;
       ctx.textAlign = 'left';
-    } else if (bl.length) {
+    }
+    if (bl.length && p.comboStep > 0) {
+      // 連段進度數字：越大越急，第二拍轉金色
+      const big = p.comboStep >= 2;
+      ctx.font = 'bold ' + (13 + p.comboStep * 3) + 'px ' + FONT;
+      ctx.textAlign = 'center';
+      ctx.lineWidth = 3; ctx.strokeStyle = INK;
+      const pop = p.beatPopT > 0 ? 1 + (p.beatPopT / 0.22) * 0.4 : 1;
+      ctx.save();
+      ctx.translate(0, y0 - 16);
+      ctx.scale(pop, pop);
+      ctx.strokeText(String(bl.length), 0, 0);
+      ctx.fillStyle = big ? '#ffd44a' : '#e8e4dc';
+      ctx.fillText(String(bl.length), 0, 0);
+      ctx.restore();
+      ctx.textAlign = 'left';
+    }
+    if (p.comboBreakT > 0) {
+      const bk = p.comboBreakT / 0.5;
+      ctx.globalAlpha = bk * 0.8;
+      ctx.font = 'bold 11px ' + FONT;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#8a795e';
+      ctx.fillText('連段斷了', 0, y0 - 10 + (1 - bk) * 14);
+      ctx.globalAlpha = 1;
+      ctx.textAlign = 'left';
+    }
+    if (bl.length) {
       const bw = 9, gap = 2;
       const total = 3 * bw + 2 * gap;
       for (let i = 0; i < 3; i++) {
@@ -873,12 +906,15 @@ function drawPlayer() {
         const isLast = i === bl.length - 1;
         const pop = isLast && p.beatPopT > 0 ? 1 + (p.beatPopT / 0.22) * 0.65 : 1;
         const w2 = bw * pop, h2 = 8 * pop;
+        const urgent = p.beatT > 1.9 && bl.length >= 2;
+        ctx.globalAlpha = urgent ? (0.5 + Math.sin(G.time * 26) * 0.5) : 1;
         ctx.fillStyle = 'rgba(10,12,16,0.7)';
         ctx.fillRect(bx + (bw - w2) / 2, y0 - 8 - (h2 - 8) / 2, w2, h2);
         if (beat) {
           ctx.fillStyle = beat === 'S' ? '#e8964a' : (beat === 'D' ? '#ffd44a' : '#8fd4e0');
           ctx.fillRect(bx + (bw - w2) / 2 + 1, y0 - 7 - (h2 - 8) / 2, w2 - 2, h2 - 2);
         }
+        ctx.globalAlpha = 1;
       }
     }
   }
