@@ -943,7 +943,15 @@ function isEliteWave(w) { return w === 7 || w === 13 || w === 17; }
    血量與數量的乘積（整波總血量）維持在玩家該波總輸出的七成左右。 */
 function waveBudget(wave, danger) {
   const d = DANGER_LEVELS[danger];
-  return (14 + 3.0 * wave + 0.8 * wave * wave) * d.count * TUNE.enemyCountMul;
+  // 波長從 20+(w-1)*1.5 拉到 34+(w-1)*2.6（約 ×1.7）之後，同樣的兵力攤在 1.7 倍的時間裡，
+  // 同屏密度掉到約 59%。這裡把密度乘回去、再加三成——實測那是死亡分布最健康的一組
+  //（死亡散到 4～12 波、第 1～3 波零死亡）。
+  //★ 反直覺但實測如此：把預算調「大」反而讓後期更安全，因為敵人多＝經驗與素材多＝玩家更強。
+  //  所以增壓要靠減兵不是加兵，這裡的 1.3 是密度補償不是加難度。
+  const durOld = 20 + (wave - 1) * 1.5;
+  const durNew = waveDuration(wave) / TUNE.waveDurMul;
+  const density = (durOld / durNew) * 1.3;
+  return (14 + 3.0 * wave + 0.8 * wave * wave) * density * d.count * TUNE.enemyCountMul;
 }
 
 /* 升級所需經驗 */

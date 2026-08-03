@@ -223,6 +223,7 @@ function startWave(w) {
   G.wave = w;
   G.waveTime = 0;
   G.spawnClosed = false;   // 出兵時間到了沒
+  G.clearT = 0;
   // 混拍那排到第 6 波才開：前五波先讓玩家把兩排六格玩熟（總監：不要一開始就苦惱招式障礙）
   if (G.player && G.player.boardRows && w >= BOARD_MX_UNLOCK_WAVE
       && G.player.boardRows.indexOf('MX') < 0) {
@@ -3791,6 +3792,12 @@ function updateEnemies(dt) {
       }
       const hitWall = e.x <= e.r + 2 || e.x >= ARENA.w - e.r - 2 || e.y <= e.r + 2 || e.y >= ARENA.h - e.r - 2;
       const hitBlock = pushOutOfWalls(e);
+      if (e.enraged && hitBlock) {
+        // 激怒＝不受牆阻擋：被牆推回來就直接朝玩家跨過去，確保這一波解得掉
+        const pg = G.player;
+        const dxg = pg.x - e.x, dyg = pg.y - e.y, dg = Math.hypot(dxg, dyg) || 1;
+        e.x += dxg / dg * 34; e.y += dyg / dg * 34;
+      }
       clampEnemy(e);
       if (hitWall || hitBlock) {
         const hard = spd > 420;
@@ -3865,6 +3872,8 @@ function updateEnemies(dt) {
     const ux = dx / d, uy = dy / d;
     e.face = ux > 0 ? 1 : -1;
     let spd = e.speed * (e.slow > 0 ? 0.6 : 1);
+    // 清場逾時的激怒狀態：直奔玩家、快到追得上，而且不再被牆卡住
+    if (e.enraged) spd = Math.max(spd, 320) * 1.6;
     if (G.waveEnding > 0) spd *= 0.3;
 
     switch (e.behavior) {
@@ -4191,8 +4200,25 @@ function updateWave(dt) {
     }
     return;
   }
-  // 清場階段：殺光才進結算
-  if (G.enemies.some(e => !e.dead)) return;
+  // 清場階段：殺光才進結算。
+  // ★ 但不能讓玩家卡死：敵人的 chase 是直線衝向玩家，撞到牆就壓在牆上不動，
+  //   一隻卡在角落的雜兵會讓整波無法結束，玩家只會以為遊戲當掉。
+  //   停生怪 22 秒之後，剩下的全部進入「激怒」——高速直奔玩家且不受牆阻擋。
+  //   這比「時間到讓它們消失」好：規則還是殺光才過關，只是保證解得掉。
+  const alive = G.enemies.filter(e => !e.dead);
+  if (alive.length) {
+    G.clearT = (G.clearT || 0) + dt;
+    if (G.clearT > 22) {
+      alive.forEach(e => {
+        if (!e.enraged) {
+          e.enraged = true;
+          spawnFx('shock', e.x, e.y, '#d9564f', e.r * 2.2);
+        }
+      });
+    }
+    return;
+  }
+  G.clearT = 0;
   G.waveEnding = 1.4;   // 先把地上的素材吸乾淨，再跑結算
 }
 

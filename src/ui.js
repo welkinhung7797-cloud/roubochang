@@ -888,8 +888,15 @@ function botWantsStill() {
   const throwers = G.enemies.filter(e => !e.dead && e.behavior === 'thrower').length;
   const bullets = G.projectiles.length;
   if (throwers >= 1 || bullets >= 1) return false;
+  // ★ 這裡本來寫死 150px。但貼身型站樁技（掌打連擊／化勁架式／鳴鐘…）的實際射程遠小於 150，
+  //   敵人停在 100～150px 時 bot 會站著不動、打不到、也永遠不會走過去——
+  //   在「殺光才過關」的新制度下這會直接卡關（實測 70 局有 40% 卡住，其中一局站定 350 秒）。
+  //   改成用自己武器真正打得到的距離。
+  let reachNow = 0;
+  p.weapons.forEach(w => { reachNow = Math.max(reachNow, w.range * liveRangeMult()); });
+  const stillR = Math.max(60, Math.min(150, reachNow + 24));
   const nearCount = G.enemies.filter(e => !e.dead &&
-    dist2(e.x, e.y, p.x, p.y) < 150 * 150).length;
+    dist2(e.x, e.y, p.x, p.y) < stillR * stillR).length;
   const farthest = nearestEnemy(p.x, p.y, 3000);
   // 連段差站拍就站著打——但只在還撐得住的時候，血少或被圍住時連段不值得拿命換
   if (p.hp > p.maxHp * 0.55 && nearCount >= 1 && nearCount <= 3) {
