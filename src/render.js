@@ -496,6 +496,8 @@ function attackPose(pose) {
     case 'chop':  return { fArm: [2.6 - snap * 1.3, 0.3], chopSwing: snap };
     case 'palm':  return { fArm: [1.5 * snap + 0.5, 0.1], bArm: [1.5 * snap + 0.5, 0.1], punch: snap };
     case 'elbow': return { fArm: [1.9 * snap, 2.9], lean: 0.25 * snap };
+    case 'head':  return { fArm: [0.2, 0.1], bArm: [0.2, 0.1], lean: 0.6 * snap };
+    case 'lariat': return { fArm: [1.5, 0.0], lean: 0.4 * snap };
     case 'kick':  return { kick: snap };
     case 'knee':  return { knee: snap };
     case 'swing': return { fArm: [1.45 * snap + 0.5, 0.25], punch: snap * 0.7 };
@@ -733,28 +735,44 @@ function drawFighter(c, charDef, opts) {
 function drawPlayer() {
   const p = G.player;
   const c = G.char;
+  const air = p.airSlam ? (p.airSlam.h || 0) : 0;
   ctx.save();
   ctx.translate(p.x, p.y);
 
-  // 影子
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  // 影子（滯空時縮小變淡，落點圈告訴玩家會砸在哪）
+  const shK = air > 0 ? Math.max(0.45, 1 - air / 90) : 1;
+  ctx.fillStyle = 'rgba(0,0,0,' + (0.35 * shK) + ')';
   ctx.beginPath();
-  ctx.ellipse(0, p.r * 0.85, p.r * 0.9, p.r * 0.34, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, p.r * 0.85, p.r * 0.9 * shK, p.r * 0.34 * shK, 0, 0, Math.PI * 2);
   ctx.fill();
+  if (air > 0) {
+    const pulse = 0.55 + Math.sin(G.time * 14) * 0.25;
+    ctx.strokeStyle = 'rgba(224,145,60,' + pulse + ')';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.ellipse(0, p.r * 0.85, 150 * 0.34, 150 * 0.13, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([6, 6]);
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(0, p.r * 0.85, 150 * 0.5, 150 * 0.19, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.translate(0, -air);
 
   // 頭上連段提示：目前拍列＋奧義就緒閃光——玩家不用看角落也知道連段打到哪
   {
-    const ready = ougiReady();
+    const rdy = typeof comboReady === 'function' ? comboReady() : [];
     const bl = p.beatLog;
     const y0 = -34;
-    if (ready) {
+    if (rdy.length) {
+      // 連段就緒：直接告訴玩家「做什麼動作＝出什麼招」
+      const ACT = { S: '站', M: '走', D: 'Space' };
+      const txt = rdy.map(r => ACT[r.act] + '→' + r.name).join('　');
       ctx.font = 'bold 9px ' + FONT;
       ctx.textAlign = 'center';
       ctx.lineWidth = 3; ctx.strokeStyle = INK;
       ctx.globalAlpha = 0.75 + Math.sin(G.time * 12) * 0.25;
-      ctx.strokeText('奧義就緒！', 0, y0 - 3);
-      ctx.fillStyle = '#ffd44a';
-      ctx.fillText('奧義就緒！', 0, y0 - 3);
+      ctx.strokeText(txt, 0, y0 - 3);
+      ctx.fillStyle = rdy.some(r => r.sig) ? '#ffd44a' : '#e8e4dc';
+      ctx.fillText(txt, 0, y0 - 3);
       ctx.globalAlpha = 1;
       ctx.textAlign = 'left';
     } else if (bl.length) {

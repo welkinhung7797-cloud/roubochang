@@ -163,6 +163,50 @@ const MOVES = [
   { id: 'breath_heal', name: '吐納', short: '吐', slot: 'still', color: '#77c47f', price: 42,
     desc: '站定後調息：每秒回復最大生命的 1.2%。站著不動就是在練功。' },
 ];
+/* ---------- 連段樹 ----------
+   前兩拍是前綴（打中才記），第三個「動作」本身決定放哪一招——不用按 Space：
+     seq 結尾 S ＝ 站定的下一次普攻打中，那一下自動變招
+     seq 結尾 M ＝ 移動中的下一次普攻打中，那一下自動變招
+     seq 結尾 D ＝ 按 Space 那一下，衝刺技被連段招取代
+   sig: true 的是招牌招（有橫幅演出與較長冷卻）。
+   沒有 COMBOS 條目的職業自動退回 OUGI 表（同一套語意）。
+*/
+const COMBOS = {
+  karate: [
+    { seq: ['S', 'S', 'S'], name: '貫手', kind: 'strike_heavy',
+      params: { dmg: 40, range: 140, stun: 0.4, critNext: true, pose: 'jab', img: 'fx_nukite' },
+      desc: '兩拳定住對手，第三下五指併攏直接貫進去——最深的一擊，也是最沒有退路的一擊。' },
+    { seq: ['S', 'S', 'M'], name: '後迴蹴', kind: 'sweep_ring',
+      params: { dmg: 22, radius: 130, knock: 240, stun: 0.35, color: '#c9d96a', img: 'fx_geri_arc' },
+      desc: '站穩兩拳之後踏出去，整個人轉一圈，腳背從背後掃回來——被圍住時唯一的出路。' },
+    { seq: ['S', 'S', 'D'], name: '極正拳', kind: 'burst_single', sig: true,
+      params: { dmg: 110, critNext: true },
+      desc: '不動如山之後的那一步——全身的勁收在一個拳頭上，灌進要害。' },
+  ],
+  kenshi: [
+    { seq: ['S', 'S', 'S'], name: '袈裟斬', kind: 'strike_heavy',
+      params: { dmg: 45, range: 150, stun: 0.9, radius: 96, cleaveMul: 0.5, charge: 3, img: 'fx_slash_kesa', pose: 'chop' },
+      desc: '站定的第三刀不再試探：刀從肩線斜劈下去，砍中的人整個往下沉。' },
+    { seq: ['S', 'S', 'M'], name: '弧月斬', kind: 'sweep_ring',
+      params: { dmg: 24, radius: 165, knock: 130, stun: 0.3, color: '#b8c6dc', img: 'fx_slash_crescent' },
+      desc: '踏出去的那一步順勢把刀帶成一輪弧月，身邊一圈全部掃開。' },
+    { seq: ['S', 'S', 'D'], name: '十文字斬', kind: 'line_pierce', sig: true,
+      params: { dmg: 40, width: 76, len: 480, cross: true, crossLen: 300, crossMul: 0.8 },
+      desc: '先一刀貫穿整條直線衝到底，落地再反手橫掃一刀——兩道刀光在地上交成一個十字。' },
+  ],
+  wrestler: [
+    { seq: ['S', 'S', 'S'], name: '頭槌', kind: 'strike_heavy',
+      params: { dmg: 38, stun: 1.0, radius: 78, cleaveMul: 0.5, pose: 'head', img: 'fx_slam' },
+      desc: '手刀、手刀之後站定的那一下，直接用頭撞上去。' },
+    { seq: ['S', 'S', 'M'], name: '大足踢', kind: 'knock_cone',
+      params: { dmg: 30, knock: 260, arc: 90, range: 128, stun: 0.6 },
+      desc: '手刀兩下之後邁步跨出去，一隻腳整片掃過去把人踢飛。' },
+    { seq: ['S', 'S', 'D'], name: '飛奔金臂勾', kind: 'charge_line', sig: true,
+      params: { dmg: 55, len: 260, width: 96, knock: 380, stun: 1.0, pose: 'lariat' },
+      desc: '兩記手刀打底之後按衝刺，擒抱變成整條手臂的飛奔金臂勾，路上的人全部掛在臂彎上帶走。' },
+  ],
+};
+
 /* 同拍共鳴／三段勁的職業版顯示名（機制共用，只換字；查無此職業就用通用名） */
 const RESON_NAME = {
   karate:   { SSS: '氣合', MMM: '運足', DASH3: '連突', TRI: '殘心' },

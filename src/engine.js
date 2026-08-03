@@ -218,6 +218,9 @@ function startWave(w) {
   P.burstMulti = null; P.rushMulti = null; P.kneeChain = null; P.ougiField = 0;
   P.beatLog = []; P.beatT = 0; P.beatState = null; P.beatCd = 0; P.triCd = 0; P.stillHold = 0;
   P.dashChain = 0; P.dashChainT = 0; P.dashBeatCounted = false; P.ougiCd = 0;
+  P.comboCd = 0; P.comboFiring = false;
+  if (P.airSlam && P.airSlam.e) { P.airSlam.e.grabbed = false; P.airSlam.e.stun = 0.5; }
+  P.airSlam = null;
   P.dashCd = 0; P.moveTechTimer = 0; P.stillTechTimer = 0; P.counterProcCd = 0;
   P.focusStacks = 0; P.focusT = 0; P.breathAcc = 0;
   P.flashHasteT = 0; P.staggerT = 0; P.pose = null;
@@ -711,11 +714,11 @@ function throwDmg(base) {
 */
 function stillActive() {
   const p = G.player;
-  return p.stillT > 0.5 && !p.dashState && !p.grabState && !p.dead;
+  return p.stillT > 0.5 && !p.dashState && !p.grabState && !p.airSlam && !p.dead;
 }
 function movingActive() {
   const p = G.player;
-  return p.moveTime > 0.15 && !p.dashState && !p.grabState && !p.dead;
+  return p.moveTime > 0.15 && !p.dashState && !p.grabState && !p.airSlam && !p.dead;
 }
 /* 自動招式（移動技／站樁技）的傷害入口：鬼手甲加成收在這 */
 function autoDmg(base) {
@@ -725,25 +728,18 @@ function autoDmg(base) {
 function castDash() {
   const p = G.player;
   if (p.dead) return false;
+  if (p.airSlam) { p.airSlam.slam = true; return true; }   // 滯空中再按一次＝就地砸下去
   if (p.grabState || p.dashState || p.staggerT > 0 || p.burstMulti || p.rushMulti || p.kneeChain) return false;
   const id = p.moves.dash;
   const d = MOVE_MAP[id];
 
-  // 奧義判定：節拍湊齊職業指令，這一下 Space 就不是普通衝刺。
-  // 奧義不是衝刺，不吃衝刺冷卻——湊齊了隨時能放。
-  const o = OUGI[G.char.id];
-  if (o && (p.ougiCd || 0) <= 0 && beatsMatch(p.beatLog, o.seq)) {
-    const okO = castOugi(o);
-    if (okO) {
-      p.beatLog = []; p.beatT = 0;
-      p.dashCd = d.cd * 1.25 * TUNE.dashCdMul * (hasItem('master_obi') ? 0.8 : 1);
-      p.ougiCd = d.cd * 1.25;   // 奧義自身冷卻：防止純站/移拍序連發
-      G.ougiBanner = { name: o.name, t: 1.3 };
-      G.screenShake = Math.max(G.screenShake, 10);
-      addHitstop(0.12, true);
-      sfx('ougi_cast');
-      sfx('ougi_hit');
-      if (hasItem('fist_wrap')) p.guaranteedCrit = true;
+  // 連段判定：前綴湊齊時，這一下 Space 放的是連段招而不是衝刺技。
+  // 連段招不是衝刺，不吃衝刺冷卻。
+  const cd = matchCombo('D');
+  if (cd) {
+    const okC = castCombo(cd);
+    if (okC) {
+      p.dashCd = Math.max(p.dashCd, d.cd * 0.8 * TUNE.dashCdMul * (hasItem('master_obi') ? 0.8 : 1));
       return true;
     }
   }
@@ -898,6 +894,34 @@ function startGrab(e, d) {
   };
 }
 
+/* 飛天炸彈摔落地：把人砸進地板，落點炸一圈 */
+function doAirSlam(a) {
+  const p = G.player, e = a.e;
+  p.airSlam = null;
+  sfx('throw_hit');
+  addHitstop(0.13, true);
+  addBeat('S');
+  spawnFx('explode', p.x, p.y, '#b07a4a', 150);
+  spawnFx('shock', p.x, p.y, '#b07a4a', 150, { img: 'fx_slam' });
+  G.screenShake = Math.max(G.screenShake, 16);
+  e.grabbed = false;
+  e.x = p.x; e.y = p.y + 6;
+  hurtEnemy(e, throwDmg(26 + e.maxHp * 0.34), { trueDmg: true });
+  if (!e.dead) e.stun = 1.4;
+  for (const o of G.enemies) {
+    if (o.dead || o === e) continue;
+    if (dist2(o.x, o.y, p.x, p.y) < 150 * 150) {
+      hurtEnemy(o, throwDmg(22), { trueDmg: true });
+      if (!o.dead) {
+        o.stun = Math.max(o.stun, o.boss ? 0.4 : 1.0);
+        const ang = Math.atan2(o.y - p.y, o.x - p.x);
+        const kb = o.boss ? 40 : 180;
+        o.knockX += Math.cos(ang) * kb; o.knockY += Math.sin(ang) * kb;
+      }
+    }
+  }
+}
+
 /* 站樁技：震腳脈衝 */
 function quakePulse(d) {
   const p = G.player;
@@ -954,7 +978,7 @@ function lariatRun(d) {
   const runK = Math.min(1, p.moveTime / 2.0);
   const half = (d.arc * Math.PI / 180) / 2;
   spawnFx('swing', p.x, p.y, d.color, d.radius, { angle: ang, arc: d.arc, type: 'arc', img: 'fx_lariat' });
-  p.pose = { type: 'swing', ang, t: 0, dur: 0.25, prio: 1 };
+  p.pose = { type: 'lariat', ang, t: 0, dur: 0.25, prio: 1 };
   sfx('wind');
   let hitAny = false;
   for (const e of G.enemies) {
@@ -1200,6 +1224,14 @@ function updateTechniques(dt) {
   if (p.resonCd > 0) p.resonCd -= dt;
   if (p.dashChainT > 0) p.dashChainT -= dt; else p.dashChain = 0;
   if (p.ougiCd > 0) p.ougiCd -= dt;
+  if (p.comboCd > 0) p.comboCd -= dt;
+  // 連段窗口：停手太久前綴就散了——連段要一氣呵成，不是隔半分鐘慢慢湊。
+  // 只套用在有連段表的職業：他們的前綴是純站/移拍，一兩秒就湊得出來。
+  // 還在用舊奧義的職業前綴含衝刺拍（衝刺冷卻 5~9 秒），加窗口等於直接廢掉他們的奧義。
+  if (p.beatLog.length && COMBOS[G.char.id]) {
+    p.beatT += dt;
+    if (p.beatT > 2.5) { p.beatLog = []; p.beatT = 0; }
+  }
   if (p.flowT > 0) p.flowT -= dt;
 
   // ---- 站樁技 ----
@@ -1411,20 +1443,9 @@ function updateTechniques(dt) {
         e.y = p.y - 6;
         p.stillHold += dt;
         if (p.stillHold >= 0.5) {
-          sfx('throw_hit');
-          addHitstop(0.1, true);
-          addBeat('S');
-          spawnFx('explode', p.x, p.y, '#b07a4a', 120);
-          G.screenShake = Math.max(G.screenShake, 13);
-          hurtEnemy(e, throwDmg(20 + e.maxHp * 0.30), { trueDmg: true });
-          if (!e.dead) { e.grabbed = false; e.stun = 1.2; }
-          for (const o of G.enemies) {
-            if (o.dead || o === e) continue;
-            if (dist2(o.x, o.y, p.x, p.y) < 120 * 120) {
-              hurtEnemy(o, throwDmg(18), { trueDmg: true });
-              if (!o.dead) o.stun = Math.max(o.stun, 0.8);
-            }
-          }
+          // 炸彈摔＝把人抱起來跳上天，滯空期間自己走位選落點（再按一次 Space 提早落地）
+          sfx('dash');
+          p.airSlam = { e, t: 0, dur: 1.2, slam: false };
           p.grabState = null; p.stillHold = 0;
         }
       }
@@ -1438,6 +1459,27 @@ function updateTechniques(dt) {
       }
       e.x = Math.max(e.r, Math.min(ARENA.w - e.r, e.x));
       e.y = Math.max(e.r, Math.min(ARENA.h - e.r, e.y));
+    }
+  }
+  // ---- 飛天炸彈摔：滯空選落點 ----
+  if (p.airSlam) {
+    const a = p.airSlam;
+    const e = a.e;
+    if (!e || e.dead) { p.airSlam = null; }
+    else {
+      a.t += dt;
+      if (a.x0 === undefined) { a.x0 = p.x; a.y0 = p.y; }
+      const kA = Math.min(1, a.t / a.dur);
+      a.h = Math.min(52, a.t / 0.2 * 52) * (kA > 0.9 ? (1 - kA) * 10 : 1);   // 起跳升空、落地收回
+      p.iframe = Math.max(p.iframe, 0.08);   // 人在空中，地面的敵人碰不到（不是衝刺無敵）
+      // 滯空位移上限：這是重新定位，不是傳送
+      const dx0 = p.x - a.x0, dy0 = p.y - a.y0;
+      const dd0 = Math.hypot(dx0, dy0);
+      if (dd0 > 260) { p.x = a.x0 + dx0 / dd0 * 260; p.y = a.y0 + dy0 / dd0 * 260; }
+      e.grabbed = true; e.stun = 99;
+      e.x = p.x; e.y = p.y - 30 - a.h * 0.35;
+      e.knockX = 0; e.knockY = 0;
+      if (a.slam || a.t >= a.dur) doAirSlam(a);
     }
   }
   // ---- 迴旋抓摔：掄人 ----
@@ -1652,7 +1694,19 @@ function updateTechniques(dt) {
 function addBeat(type) {
   const p = G.player;
   if (p.dead || p.beatCd > 0) return;
+  // 連段樹：這個動作剛好補滿某條連段的最後一格 → 當場變招，這一拍不入譜。
+  // comboFiring 防遞迴：連段招本身命中時不會再去觸發連段。
+  if (!p.comboFiring && (type === 'S' || type === 'M')) {
+    const c = matchCombo(type);
+    if (c) {
+      p.comboFiring = true;
+      const fired = castCombo(c);
+      p.comboFiring = false;
+      if (fired) return;
+    }
+  }
   p.beatCd = 0.4;   // 同一瞬間的多段命中只記一拍
+  p.beatT = 0;      // 連段窗口重新計時
   p.beatLog.push(type);
   if (p.beatLog.length > 3) p.beatLog.shift();
   // 同拍共鳴：三拍同型自動觸發輕增益——喜歡「一直移動一直打」的玩家不用搓招也有獎勵
@@ -1724,16 +1778,178 @@ function beatsMatch(log, seq) {
   const tail = log.slice(-seq.length);
   return seq.every((b, i) => tail[i] === b);
 }
-function ougiReady() {
-  const o = OUGI[G.char.id];
-  return !!(o && (G.player.ougiCd || 0) <= 0 && beatsMatch(G.player.beatLog, o.seq));
+/* 這個職業的連段表：沒定義就把 OUGI 當成單條招牌連段（語意相同） */
+function comboList() {
+  const id = G.char && G.char.id;
+  if (!id) return [];
+  if (COMBOS[id]) return COMBOS[id];
+  const o = OUGI[id];
+  if (!o) return [];
+  // 還沒做連段表的職業：奧義維持「湊齊指令後按 Space」——結尾不是 D 的就補一格 D，
+  // 語意才跟連段樹一致（最後一格＝玩家做的動作），行為也跟改版前相同。
+  const seq = o.seq[o.seq.length - 1] === 'D' ? o.seq : o.seq.concat('D');
+  return [{ seq, name: o.name, kind: o.kind, params: o.params, desc: o.desc, sig: true }];
 }
 
-function castOugi(o) {
+/* 前綴符合、且第三個動作＝action 的連段。action 是玩家「正在做的動作」不是已記錄的拍。 */
+function matchCombo(action) {
+  const p = G.player;
+  if (!p) return null;
+  const log = p.beatLog;
+  for (const c of comboList()) {
+    const need = c.seq.length - 1;
+    if (c.seq[need] !== action) continue;
+    if (log.length < need) continue;
+    const tail = log.slice(log.length - need);
+    let ok = true;
+    for (let i = 0; i < need; i++) if (tail[i] !== c.seq[i]) { ok = false; break; }
+    if (ok) return c;
+  }
+  return null;
+}
+
+/* 目前打得出來的連段（頭上提示用） */
+function comboReady() {
+  const out = [];
+  for (const act of ['S', 'M', 'D']) {
+    const c = matchCombo(act);
+    if (c) out.push({ act, name: c.name, sig: !!c.sig });
+  }
+  return out;
+}
+
+/* 發動連段：招牌招走奧義演出＋冷卻，收尾招是輕演出 */
+function castCombo(c, target) {
+  const p = G.player;
+  if (c.sig) { if ((p.ougiCd || 0) > 0) return false; }
+  else if ((p.comboCd || 0) > 0) return false;
+  const ok = castOugi(c, target);
+  if (!ok) return false;
+  p.beatLog = []; p.beatT = 0;
+  if (c.sig) {
+    p.ougiCd = 7.5;
+    G.ougiBanner = { name: c.name, t: 1.3 };
+    G.screenShake = Math.max(G.screenShake, 10);
+    addHitstop(0.12, true);
+    sfx('ougi_cast'); sfx('ougi_hit');
+  } else {
+    p.comboCd = 2.5;
+    addDmgNum(p.x, p.y - 46, c.name, '#ffd44a', true);
+    G.screenShake = Math.max(G.screenShake, 6);
+    addHitstop(0.07, true);
+    sfx('ougi_hit');
+  }
+  if (hasItem('fist_wrap')) p.guaranteedCrit = true;
+  return true;
+}
+
+function ougiReady() {
+  const c = matchCombo('D');
+  return !!(c && (G.player.ougiCd || 0) <= 0);
+}
+
+function castOugi(o, target) {
   const p = G.player;
   const pr = o.params;
   let ok = false;
   switch (o.kind) {
+    /* ---- 連段收尾招（通用模板，各職業共用） ---- */
+    case 'strike_heavy': {
+      // 重擊：對眼前目標灌一記，順帶震到貼身的人
+      const e0 = target && !target.dead ? target : nearestEnemy(p.x, p.y, 150);
+      if (!e0) break;
+      const a0 = Math.atan2(e0.y - p.y, e0.x - p.x);
+      p.pose = { type: pr.pose || 'head', ang: a0, t: 0, dur: 0.28, prio: 1 };
+      hurtEnemy(e0, techDmg(pr.dmg), { crit: true, fromAngle: a0 });
+      if (!e0.dead) e0.stun = Math.max(e0.stun, e0.boss ? pr.stun * 0.4 : pr.stun);
+      spawnFx('explode', e0.x, e0.y, '#e8e4dc', 74);
+      if (pr.img) spawnFx('swing', p.x, p.y, '#e8e4dc', 120, { angle: a0, arc: 120, type: 'arc', img: pr.img });
+      if (pr.radius) {
+        for (const o2 of G.enemies) {
+          if (o2.dead || o2 === e0) continue;
+          if (dist2(o2.x, o2.y, e0.x, e0.y) < pr.radius * pr.radius) {
+            hurtEnemy(o2, techDmg(pr.dmg * (pr.cleaveMul || 0.4)), { trueDmg: true });
+            if (!o2.dead) o2.stun = Math.max(o2.stun, pr.stun * 0.4);
+          }
+        }
+      }
+      // 收尾之後把勁留給下一擊：貫手替下一拳上必爆、袈裟斬留殘心
+      if (pr.critNext) p.guaranteedCrit = true;
+      if (pr.charge) p.chargeHits = Math.max(p.chargeHits || 0, pr.charge);
+      sfx('hit_heavy');
+      ok = true; break;
+    }
+    case 'sweep_ring': {
+      // 迴身一整圈：解圍用，賣的是擊退不是傷害
+      p.pose = { type: 'kick', ang: p.face > 0 ? 0 : Math.PI, t: 0, dur: 0.32, prio: 1 };
+      spawnFx('swing', p.x, p.y, pr.color || '#c9d96a', pr.radius,
+        { angle: 0, arc: 360, type: 'spin', img: pr.img });
+      for (const o2 of G.enemies) {
+        if (o2.dead) continue;
+        if (dist2(o2.x, o2.y, p.x, p.y) > (pr.radius + o2.r) * (pr.radius + o2.r)) continue;
+        hurtEnemy(o2, techDmg(pr.dmg), { trueDmg: true });
+        if (!o2.dead) {
+          const ea = Math.atan2(o2.y - p.y, o2.x - p.x);
+          const kb = o2.boss ? pr.knock * 0.2 : pr.knock;
+          o2.knockX += Math.cos(ea) * kb; o2.knockY += Math.sin(ea) * kb;
+          o2.stun = Math.max(o2.stun, o2.boss ? pr.stun * 0.4 : pr.stun);
+        }
+      }
+      sfx('swing_leg');
+      ok = true; break;
+    }
+    case 'knock_cone': {
+      // 扇形踢飛：一整片掃出去，主打位移不是傷害
+      const e1 = target && !target.dead ? target : nearestEnemy(p.x, p.y, pr.range);
+      const a1 = e1 ? Math.atan2(e1.y - p.y, e1.x - p.x) : (p.face > 0 ? 0 : Math.PI);
+      const half = (pr.arc * Math.PI / 180) / 2;
+      p.pose = { type: 'kick', ang: a1, t: 0, dur: 0.3, prio: 1 };
+      spawnFx('swing', p.x, p.y, '#c98a3c', pr.range, { angle: a1, arc: pr.arc, type: 'arc', img: 'fx_lariat' });
+      for (const o2 of G.enemies) {
+        if (o2.dead) continue;
+        if (dist2(o2.x, o2.y, p.x, p.y) > (pr.range + o2.r) * (pr.range + o2.r)) continue;
+        const ea = Math.atan2(o2.y - p.y, o2.x - p.x);
+        if (Math.abs(angDiff(ea, a1)) > half) continue;
+        hurtEnemy(o2, techDmg(pr.dmg), { fromAngle: a1 });
+        if (!o2.dead) {
+          const kb = o2.boss ? pr.knock * 0.2 : pr.knock;
+          o2.knockX += Math.cos(ea) * kb; o2.knockY += Math.sin(ea) * kb;
+          o2.stun = Math.max(o2.stun, o2.boss ? pr.stun * 0.4 : pr.stun);
+        }
+        ok = true;
+      }
+      sfx('swing_leg');
+      if (!ok) ok = true;   // 掃空也算出招（動作已經做出去了）
+      break;
+    }
+    case 'charge_line': {
+      // 橫掛衝鋒：朝方向衝一段，路徑上的人全部被掛倒
+      const dirC = dashDir();
+      const ex2 = Math.max(p.r, Math.min(ARENA.w - p.r, p.x + dirC.x * pr.len));
+      const ey2 = Math.max(p.r, Math.min(ARENA.h - p.r, p.y + dirC.y * pr.len));
+      const aC = Math.atan2(dirC.y, dirC.x);
+      for (const o2 of G.enemies) {
+        if (o2.dead) continue;
+        const t2 = Math.max(0, Math.min(1,
+          ((o2.x - p.x) * (ex2 - p.x) + (o2.y - p.y) * (ey2 - p.y)) / (dist2(p.x, p.y, ex2, ey2) || 1)));
+        const qx = p.x + (ex2 - p.x) * t2, qy = p.y + (ey2 - p.y) * t2;
+        if (dist2(o2.x, o2.y, qx, qy) < (pr.width / 2 + o2.r) * (pr.width / 2 + o2.r)) {
+          hurtEnemy(o2, techDmg(pr.dmg), { crit: chance(0.35), fromAngle: aC });
+          if (!o2.dead) {
+            const kb = o2.boss ? pr.knock * 0.2 : pr.knock;
+            o2.knockX += Math.cos(aC) * kb; o2.knockY += Math.sin(aC) * kb;
+            o2.stun = Math.max(o2.stun, o2.boss ? pr.stun * 0.4 : pr.stun);
+          }
+        }
+      }
+      spawnFx('swing', p.x, p.y, '#c98a3c', 130, { angle: aC, arc: 150, type: 'arc', img: 'fx_lariat' });
+      p.pose = { type: pr.pose || 'swing', ang: aC, t: 0, dur: 0.35, prio: 1 };
+      p.x = ex2; p.y = ey2;
+      pushOutOfWalls(p);
+      spawnFx('slide', p.x, p.y, '#c98a3c', 40, { angle: aC });
+      sfx('wind');
+      ok = true; break;
+    }
     case 'burst_single': {
       const e = nearestEnemy(p.x, p.y, 420);
       if (!e) break;
@@ -1745,6 +1961,7 @@ function castOugi(o) {
       if (!e.dead) e.stun = Math.max(e.stun, 1.0);
       spawnFx('explode', e.x, e.y, '#ffffff', 90);
       spawnFx('shock', e.x, e.y, '#ffd44a', 100, { img: 'fx_kime_burst' });
+      if (pr.critNext) p.guaranteedCrit = true;
       ok = true; break;
     }
     case 'burst_multi': {
@@ -2196,7 +2413,7 @@ function applyWeaponHit(w, e, reach, mulOverride, isEcho) {
     crit, fromAngle: w.angle, weaponLifesteal: w.lifesteal,
   });
 
-  // 記拍：這一下是在什麼狀態打中的
+  // 記拍：這一下是在什麼狀態打中的（連段收尾判定統一在 addBeat 內）
   if (!isEcho) {
     const b = beatFromState();
     if (b) addBeat(b);
