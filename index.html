@@ -92,7 +92,14 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .foot-label{font-size:12px;color:var(--muted);letter-spacing:.14em}
 
 /* ---- 升級 ---- */
-#panel-levelup{background:rgba(11,8,5,.94)}
+/* 升級：世界要看得見（參考片的升級是半透明覆蓋在戰場上，不是一面黑牆），
+   數值面板釘在右邊全程可見。 */
+#panel-levelup{background:rgba(11,8,5,.72)}
+#levelup-stats{position:absolute;right:22px;top:50%;transform:translateY(-50%);
+  width:300px;max-height:78vh;overflow-y:auto;background:var(--panel);
+  outline:3px solid var(--ink2);box-shadow:5px 5px 0 var(--ink2);padding:10px}
+#panel-levelup #levelup-cards{margin-right:320px}
+#panel-levelup #levelup-title,#panel-levelup .sub{margin-right:320px}
 #levelup-title{font-size:30px;font-weight:900;letter-spacing:.18em}
 #levelup-cards{display:flex;gap:14px;margin-top:26px}
 .lv-card{width:214px;background:var(--panel);border:2px solid var(--line);padding:20px 16px;
@@ -134,9 +141,17 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .lock-btn{background:var(--panel2);border:1px solid var(--line);color:var(--muted);font-size:12px;padding:8px 10px}
 .lock-btn.on{background:#3a2f18;border-color:var(--gold);color:var(--gold)}
 
-.shop-lower{display:flex;gap:12px;width:100%;max-width:1200px;margin-top:11px;flex:1;min-height:0}
+/* 商店骨架（2026-08-04 依總監給的參考片改版）：
+   主欄＝四張卡＋裝備庫（裝備庫置中，就在你剛買的東西正下方，買完馬上看到它進了哪一格）；
+   右欄＝常駐數值面板＋出發鍵。數值面板必須全程看得到——玩家在決定要不要買 +2 護甲的時候，
+   得同時看得到自己現在幾點護甲，否則那個決定是瞎猜的。 */
+.shop-body{display:flex;gap:12px;width:100%;max-width:1240px;flex:1;min-height:0;margin-top:11px}
+.shop-main{flex:1;display:flex;flex-direction:column;gap:11px;min-width:0}
+.shop-side{width:326px;flex:none;display:flex;flex-direction:column;gap:10px}
 #loadout{flex:1;background:var(--panel);border:2px solid var(--line);padding:10px;overflow-y:auto}
-#stats-panel{width:330px;background:var(--panel);border:2px solid var(--line);padding:10px}
+#stats-panel{flex:1;background:var(--panel);border:2px solid var(--line);padding:10px;overflow-y:auto}
+.shop-side .btn{width:100%;padding:15px 0;font-size:17px}
+.shop-side .keyhint{font-size:10.5px;color:#8a795e;line-height:1.7;letter-spacing:.04em;text-align:center}
 .sec-title{font-size:12px;font-weight:800;letter-spacing:.16em;color:var(--muted);
   border-bottom:1px solid var(--line);padding-bottom:5px;margin-bottom:8px}
 .loadout-row{display:flex;flex-wrap:wrap;gap:7px}
@@ -408,6 +423,8 @@ button:disabled{cursor:not-allowed;opacity:.45}
     <div id="levelup-title"></div>
     <div class="sub" style="margin-top:6px">選一項永久強化</div>
     <div id="levelup-cards"></div>
+    <!-- 選卡時數值面板要看得到：決定要不要拿 +2 護甲，得同時看得到自己現在幾點護甲 -->
+    <div id="levelup-stats"></div>
   </div>
 
   <!-- 商店 -->
@@ -417,14 +434,16 @@ button:disabled{cursor:not-allowed;opacity:.45}
       <button id="shop-reroll" class="btn" style="padding:8px 18px;font-size:13px">重骰</button>
       <div class="mat"><b id="shop-mat">0</b> 素材</div>
     </div>
-    <div id="shop-items"></div>
-    <div class="shop-lower">
-      <div id="loadout"></div>
-      <div id="stats-panel"></div>
-    </div>
-    <div class="shop-foot">
-      <button id="shop-next" class="btn primary"><span id="shop-next-label">進入下一波</span></button>
-      <span class="keyhint">R 重骰　·　Enter 進入下一波　·　同名同階武器買下即合成</span>
+    <div class="shop-body">
+      <div class="shop-main">
+        <div id="shop-items"></div>
+        <div id="loadout"></div>
+      </div>
+      <div class="shop-side">
+        <div id="stats-panel"></div>
+        <button id="shop-next" class="btn primary"><span id="shop-next-label">進入下一波</span></button>
+        <span class="keyhint">R 重骰　·　Enter 下一波<br>同名同階武器買下即合成</span>
+      </div>
     </div>
   </div>
 

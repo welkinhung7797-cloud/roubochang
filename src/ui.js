@@ -252,6 +252,7 @@ function beginRun() {
 
 /* ---------- 升級四選一 ---------- */
 function renderLevelUp() {
+  renderStatsPanel('levelup-stats');   // 選卡時數值全程看得到（參考片的做法）
   $('levelup-title').textContent = '等級 ' + G.level + (G.levelQueue > 1 ? '　（還有 ' + (G.levelQueue - 1) + ' 次）' : '');
   const wrap = $('levelup-cards');
   wrap.innerHTML = '';
@@ -507,9 +508,10 @@ function renderLoadout() {
   }
 }
 
-function renderStatsPanel() {
+function renderStatsPanel(elId) {
   const p = G.player;
-  const wrap = $('stats-panel');
+  const wrap = $(elId || 'stats-panel');
+  if (!wrap) return;
   wrap.innerHTML = '<div class="sec-title">屬性</div>';
   const grid = document.createElement('div');
   grid.className = 'stat-grid';
