@@ -496,7 +496,8 @@ function attackPose(pose) {
     case 'chop':  return { fArm: [2.6 - snap * 1.3, 0.3], chopSwing: snap };
     case 'palm':  return { fArm: [1.5 * snap + 0.5, 0.1], bArm: [1.5 * snap + 0.5, 0.1], punch: snap };
     case 'elbow': return { fArm: [1.9 * snap, 2.9], lean: 0.25 * snap };
-    case 'head':  return { fArm: [0.2, 0.1], bArm: [0.2, 0.1], lean: 0.6 * snap };
+    case 'head':  return { fArm: [0.2, 0.1], bArm: [0.2, 0.1], lean: -0.35 + 1.15 * snap };   // 先仰後撞
+    case 'hold':  return { fArm: [1.05, 0.35], bArm: [1.05, 0.35], lean: 0.12 };
     case 'lariat': return { fArm: [1.5, 0.0], lean: 0.4 * snap };
     case 'kick':  return { kick: snap };
     case 'knee':  return { knee: snap };

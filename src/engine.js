@@ -885,6 +885,11 @@ function startGrab(e, d) {
   const p = G.player;
   sfx('grab');
   addBeat('D');
+  addHitstop(0.09, true);
+  G.screenShake = Math.max(G.screenShake, 6);
+  e.hitSquash = Math.max(e.hitSquash || 0, 0.24);
+  e.hitFlash = Math.max(e.hitFlash || 0, 0.12);
+  spawnFx('spark', e.x, e.y, '#ffd44a', e.r, { angle: Math.atan2(e.y - p.y, e.x - p.x) });
   e.grabbed = true;
   e.stun = 99;
   p.grabState = {
@@ -1410,6 +1415,8 @@ function updateTechniques(dt) {
     if (e.dead) { p.grabState = null; }
     else {
       g.t += dt;
+      // 抓的人雙臂一直鎖著對方（prio 1：武器揮擊不搶走這個姿勢）
+      p.pose = { type: 'hold', ang: Math.atan2(e.y - p.y, e.x - p.x), t: 0.12, dur: 0.35, prio: 1 };
       const moving = p.moveTime > 0.1;
       if (moving) {
         // 掄著他甩打周遭（移動拍）
@@ -1438,9 +1445,9 @@ function updateTechniques(dt) {
           hurtEnemy(e, throwDmg(2), { trueDmg: true, noLifesteal: true });
         }
       } else {
-        // 站定醞釀炸彈摔（站樁拍）
-        e.x = p.x + p.face * (p.r + e.r - 2);
-        e.y = p.y - 6;
+        // 站定醞釀炸彈摔（站樁拍）——人質在懷裡掙扎，不是貼紙
+        e.x = p.x + p.face * (p.r + e.r - 2) + Math.sin(g.t * 21) * 1.4;
+        e.y = p.y - 6 + Math.cos(g.t * 16) * 1.0;
         p.stillHold += dt;
         if (p.stillHold >= 0.5) {
           // 炸彈摔＝把人抱起來跳上天，滯空期間自己走位選落點（再按一次 Space 提早落地）
@@ -1859,11 +1866,20 @@ function castOugi(o, target) {
       const e0 = target && !target.dead ? target : nearestEnemy(p.x, p.y, 150);
       if (!e0) break;
       const a0 = Math.atan2(e0.y - p.y, e0.x - p.x);
-      p.pose = { type: pr.pose || 'head', ang: a0, t: 0, dur: 0.28, prio: 1 };
+      p.pose = { type: pr.pose || 'head', ang: a0, t: 0, dur: 0.3, prio: 1 };
+      // 重心真的壓過去：朝目標撞進一步（頭槌沒有位移就沒有頭槌的感覺）
+      const lunge = pr.lunge !== undefined ? pr.lunge : 20;
+      p.x = Math.max(p.r, Math.min(ARENA.w - p.r, p.x + Math.cos(a0) * lunge));
+      p.y = Math.max(p.r, Math.min(ARENA.h - p.r, p.y + Math.sin(a0) * lunge));
+      pushOutOfWalls(p);
       hurtEnemy(e0, techDmg(pr.dmg), { crit: true, fromAngle: a0 });
+      e0.hitSquash = Math.max(e0.hitSquash || 0, 0.22);
+      e0.hitFlash = Math.max(e0.hitFlash || 0, 0.1);
       if (!e0.dead) e0.stun = Math.max(e0.stun, e0.boss ? pr.stun * 0.4 : pr.stun);
+      addHitstop(0.1, true);
       spawnFx('explode', e0.x, e0.y, '#e8e4dc', 74);
-      if (pr.img) spawnFx('swing', p.x, p.y, '#e8e4dc', 120, { angle: a0, arc: 120, type: 'arc', img: pr.img });
+      spawnFx('spark', e0.x, e0.y, '#ffffff', e0.r, { angle: a0 });
+      if (pr.img) spawnFx('shock', e0.x, e0.y, '#e8e4dc', 90, { img: pr.img });
       if (pr.radius) {
         for (const o2 of G.enemies) {
           if (o2.dead || o2 === e0) continue;
