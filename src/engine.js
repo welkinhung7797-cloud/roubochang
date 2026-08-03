@@ -920,6 +920,7 @@ function startGrab(e, d) {
 function doAirSlam(a) {
   const p = G.player, e = a.e;
   p.airSlam = null;
+  p.poseAfter = { type: 'slamland', t: 0.28 };   // 落地壓扁定格（slam_2）
   p.staggerT = Math.max(p.staggerT, 0.35 + 0.65 * (a.dizzy || 0));   // 掄越久，落地後越站不穩
   sfx('throw_hit');
   addHitstop(0.16, true);

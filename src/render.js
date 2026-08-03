@@ -244,6 +244,7 @@ const FRAME_DEFS = {
    缺圖一律退回 punch（絕不退回 idle）。 */
 const POSE_FRAMESET = {
   head: 'headbutt', kick: 'bigboot', knee: 'bigboot', elbow: 'elbow', hold: 'grab',
+  slamland: 'slam',
 };
 const ACC_IMGS = {};   // charId -> Image（頭部配件）
 const FX_IMGS = {};    // fx 名 -> Image（招式特效貼圖，黑底發光）
@@ -327,7 +328,13 @@ function pickFrame(p) {
     return pick('dash', Math.floor(t * 10) % 2);
   }
   if (p.grabState) return pick('grab', p.grabState.mode === 'hold' && p.stillHold > 0.2 ? 1 : 0);
-  if (p.airSlam) return pick('grab', 1);   // 舉人過頂：滯空全程雙翅高舉，不是抱著人走路
+  if (p.airSlam) {
+    const kA = p.airSlam.t / (p.airSlam.dur || 1);
+    if (p.airSlam.slam || kA > 0.91) {
+      if (ok(src, 'slam', 0) || ok(BASE_FRAMES, 'slam', 0)) return pick('slam', 0);   // 頭下腳上砸落
+    }
+    return pick('grab', 1);   // 舉人過頂：滯空全程雙翅高舉，不是抱著人走路
+  }
   if (p.pose && p.pose.prio >= 0 && p.pose.type !== 'stomp') {
     // 手刀走絕對毫秒：接觸幀必須涵蓋 110~180ms 的判定窗——
     // 兩套時間軸（畫面百分比 vs 判定毫秒）只重疊 7ms 就是「手刀沒力」的機械原因
