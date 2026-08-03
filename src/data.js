@@ -12,7 +12,7 @@
 const TUNE_DEFS = [
   { g: '玩家', k: 'playerHp',       n: '初始生命',       def: 60,    min: 10,  max: 300,  step: 5 },
   { g: '玩家', k: 'playerSpeed',    n: '移動速度',       def: 190,   min: 80,  max: 400,  step: 10 },
-  { g: '玩家', k: 'playerDmgMul',   n: '傷害倍率',       def: 1.0,   min: 0.2, max: 5,    step: 0.1 },
+  { g: '玩家', k: 'playerDmgMul',   n: '傷害倍率',       def: 0.8,   min: 0.2, max: 5,    step: 0.1 },
   { g: '玩家', k: 'playerAtkSpdMul', n: '攻速倍率',      def: 1.0,   min: 0.2, max: 5,    step: 0.1 },
   { g: '玩家', k: 'playerRangeMul', n: '攻擊範圍倍率',   def: 1.0,   min: 0.3, max: 3,    step: 0.1 },
   { g: '玩家', k: 'levelHp',        n: '升級送生命',     def: 3,     min: 0,   max: 30,   step: 1 },
@@ -38,6 +38,20 @@ TUNE_DEFS.forEach(d => TUNE[d.k] = d.def);
     for (const k in saved) if (k in TUNE && typeof saved[k] === 'number') TUNE[k] = saved[k];
   } catch (e) {}
 })();
+
+/* 職業覆寫（F2 面板的職業調整存這裡，啟動時蓋回 CHARACTERS） */
+function loadCharTune() {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    const saved = JSON.parse(localStorage.getItem('penguin_char_tune_v1') || '{}');
+    for (const id in saved) {
+      const ch = CHARACTERS.find(c => c.id === id);
+      if (!ch) continue;
+      if (saved[id].stats) ch.stats = saved[id].stats;
+      if (saved[id].moves) ch.moves = saved[id].moves;
+    }
+  } catch (e) {}
+}
 
 /* ---------- 屬性定義 ---------- */
 const STAT_DEFS = [
@@ -94,8 +108,8 @@ const MOVES = [
     desc: '滑行擒抱住撞到的第一個敵人。抓住之後：移動＝掄著他甩打周遭；站定＝炸彈摔砸出範圍重擊。抓不住頭目。',
     dashSpd: 800, dashDur: 0.35, holdDur: 3.5 },
   { id: 'iai_slash', name: '拔刀斬', short: '拔', slot: 'dash', color: '#4f5d75', cd: 6, price: 42,
-    desc: '極速拔刀衝斬，路徑上的敵人全部挨一刀且極易爆擊。代價：無論有沒有斬中，收刀都會硬直半秒。',
-    dashSpd: 900, dashDur: 0.22 },
+    desc: '按下後凝神拔刀（短停頓），再爆發衝斬：路徑上的敵人全部挨一刀且極易爆擊。斬完收刀又是半秒硬直——居合是節奏的藝術。',
+    dashSpd: 900, dashDur: 0.22, windup: 0.28 },
   { id: 'shadow_dash', name: '影遁', short: '影', slot: 'dash', color: '#33384a', cd: 5, price: 38,
     desc: '所有衝刺技裡距離最遠的瞬身，全程無敵、穿過敵人——但不造成任何傷害。純機動，換位神技。',
     dashSpd: 1300, dashDur: 0.4 },
@@ -272,7 +286,7 @@ const CHARACTERS = [
   {
     id: 'wrestler', name: '摔角手', tag: '抓取控場',
     color: '#c2703c', skin: '#b07a4a',
-    stats: { maxHp: 30, dmg: 15, armor: 3, speed: -10, atkSpd: -20 },
+    stats: { maxHp: 30, dmg: 15, armor: 3, speed: -18, range: -15, atkSpd: -20 },
     weapon: 'suplex', slots: 6,
     special: 'grab_master',
     moves: { dash: 'suplex_grab', move: 'phantom_press', still: 'counter_stance' },
@@ -281,11 +295,11 @@ const CHARACTERS = [
   {
     id: 'karate', name: '空手道家', tag: '一擊必殺',
     color: '#e8e4dc', skin: '#ece8e0',
-    stats: { crit: 15, dmg: 10, maxHp: -20, armor: -2 },
+    stats: { crit: 15, dmg: 10, range: -12, maxHp: -20, armor: -2 },
     weapon: 'reverse_punch', slots: 6,
     special: 'crit_shock',
-    moves: { dash: 'mountain_bash', move: 'gale_step', still: 'focus_strike' },
-    desc: '紙糊的身體，致命的拳。爆擊時對周圍 90 範圍內所有敵人追加一次半傷震盪。',
+    moves: { dash: 'mountain_bash', move: 'cyclone_kick', still: 'focus_strike' },
+    desc: '紙糊的身體，拳腳皆兵。爆擊時對周圍 90 範圍內所有敵人追加一次半傷震盪。',
   },
   {
     id: 'kenshi', name: '劍豪', tag: '重斬慢刀',
@@ -431,7 +445,7 @@ const WEAPONS = [
     dmg: 26, cd: 1.05, range: 80, arc: 360, knock: 150, critMult: 2.0, crit: 8, price: 20,
     desc: '把貼身的敵人整個掀開，擊退極高。' },
   { id: 'reverse_punch', name: '正拳', klass: '拳', type: 'thrust', icon: 'fist', color: '#e8e4dc',
-    dmg: 18, cd: 0.72, range: 102, arc: 26, knock: 55, critMult: 2.2, crit: 12, price: 16,
+    dmg: 18, cd: 0.72, range: 102, arc: 22, knock: 55, critMult: 2.2, crit: 12, price: 16, strikeSpd: 1100,
     desc: '瞄準要害的直線一擊，爆擊倍率很高。' },
   { id: 'palm', name: '鐵砂掌', klass: '掌', type: 'thrust', icon: 'palm', color: '#d9b06a',
     dmg: 22, cd: 0.9, range: 127, arc: 30, knock: 90, critMult: 1.7, crit: 6, price: 18,

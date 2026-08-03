@@ -407,9 +407,104 @@ function saveTune() {
   try { localStorage.setItem('penguin_tune_v1', JSON.stringify(TUNE)); } catch (e) {}
 }
 
+function saveCharTune() {
+  try {
+    const data = JSON.parse(localStorage.getItem('penguin_char_tune_v1') || '{}');
+    const ch = G.char;
+    if (!ch) return;
+    data[ch.id] = { stats: ch.stats, moves: ch.moves };
+    localStorage.setItem('penguin_char_tune_v1', JSON.stringify(data));
+  } catch (e) {}
+}
+
+/* 職業調整區：進了局才出現，直接調當前職業的初始數值、三招與裝備 */
+function buildCharTuneSection(body) {
+  const p = G.player, ch = G.char;
+  if (!p || !ch) return;
+  const gh = document.createElement('div');
+  gh.className = 'tune-group';
+  gh.textContent = '目前職業：' + ch.name + '（改了即時生效並記住）';
+  body.appendChild(gh);
+
+  // 13 項初始數值
+  STAT_DEFS.forEach(sd => {
+    const cur = ch.stats[sd.key] || 0;
+    const row = document.createElement('div');
+    row.className = 'tune-row' + (cur !== 0 ? ' changed' : '');
+    row.innerHTML = '<label>' + sd.name + '</label>' +
+      '<input type="number" step="1" value="' + cur + '" style="width:70px">';
+    const num = row.querySelector('input');
+    num.onchange = () => {
+      const v = parseFloat(num.value);
+      if (isNaN(v)) return;
+      const old = ch.stats[sd.key] || 0;
+      ch.stats[sd.key] = v;
+      p.perm[sd.key] += v - old;   // 即時生效：差值直接進本局
+      recalcStats(p);
+      row.classList.toggle('changed', v !== 0);
+      saveCharTune();
+    };
+    body.appendChild(row);
+  });
+
+  // 三招下拉直換（測試模式不受已學限制）
+  ['dash', 'move', 'still'].forEach(slot => {
+    const row = document.createElement('div');
+    row.className = 'tune-row';
+    const opts = movesBySlot(slot).map(m =>
+      '<option value="' + m.id + '"' + (p.moves[slot] === m.id ? ' selected' : '') + '>' + m.name + '</option>').join('');
+    row.innerHTML = '<label>' + SLOT_NAME[slot] + '</label><select style="flex:1.2;background:#1e222c;color:#e2e4e9;border:1px solid #2c3340;font-size:12px;padding:2px">' + opts + '</select>';
+    row.querySelector('select').onchange = e => {
+      p.moves[slot] = e.target.value;
+      if (!p.knownMoves.includes(e.target.value)) p.knownMoves.push(e.target.value);
+      ch.moves[slot] = e.target.value;
+      saveCharTune();
+    };
+    body.appendChild(row);
+  });
+
+  // 裝備：任意給予／點擊移除
+  const gearRow = document.createElement('div');
+  gearRow.className = 'tune-row';
+  gearRow.innerHTML = '<label>給裝備</label><select style="flex:1.2;background:#1e222c;color:#e2e4e9;border:1px solid #2c3340;font-size:12px;padding:2px">' +
+    GEAR.map(g => '<option value="' + g.id + '">' + g.name + '</option>').join('') +
+    '</select><button style="background:#2a3040;border:1px solid #3c4354;color:#e2e4e9;font-size:11px;padding:2px 8px">給</button>';
+  gearRow.querySelector('button').onclick = () => {
+    const id = gearRow.querySelector('select').value;
+    G.player.items.push(GEAR_MAP[id]);
+    recalcStats(G.player);
+    toast('已給予 ' + GEAR_MAP[id].name);
+    rebuildTuneBody();
+  };
+  body.appendChild(gearRow);
+  const owned = p.items.filter(i => GEAR_MAP[i.id]);
+  if (owned.length) {
+    const list = document.createElement('div');
+    list.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;padding:4px 0';
+    owned.forEach((it, idx) => {
+      const chip = document.createElement('span');
+      chip.textContent = it.name + ' ×';
+      chip.style.cssText = 'font-size:10.5px;border:1px solid #3c4354;padding:1px 6px;cursor:pointer;color:#c8ccd6';
+      chip.title = '點擊移除';
+      chip.onclick = () => {
+        const i = p.items.indexOf(it);
+        if (i >= 0) p.items.splice(i, 1);
+        recalcStats(p);
+        rebuildTuneBody();
+      };
+      list.appendChild(chip);
+    });
+    body.appendChild(list);
+  }
+}
+
+function rebuildTuneBody() { buildTunePanel(); }
+
 function buildTunePanel() {
   const body = $('tune-body');
-  if (!body || body.childElementCount) return;
+  if (!body) return;
+  body.innerHTML = '';   // 每次打開都重建：職業區跟著當前角色走
+  buildCharTuneSection(body);
   let curGroup = null;
   TUNE_DEFS.forEach(d => {
     if (d.g !== curGroup) {
@@ -741,6 +836,7 @@ window.addEventListener('error', e => {
 });
 
 function boot() {
+  loadCharTune();   // F2 面板存的職業覆寫先蓋回資料表
   SAVE = loadSave();
   initRender();
   initInput();

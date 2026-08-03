@@ -208,6 +208,7 @@ function startWave(w) {
   G.waveEnding = 0;
   G.enemies = []; G.projectiles = []; G.fx = []; G.strikes = [];
   G.hitstop = 0; G.hitstopCd = 0;
+  G.comboHits = 0; G.comboT = 0;
   G.player.x = ARENA.w / 2; G.player.y = ARENA.h / 2;
   G.player.iframe = 1.0;
   G.player.momentum = 0; G.player.burst = 0;
@@ -219,6 +220,7 @@ function startWave(w) {
   P.dashCd = 0; P.moveTechTimer = 0; P.stillTechTimer = 0; P.counterProcCd = 0;
   P.focusStacks = 0; P.focusT = 0; P.breathAcc = 0;
   P.flashHasteT = 0; P.staggerT = 0; P.pose = null;
+  P.iaiWindup = 0; P.iaiDef = null; P.sheathing = 0;
   P.jawUsed = false; P.killHasteT = 0; P.stillT = 0; P.bellPlateCd = 0;
   // 醉仙葫蘆：每波隨機一項大強化
   if (hasItem('drunken_gourd')) {
@@ -466,6 +468,9 @@ function hurtEnemy(e, amount, opts) {
   e.hitFlash = 0.12;
   // 打擊感：壓扁回彈＋火花＋頓幀分級（微量持續傷不觸發）
   if (dmg >= 3) {
+    G.comboHits = (G.comboHits || 0) + 1;
+    G.comboT = 2;
+    G.comboPop = 0.18;
     e.hitSquash = 0.16;
     spawnFx('spark', e.x, e.y, opts.crit ? '#ffd44a' : '#ffffff', e.r,
       { angle: opts.fromAngle !== undefined ? opts.fromAngle : rng() * Math.PI * 2 });
@@ -630,6 +635,7 @@ function hurtPlayer(amount, source) {
     noteDmg(source && source.name ? source.name : '其他', dmg);
     sfx('hit_blunt', { pitch: 0.75, vol: 0.7 });
     p.hurtT = 0.3;   // 受擊動畫幀
+    G.comboHits = 0; G.comboT = 0;   // 挨打斷連
     addDmgNum(p.x, p.y - 18, '-' + Math.round(dmg), '#ff6b6b', true);
     G.screenShake = Math.max(G.screenShake, 5 + dmg * 0.25);
     spawnFx('hurt', p.x, p.y, '#ff6b6b', 20);
@@ -758,8 +764,12 @@ function castDash() {
       break;
     case 'suplex_grab': ok = dashGeneric(d, 'suplex'); break;
     case 'iai_slash':
-      ok = dashGeneric(d, 'iai');
-      if (ok) sfx('draw');
+      // 居合：先停頓拔刀，再爆發——iaiWindup 走完才真正衝
+      p.iaiWindup = d.windup || 0.28;
+      p.iaiDef = d;
+      p.pose = { type: 'iaidraw', ang: 0, t: 0, dur: d.windup || 0.28, prio: 1 };
+      sfx('draw');
+      ok = true;
       break;
     case 'shadow_dash':
       ok = dashGeneric(d, 'shadow');
@@ -1060,6 +1070,13 @@ function updateTechniques(dt) {
   if (p.counterProcCd > 0) p.counterProcCd -= dt;
   if (p.ougiField > 0) p.ougiField -= dt;
   if (p.hurtT > 0) p.hurtT -= dt;
+  if (p.iaiWindup > 0) {
+    p.iaiWindup -= dt;
+    if (p.iaiWindup <= 0 && p.iaiDef) {
+      dashGeneric(p.iaiDef, 'iai');
+      p.iaiDef = null;
+    }
+  }
   if (p.sheathing > 0) {
     p.sheathing -= dt;
     if (p.sheathing <= 0) {
@@ -1736,8 +1753,11 @@ function updateWeapons(dt) {
       const want = Math.atan2(target.y - p.y, target.x - p.x);
       w.angle = want;
     } else {
-      const idle = idx * (Math.PI * 2 / Math.max(1, p.weapons.length));
-      w.angle = idle + G.time * 0.6;
+      // 沒目標時固定握在面向側（微幅呼吸浮動），不再繞圈亂轉
+      const nW = Math.max(1, p.weapons.length);
+      const spread = (idx - (nW - 1) / 2) * 0.38;
+      const base = p.face > 0 ? -0.45 : Math.PI + 0.45;
+      w.angle = base + spread * (p.face > 0 ? 1 : -1) + Math.sin(G.time * 2 + idx) * 0.05;
     }
     if (w.cdLeft <= 0 && target) {
       const d = Math.sqrt(dist2(p.x, p.y, target.x, target.y));
@@ -1790,7 +1810,7 @@ function spawnStrike(w, reach) {
     s.x = p.x + Math.cos(w.angle) * 14;
     s.y = p.y + Math.sin(w.angle) * 14;
     s.ang = w.angle;
-    s.speed = 820;
+    s.speed = w.strikeSpd || 820;
     s.maxDist = reach + 14;
     s.traveled = 0;
   } else if (w.type === 'arc') {
@@ -2057,7 +2077,7 @@ function updatePlayer(dt) {
   if (k['w'] || k['arrowup']) my -= 1;
   if (k['s'] || k['arrowdown']) my += 1;
   // 衝刺中身體不歸自己管；踉蹌時腿軟
-  if (p.dashState || p.staggerT > 0) { mx = 0; my = 0; }
+  if (p.dashState || p.staggerT > 0 || p.iaiWindup > 0) { mx = 0; my = 0; }
   const len = Math.hypot(mx, my);
   const moving = len > 0;
   if (moving) { mx /= len; my /= len; if (mx !== 0) p.face = mx > 0 ? 1 : -1; }
@@ -2681,6 +2701,8 @@ function updateFx(dt) {
   G.damageNums = G.damageNums.filter(d => !d.dead);
   if (G.screenShake > 0) G.screenShake = Math.max(0, G.screenShake - dt * 40);
   if (G.ougiBanner) { G.ougiBanner.t -= dt; if (G.ougiBanner.t <= 0) G.ougiBanner = null; }
+  if (G.comboT > 0) { G.comboT -= dt; if (G.comboT <= 0) G.comboHits = 0; }
+  if (G.comboPop > 0) G.comboPop -= dt;
 }
 
 /* ---------- 主更新 ---------- */

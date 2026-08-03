@@ -436,6 +436,7 @@ function attackPose(pose) {
     case 'knee':  return { knee: snap };
     case 'swing': return { fArm: [1.45 * snap + 0.5, 0.25], punch: snap * 0.7 };
     case 'dash':  return { fArm: [0.3, 0.2], bArm: [0.3, 0.2], lean: 0.5 * snap };
+    case 'iaidraw': return { fArm: [1.2, 2.6], bArm: [0.4, 0.3], lean: -0.18 };
     case 'stomp': return { knee: snap, fArm: [0.6, 0.4], bArm: [0.6, 0.4] };
     default: return {};
   }
@@ -1707,6 +1708,30 @@ function drawHud() {
     ctx.strokeText(G.ougiBanner.name, VIEW.w / 2, by);
     ctx.fillStyle = '#ffffff';
     ctx.fillText(G.ougiBanner.name, VIEW.w / 2, by);
+    ctx.restore();
+    ctx.textAlign = 'left';
+  }
+
+  // HITS 連擊計數：連續技的臉面
+  if ((G.comboHits || 0) >= 3) {
+    const hits = G.comboHits;
+    const col = hits >= 40 ? '#ff5a4a' : hits >= 20 ? '#ff9b3c' : hits >= 10 ? '#ffd44a' : '#e8e4dc';
+    const pop = 1 + Math.max(0, G.comboPop || 0) * 2.2;
+    const fade = Math.min(1, G.comboT / 0.5);
+    ctx.save();
+    ctx.globalAlpha = 0.55 + 0.45 * fade;
+    ctx.translate(96, VIEW.h * 0.38);
+    ctx.scale(pop, pop);
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 44px ' + FONT;
+    ctx.lineWidth = 7; ctx.strokeStyle = INK;
+    ctx.strokeText(hits + '', 0, 0);
+    ctx.fillStyle = col;
+    ctx.fillText(hits + '', 0, 0);
+    ctx.font = 'bold 15px ' + FONT;
+    ctx.lineWidth = 4;
+    ctx.strokeText('HITS', 0, 20);
+    ctx.fillText('HITS', 0, 20);
     ctx.restore();
     ctx.textAlign = 'left';
   }
