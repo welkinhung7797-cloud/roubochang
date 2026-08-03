@@ -894,6 +894,25 @@ function drawWeaponSet(behind) {
   });
 }
 
+/* 鰭肢貼圖依角色體色染一層：深藍黑的鰭直接貼在白企鵝身上會像別人的手 */
+const TINTED_IMGS = {};
+function tintedWeaponImg(name, color) {
+  const img = WEAPON_IMGS[name];
+  if (!img || typeof document === 'undefined') return null;
+  const key = name + '|' + color;
+  if (TINTED_IMGS[key] !== undefined) return TINTED_IMGS[key];
+  const cv = document.createElement('canvas');
+  cv.width = img.width; cv.height = img.height;
+  const c2 = cv.getContext('2d');
+  c2.drawImage(img, 0, 0);
+  c2.globalCompositeOperation = 'source-atop';
+  c2.globalAlpha = 0.5;
+  c2.fillStyle = color;
+  c2.fillRect(0, 0, cv.width, cv.height);
+  TINTED_IMGS[key] = cv;
+  return cv;
+}
+
 const WEAPON_IMGS = {};
 function loadWeaponImg(name) {
   if (WEAPON_IMGS[name] !== undefined || typeof Image === 'undefined') return;
@@ -924,7 +943,7 @@ function drawWeaponShape(c, w, reach, swing) {
     case 'fist': {
       // 企鵝握不出人類的拳：整片鰭肢往內收攏，折成一個鈍圓的楔，打擊面是鰭端
       loadWeaponImg('flipper_fist');
-      const fi = WEAPON_IMGS['flipper_fist'];
+      const fi = tintedWeaponImg('flipper_fist', (G.char && G.char.skin) || '#3a4152');
       if (fi) {
         const fw = 26, fh = fw * (fi.height / fi.width);
         c.drawImage(fi, push - 4, -fh / 2, fw, fh);
@@ -948,7 +967,7 @@ function drawWeaponShape(c, w, reach, swing) {
     case 'palm': {
       // 手刀＝同一片鰭完全打平，以薄的那一側朝前劈
       loadWeaponImg('flipper_chop');
-      const pi = WEAPON_IMGS['flipper_chop'];
+      const pi = tintedWeaponImg('flipper_chop', (G.char && G.char.skin) || '#3a4152');
       if (pi) {
         const pw = 30, ph = pw * (pi.height / pi.width);
         c.drawImage(pi, push - 4, -ph / 2, pw, ph);
