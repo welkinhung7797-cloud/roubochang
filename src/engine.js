@@ -3883,6 +3883,14 @@ function updateEnemies(dt) {
     if (e.enraged) spd = Math.max(spd, 320) * 1.6;
     if (G.waveEnding > 0) spd *= 0.3;
 
+    // ★ 激怒必須覆寫「行為的目標選擇」，不能只加速度。
+    //   治療師／投擲手／鬼火的行為本身是「玩家靠近就往反方向跑」，
+    //   只把 spd 拉到 512 等於讓它們逃得比玩家（約 156）還快 3 倍——
+    //   在「殺光才過關」的規則下那是一個真的軟鎖（實測 4 次激怒 0 次解決卡關，
+    //   3/4 是治療師被逼到場地角落才停下來）。這裡直接跳過原本的行為分支，一律直撲玩家。
+    if (e.enraged) {
+      e.x += ux * spd * dt; e.y += uy * spd * dt;
+    } else
     switch (e.behavior) {
       case 'chase':
       case 'splitter':

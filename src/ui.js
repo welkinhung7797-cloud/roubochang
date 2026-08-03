@@ -994,7 +994,16 @@ function botControl(dt) {
   if (p.y < M) fy += (M - p.y) / M * 2;
   if (p.y > ARENA.h - M) fy -= (p.y - (ARENA.h - M)) / M * 2;
 
-  if (Math.abs(fx) < 0.05 && Math.abs(fy) < 0.05) { fx = Math.cos(G.time); fy = Math.sin(G.time); }
+  // ★ 脫困門檻本來是 0.05，但按鍵門檻是 0.12——兩者之間有一條死縫。
+  //   實測：追敵(-1.06,+0.49)＋撿素材(-0.37,+0.09)＋場邊排斥(-0.05,+0.09) 抵銷成 (-0.053,+0.088)，
+  //   兩軸都落在 0.05 與 0.12 之間，於是「按不到鍵」也「觸發不了脫困」，卡了 30 秒零位移。
+  //   門檻拉到跟按鍵門檻一致，縫就不存在了。
+  if (Math.abs(fx) < 0.12 && Math.abs(fy) < 0.12) {
+    // 有敵人就朝最近的走，沒有才亂繞——亂繞是最後手段不是預設
+    const tg = nearestEnemy(p.x, p.y, 3000);
+    if (tg) { const dx = tg.x - p.x, dy = tg.y - p.y, d = Math.hypot(dx, dy) || 1; fx = dx / d; fy = dy / d; }
+    else { fx = Math.cos(G.time); fy = Math.sin(G.time); }
+  }
   if (fx > 0.12) G.keys['d'] = true; else if (fx < -0.12) G.keys['a'] = true;
   if (fy > 0.12) G.keys['s'] = true; else if (fy < -0.12) G.keys['w'] = true;
 }
