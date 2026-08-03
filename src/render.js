@@ -237,6 +237,7 @@ const FRAME_DEFS = {
   stance: 2,     // 站樁架式（各職業自己的蓄勢語言）
   suplex: 2, ddt: 2, frontslam: 2, press: 2, roll: 1,   // 摔技組
   yokoichi: 2, kiriotoshi: 2, issen: 2, karatake: 2,    // 劍豪連段組
+  kekomi: 2, tettsui: 2, tobiushiro: 2, otoshi: 2,      // 空手道連段組
   headbutt: 2,   // 頭槌（連段收尾要用頭，不是揮手）
   bigboot: 2,    // 大足踢（用腿）
   elbow: 2,      // 肘擊墜落（用肘）
@@ -248,6 +249,7 @@ const POSE_FRAMESET = {
   head: 'headbutt', kick: 'bigboot', knee: 'bigboot', elbow: 'elbow', hold: 'grab',
   slamland: 'slam', suplexp: 'suplex', hiptossp: 'frontslam', ddtp: 'ddt', press: 'press',
   yokoichi: 'yokoichi', kiriotoshi: 'kiriotoshi', issen: 'issen', karatake: 'karatake',
+  kekomi: 'kekomi', tettsui: 'tettsui', tobiushiro: 'tobiushiro', otoshi: 'otoshi',
 };
 const ACC_IMGS = {};   // charId -> Image（頭部配件）
 const FX_IMGS = {};    // fx 名 -> Image（招式特效貼圖，黑底發光）
