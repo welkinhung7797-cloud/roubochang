@@ -2258,7 +2258,11 @@ function addBeat(type, auto, swingId) {
       }
     }
     p.beatPopT = 0.22;
-    p.comboStep = full ? 2 : prog;   // 命中音分層用：0=散手 1=第一拍 2=就緒
+    // ★ 舊寫法是 full ? 2 : prog。因為每個職業都有 need=1 的連段（摔角手 SD／MD），
+    //   任何一拍落地就 full=true 直接跳 2——實測 comboStep===1 的佔比是 0.0%，
+    //   註解裡寫的「一二三越打越快」從來沒有發生過，真正跑的是 1× / 3.1× 二元開關。
+    //   改成：full 只在「湊滿兩拍以上的前綴」才算，中間那一階才進得去。
+    p.comboStep = Math.min(2, full && prog >= 2 ? 2 : prog);
     if (full && !p.comboReadyCue) { p.comboReadyCue = true; sfxComboReady(); }
     else if (!full) { p.comboReadyCue = false; if (prog >= 1) sfxBeat(prog); }
   }
@@ -2487,26 +2491,12 @@ function castSpiralToss() {
 function comboList() {
   const id = G.char && G.char.id;
   if (!id) return [];
+  // 有連段表的職業就只用連段表——奧義不併回拍序表。
+  // （總監 2026-08-03 定案，見 data.js 摔角手連段樹上方註解：螺旋摔投退出拍序表，
+  //   改掛在「擒抱掄甩滿 3 秒按 C」的獎勵，實作在本檔 castSpiralToss 的呼叫點。）
+  // 我一度把奧義併回來當成修 bug，那是推翻定案，已回退。真正壞掉的是 UI 文案，見 ui.js 的 sigNameOf。
+  if (COMBOS[id]) return COMBOS[id];
   const o = OUGI[id];
-  // ★ 有連段表的職業，招牌奧義本來被這裡 return 掉，變成永遠打不出來
-  //   （摔角手的螺旋摔投實測：拍譜 D·M·S 按 SPACE 出的是背後擒摔），
-  //   而商店卡片上還寫著「湊齊前綴按 SPACE 仍是螺旋摔投」——遊戲在教一個做不到的操作。
-  //   改成合併：奧義是最長的那一條（4 拍），matchCombo 取最長前綴自然會讓它贏過 3 拍的招。
-  if (COMBOS[id]) {
-    if (!o) return COMBOS[id];
-    const sq = o.seq[o.seq.length - 1] === 'D' ? o.seq : o.seq.concat('D');
-    // 撞名就不併：空手道的「極正拳」在連段表裡已經有一條（AAC），
-    // 劍豪的「十文字斬」是既有的延伸技名。同名兩條指令不同，玩家只會更亂。
-    const dup = COMBOS[id].some(c => c.name === o.name || c.extName === o.name);
-    if (dup) return COMBOS[id];
-    if (!COMBOS[id].__withOugi) {
-      COMBOS[id].__withOugi = COMBOS[id].concat([{
-        seq: sq, name: o.name, kind: o.kind, params: o.params,
-        desc: o.desc, sig: true,
-      }]);
-    }
-    return COMBOS[id].__withOugi;
-  }
   if (!o) return [];
   // 還沒做連段表的職業：奧義維持「湊齊指令後按 Space」——結尾不是 D 的就補一格 D，
   // 語意才跟連段樹一致（最後一格＝玩家做的動作），行為也跟改版前相同。

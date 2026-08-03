@@ -88,10 +88,14 @@ function buildCharSelect() {
 }
 
 /* 這個職業的招牌連段名（COMBOS 的 sig 條優先，退回 OUGI） */
+/* 招牌招的名字。★ 有連段表的職業不准掉回 OUGI——
+   摔角手的連段表裡沒有任何 sig 條目，舊寫法會 fallback 成「螺旋摔投」，
+   於是商店卡印出「湊齊前綴按 SPACE 仍是螺旋摔投」，而那個操作在定案後根本做不到。
+   玩家會照著試十次然後認定自己手殘，之後不再相信任何說明文字。沒有就回 null。 */
 function sigNameOf(chId) {
   if (typeof COMBOS !== 'undefined' && COMBOS[chId]) {
     const s = COMBOS[chId].find(c => c.sig);
-    if (s) return s.name;
+    return s ? s.name : null;
   }
   return OUGI[chId] ? OUGI[chId].name : null;
 }
@@ -123,15 +127,7 @@ function comboHowTo(seq) {
 }
 
 function comboLinesHtml(chId) {
-  // 招牌奧義要跟連段表一起顯示，否則玩家在表上找不到、也就不知道它存在。
-  // 這裡不能只讀 COMBOS——引擎的 comboList() 是把奧義併進去的，兩邊不同步就會教錯。
-  let list = (typeof COMBOS !== 'undefined' && COMBOS[chId]) ? COMBOS[chId] : null;
-  if (list && typeof OUGI !== 'undefined' && OUGI[chId] &&
-      !list.some(c => c.name === OUGI[chId].name || c.extName === OUGI[chId].name)) {
-    const _o = OUGI[chId];
-    const _sq = _o.seq[_o.seq.length - 1] === 'D' ? _o.seq : _o.seq.concat('D');
-    list = list.concat([{ seq: _sq, name: _o.name, desc: _o.desc, sig: true }]);
-  }
+  const list = (typeof COMBOS !== 'undefined' && COMBOS[chId]) ? COMBOS[chId] : null;
   const rows = list && list.length
     ? list.slice()
     : (OUGI[chId] ? [{ seq: OUGI[chId].seq[OUGI[chId].seq.length - 1] === 'D'
@@ -167,15 +163,7 @@ function comboLinesHtml(chId) {
 function comboTableHtml(chId) {
   const ACT = { S: '站定打中', M: '移動打中', D: '按 Space' };
   const B = { S: '站', M: '移', D: '衝' };
-  // 招牌奧義要跟連段表一起顯示，否則玩家在表上找不到、也就不知道它存在。
-  // 這裡不能只讀 COMBOS——引擎的 comboList() 是把奧義併進去的，兩邊不同步就會教錯。
-  let list = (typeof COMBOS !== 'undefined' && COMBOS[chId]) ? COMBOS[chId] : null;
-  if (list && typeof OUGI !== 'undefined' && OUGI[chId] &&
-      !list.some(c => c.name === OUGI[chId].name || c.extName === OUGI[chId].name)) {
-    const _o = OUGI[chId];
-    const _sq = _o.seq[_o.seq.length - 1] === 'D' ? _o.seq : _o.seq.concat('D');
-    list = list.concat([{ seq: _sq, name: _o.name, desc: _o.desc, sig: true }]);
-  }
+  const list = (typeof COMBOS !== 'undefined' && COMBOS[chId]) ? COMBOS[chId] : null;
   if (list) {
     return list.map(c => {
       const pre = c.seq.slice(0, -1).map(b => B[b]).join('·');
