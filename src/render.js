@@ -116,6 +116,7 @@ function drawGame() {
   drawFxUnder();
   if (G.player) drawWeaponsBehind();
   drawEnemies();
+  drawEnemyMarkers();
   if (G.player) drawPlayer();
   if (G.player) drawSheatheAnim(G.player);
   if (G.player) drawWeaponsFront();
@@ -1476,6 +1477,72 @@ function drawBoss(e, col, flash) {
     ctx.lineWidth = 4;
     ctx.beginPath(); ctx.arc(0, 0, r + 12, 0, Math.PI * 2); ctx.stroke();
   }
+}
+
+/* ---------- 敵人狀態標記：被抓慘叫、暈眩星星 ----------
+   漫畫反應貼紙（客製＋精準對頭＋各自動態），不是 emoji。 */
+const MARKER_IMGS = {};
+function loadMarker(name) {
+  if (MARKER_IMGS[name] !== undefined || typeof Image === 'undefined') return;
+  MARKER_IMGS[name] = null;
+  const img = new Image();
+  img.onload = () => { MARKER_IMGS[name] = img; };
+  img.src = 'assets/fx/' + name + '.png';
+}
+function drawEnemyMarkers() {
+  const pl = G.player;
+  loadMarker('fx_scream_marker');
+  for (const e of G.enemies) {
+    if (e.dead) continue;
+    const held = e.grabbed || e.flat || (pl && pl.airSlam && pl.airSlam.e === e);
+    const stunned = !held && e.stun > 0.45 && e.stun < 90;
+    if (!held && !stunned) continue;
+    ctx.save();
+    ctx.translate(e.x, e.y - e.r * 2.1);
+    if (held) {
+      // 慘叫貼紙：跟著人但自己不轉（轉了就讀不到）
+      const mk = MARKER_IMGS['fx_scream_marker'];
+      const wob = Math.sin(G.time * 17) * 0.12;
+      ctx.rotate(wob);
+      if (mk) {
+        const mw = e.r * 1.5;
+        ctx.globalAlpha = 0.95;
+        ctx.drawImage(mk, -mw / 2, -mw / 2, mw, mw);
+      } else {
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#fff';
+        ctx.fillText('!!', 0, 0);
+      }
+    } else {
+      // 暈眩：三顆星繞頭轉（貼圖到貨前用程序星）
+      const spin = G.time * 5;
+      ctx.strokeStyle = 'rgba(255,220,80,0.5)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.ellipse(0, 0, e.r * 0.95, e.r * 0.32, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#ffd44a';
+      for (let i = 0; i < 3; i++) {
+        const a = spin + i * Math.PI * 2 / 3;
+        const sx = Math.cos(a) * e.r * 0.95, sy = Math.sin(a) * e.r * 0.32;
+        drawStar(sx, sy, 3.4);
+      }
+    }
+    ctx.restore();
+  }
+}
+function drawStar(x, y, r) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.beginPath();
+  for (let i = 0; i < 5; i++) {
+    const a = -Math.PI / 2 + i * Math.PI * 2 / 5;
+    const b = a + Math.PI / 5;
+    ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    ctx.lineTo(Math.cos(b) * r * 0.45, Math.sin(b) * r * 0.45);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
 }
 
 /* 武器類別 → 特效貼圖（招式差異的本體：同一套動畫，不同的靈氣） */

@@ -1582,7 +1582,9 @@ function updateTechniques(dt) {
           const dd = Math.hypot(best.x - e.x, best.y - e.y) || 1;
           tx = (best.x - e.x) / dd; ty = (best.y - e.y) / dd;
         }
-        e.thrown = { vx: tx * (g.super ? 900 : 720), vy: ty * (g.super ? 900 : 720), t: 0.55 };
+        e.thrown = { vx: tx * (g.super ? 1000 : 780), vy: ty * (g.super ? 1000 : 780),
+          t: g.super ? 0.7 : 0.55, decay: g.super ? 2.0 : 2.4 };
+        e.spin = { v: (g.spinSpd >= 0 ? -16 : 16), t: g.super ? 0.7 : 0.55, a: 0 };
         sfx('throw_hit');
         addHitstop(0.09, true);
         hurtEnemy(e, throwDmg((g.super ? 25 : 10) + e.maxHp * (g.super ? 0.25 : 0.10)), { trueDmg: true });
@@ -1661,7 +1663,7 @@ function updateTechniques(dt) {
         if (L.t <= 0 || s.t <= 0.02) {
           L.done = true;
           L.e.grabbed = false;
-          L.e.thrown = { vx: Math.cos(aL2) * 620, vy: Math.sin(aL2) * 620, t: 0.45 };
+          L.e.thrown = { vx: Math.cos(aL2) * 700, vy: Math.sin(aL2) * 700, t: 0.5, decay: 2.2 };
           L.e.spin = { v: (s.dx >= 0 ? -14 : 14), t: 0.45, a: 0 };
           L.e.stun = Math.max(L.e.stun, s.chargeStun || 1);
         }
@@ -2852,7 +2854,8 @@ function updateEnemies(dt) {
       th.t -= dt;
       if (e.spin) { e.spin.a += e.spin.v * dt; e.spin.t -= dt; if (e.spin.t <= 0) e.spin = null; }
       e.x += th.vx * dt; e.y += th.vy * dt;
-      th.vx *= Math.pow(0.05, dt); th.vy *= Math.pow(0.05, dt);
+      const thd = Math.exp(-(th.decay || 3) * dt);
+      th.vx *= thd; th.vy *= thd;
       for (const o of G.enemies) {
         if (o.dead || o === e || o.thrown || o.grabbed || o.hitByThrow) continue;
         const rr = o.r + e.r + 2;

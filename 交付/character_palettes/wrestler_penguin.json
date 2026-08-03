@@ -1,0 +1,57 @@
+{
+  "character": "wrestler_penguin",
+  "version": 1,
+  "authority": "ref_frames/wrestler_idle.png",
+  "materials": {
+    "body_fur": {
+      "base": "#854B18",
+      "light": "#A96D2F",
+      "shadow": "#5D3212"
+    },
+    "mask_red": {
+      "base": "#D11D16",
+      "light": "#F04A28",
+      "shadow": "#941511"
+    },
+    "mask_blue": {
+      "base": "#0338B3",
+      "light": "#1764DB",
+      "shadow": "#02257E"
+    },
+    "mask_gold_trim": {
+      "base": "#F6A914",
+      "light": "#FFD45A",
+      "shadow": "#B96808"
+    },
+    "belt_leather": {
+      "base": "#2A211A",
+      "light": "#514033",
+      "shadow": "#120E0B"
+    },
+    "belt_gold": {
+      "base": "#F6A914",
+      "light": "#FFD45A",
+      "shadow": "#B96808"
+    },
+    "beak_and_feet": {
+      "base": "#EF6E0D",
+      "light": "#FF9B26",
+      "shadow": "#B64108"
+    },
+    "eyes": {
+      "base": "#FFFFFF",
+      "light": null,
+      "shadow": "#E2DDD5"
+    },
+    "outline": {
+      "base": "#24140B",
+      "light": null,
+      "shadow": null
+    },
+    "background": {
+      "base": "#FFFFFF",
+      "light": null,
+      "shadow": null
+    }
+  }
+}
