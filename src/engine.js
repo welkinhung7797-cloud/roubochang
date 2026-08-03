@@ -2234,9 +2234,17 @@ function addBeat(type, auto, swingId) {
       p.comboFiring = false;
       if (fired) { p.comboStep = 0; p.beatCd = 0.4; return; }
       const cdLeft = c.sig ? (p.ougiCd || 0) : (p.comboCd || 0);
-      if (cdLeft > 0.15 && (p.comboCdMsgT || 0) <= 0) {
-        p.comboCdMsgT = 1.2;
-        addDmgNum(p.x, p.y - 46, c.name + ' 還有 ' + cdLeft.toFixed(1) + 's', '#8a795e');
+      if (cdLeft > 0.15) {
+        if ((p.comboCdMsgT || 0) <= 0) {
+          p.comboCdMsgT = 1.2;
+          addDmgNum(p.x, p.y - 46, c.name + ' 還有 ' + cdLeft.toFixed(1) + 's', '#8a795e');
+        }
+      } else if ((p.comboCdMsgT || 0) <= 0) {
+        // 冷卻好了卻還是沒出招＝抓不到／打不到目標。以前這條路連一個字都沒有，
+        // 而 HUD 明明白白寫著「按 SPACE ＝ 螺旋摔投」——玩家按下去毫無反應，
+        // 只會認定這招是壞的，然後不再相信畫面上任何一段說明文字。
+        p.comboCdMsgT = 1.0;
+        addDmgNum(p.x, p.y - 46, c.name + ' 太遠了', '#8a795e');
       }
     }
   }

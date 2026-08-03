@@ -2341,6 +2341,16 @@ function drawHud() {
         ctx.fillStyle = BEAT_COL[beat];
         ctx.font = 'bold 12px ' + FONT;
         ctx.fillText(BEAT_TXT[beat], bx + 13, beatY + 14);
+      } else {
+        // 空格不要留空黑方塊——玩家在打到第一個人之前完全不知道那三格要填什麼。
+        // 輪播「站／移/衝」當提示：用輪播而不是固定字，才不會被誤讀成「順序必須是站移衝」。
+        // 一打中人第一格就亮起來，因果關係當場自己成立，不用寫任何教學文字。
+        const cyc = ['S', 'M', 'D'][Math.floor(G.time * 1.1 + i * 0.7) % 3];
+        ctx.globalAlpha = 0.34;
+        ctx.fillStyle = BEAT_COL[cyc];
+        ctx.font = 'bold 12px ' + FONT;
+        ctx.fillText(BEAT_TXT[cyc], bx + 13, beatY + 14);
+        ctx.globalAlpha = 1;
       }
     }
     // 打鬥中沒人讀得完十行對照表。只講「現在按什麼、會出什麼」——

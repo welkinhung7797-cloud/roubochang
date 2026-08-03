@@ -102,10 +102,13 @@ function sigNameOf(chId) {
 
 /* 連段表（分行版，商店與暫停用）：chip 跟槽位卡的 beat badge 是同一個 class 同一個色 */
 /* 把拍譜翻成一句人話。「移移站」是給程式看的縮寫，不是給人看的句子。 */
-const BEAT_WORD = { S: '站著不動', M: '一邊移動' };
+// D 一定要有：沒有連段表的職業，奧義拍譜的前綴裡就有 D（相撲力士 DSS／鐵頭功 DDD／
+// 狂人 DMD／合氣道師範 SDS），少一個 key 就會在連段表上印出藍色的「undefined」方塊。
+const BEAT_WORD = { S: '站著不動', M: '一邊移動', D: '衝刺命中' };
 const CN_NUM = ['', '一', '兩', '三', '四', '五'];
+const BEAT_CLS = { S: 'still', M: 'move', D: 'dash' };
 function beatSpan(b) {
-  return '<b class="bw bw-' + (b === 'S' ? 'still' : 'move') + '">' + BEAT_WORD[b] + '</b>';
+  return '<b class="bw bw-' + (BEAT_CLS[b] || 'move') + '">' + (BEAT_WORD[b] || b) + '</b>';
 }
 function comboHowTo(seq) {
   const last = seq[seq.length - 1];
