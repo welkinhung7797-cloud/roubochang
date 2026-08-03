@@ -5,6 +5,8 @@
 /* 音效空殼替身：瀏覽器端由 audio.js 覆寫成真實引擎；Node 模擬環境維持無聲 */
 if (typeof window === 'undefined' || !window.AudioContext) {
   var sfx = function () {};
+  var sfxBeat = function () {};
+  var sfxComboReady = function () {};
 }
 
 /* ---------- 亂數（可設種子，方便自動化測試重現） ---------- */
@@ -218,7 +220,7 @@ function startWave(w) {
   P.burstMulti = null; P.rushMulti = null; P.kneeChain = null; P.ougiField = 0;
   P.beatLog = []; P.beatT = 0; P.beatState = null; P.beatCd = 0; P.triCd = 0; P.stillHold = 0;
   P.dashChain = 0; P.dashChainT = 0; P.dashBeatCounted = false; P.ougiCd = 0;
-  P.comboCd = 0; P.comboFiring = false;
+  P.comboCd = 0; P.comboFiring = false; P.comboReadyCue = false; P.beatPopT = 0;
   if (P.airSlam && P.airSlam.e) { P.airSlam.e.grabbed = false; P.airSlam.e.stun = 0.5; }
   P.airSlam = null;
   P.dashCd = 0; P.moveTechTimer = 0; P.stillTechTimer = 0; P.counterProcCd = 0;
@@ -1230,6 +1232,7 @@ function updateTechniques(dt) {
   if (p.dashChainT > 0) p.dashChainT -= dt; else p.dashChain = 0;
   if (p.ougiCd > 0) p.ougiCd -= dt;
   if (p.comboCd > 0) p.comboCd -= dt;
+  if (p.beatPopT > 0) p.beatPopT -= dt;
   // 連段窗口：停手太久前綴就散了——連段要一氣呵成，不是隔半分鐘慢慢湊。
   // 只套用在有連段表的職業：他們的前綴是純站/移拍，一兩秒就湊得出來。
   // 還在用舊奧義的職業前綴含衝刺拍（衝刺冷卻 5~9 秒），加窗口等於直接廢掉他們的奧義。
@@ -1715,6 +1718,23 @@ function addBeat(type) {
   p.beatCd = 0.4;   // 同一瞬間的多段命中只記一拍
   p.beatT = 0;      // 連段窗口重新計時
   p.beatLog.push(type);
+  // 連段的節奏要聽得到看得到：拍子踩進前綴就「登」一聲、pip 彈一下；
+  // 前綴湊滿改放上行雙音——耳朵先知道「下一下會變招」。
+  {
+    let prog = 0, full = false;
+    for (const c of comboList()) {
+      const need = c.seq.length - 1;
+      for (let k = Math.min(need, p.beatLog.length); k > prog - 1 && k >= 1; k--) {
+        const tail = p.beatLog.slice(p.beatLog.length - k);
+        let okp = true;
+        for (let i = 0; i < k; i++) if (tail[i] !== c.seq[i]) { okp = false; break; }
+        if (okp) { if (k > prog) prog = k; if (k === need) full = true; break; }
+      }
+    }
+    p.beatPopT = 0.22;
+    if (full && !p.comboReadyCue) { p.comboReadyCue = true; sfxComboReady(); }
+    else if (!full) { p.comboReadyCue = false; if (prog >= 1) sfxBeat(prog); }
+  }
   if (p.beatLog.length > 3) p.beatLog.shift();
   // 同拍共鳴：三拍同型自動觸發輕增益——喜歡「一直移動一直打」的玩家不用搓招也有獎勵
   if ((p.resonCd || 0) <= 0 && p.beatLog.length === 3) {
@@ -1842,9 +1862,11 @@ function castCombo(c, target) {
   } else {
     p.comboCd = 2.5;
     addDmgNum(p.x, p.y - 46, c.name, '#ffd44a', true);
-    G.screenShake = Math.max(G.screenShake, 6);
-    addHitstop(0.07, true);
+    G.screenShake = Math.max(G.screenShake, 7);
+    addHitstop(0.09, true);
+    spawnFx('explode', p.x, p.y, '#ffffff', 62);
     sfx('ougi_hit');
+    sfx('hit_heavy');
   }
   if (hasItem('fist_wrap')) p.guaranteedCrit = true;
   return true;
@@ -2267,7 +2289,7 @@ function spawnStrike(w, reach) {
     s.ang0 = w.angle - half * w.swingDir;
     s.ang1 = w.angle + half * w.swingDir;
     s.cur = s.ang0;
-    s.dur = 0.2;
+    s.dur = 0.16;
   } else if (w.type === 'spin') {
     s.kind = 'orbit';
     s.cur = w.angle;

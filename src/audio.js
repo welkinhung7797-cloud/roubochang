@@ -107,6 +107,37 @@
     return curVol;
   };
 
+  /* 連段音符：拍子進節奏的「登、登」，音高隨進度上升 */
+  window.sfxBeat = function (step) {
+    if (muted || !ensureCtx()) return;
+    const t0 = ctx.currentTime;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'triangle';
+    o.frequency.value = [523, 659, 784][Math.max(0, Math.min(2, step - 1))];
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.20, t0 + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.13);
+    o.connect(g); g.connect(master);
+    o.start(t0); o.stop(t0 + 0.14);
+  };
+  /* 連段就緒：上行雙音「登-登！」——下一個動作就是收尾招 */
+  window.sfxComboReady = function () {
+    if (muted || !ensureCtx()) return;
+    const t0 = ctx.currentTime;
+    [[784, 0], [1175, 0.07]].forEach(([f, d]) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'triangle';
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t0 + d);
+      g.gain.exponentialRampToValueAtTime(0.24, t0 + d + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + d + 0.16);
+      o.connect(g); g.connect(master);
+      o.start(t0 + d); o.stop(t0 + d + 0.17);
+    });
+  };
+
   window.sfxToggleMute = function () {
     muted = !muted;
     return muted;

@@ -782,13 +782,27 @@ function drawPlayer() {
       for (let i = 0; i < 3; i++) {
         const bx = -total / 2 + i * (bw + gap);
         const beat = bl[i];
+        // 剛記到的那一拍會彈一下——節奏要看得到
+        const isLast = i === bl.length - 1;
+        const pop = isLast && p.beatPopT > 0 ? 1 + (p.beatPopT / 0.22) * 0.65 : 1;
+        const w2 = bw * pop, h2 = 8 * pop;
         ctx.fillStyle = 'rgba(10,12,16,0.7)';
-        ctx.fillRect(bx, y0 - 8, bw, 8);
+        ctx.fillRect(bx + (bw - w2) / 2, y0 - 8 - (h2 - 8) / 2, w2, h2);
         if (beat) {
           ctx.fillStyle = beat === 'S' ? '#e8964a' : (beat === 'D' ? '#ffd44a' : '#8fd4e0');
-          ctx.fillRect(bx + 1, y0 - 7, bw - 2, 6);
+          ctx.fillRect(bx + (bw - w2) / 2 + 1, y0 - 7 - (h2 - 8) / 2, w2 - 2, h2 - 2);
         }
       }
+    }
+    // 連段就緒：金色脈動圈——身體亮起來，下一下就是收尾招
+    if (rdy.length) {
+      ctx.strokeStyle = rdy.some(r => r.sig) ? '#ffd44a' : '#e8e4dc';
+      ctx.lineWidth = 2.5;
+      ctx.globalAlpha = 0.5 + Math.sin(G.time * 13) * 0.3;
+      ctx.beginPath();
+      ctx.arc(0, 0, p.r + 11 + Math.sin(G.time * 13) * 2, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
     }
   }
 
@@ -1392,34 +1406,23 @@ function drawStrikes() {
         ctx.rotate(s.ang);
         ctx.drawImage(fxImg, -sz / 2, -sz / 2, sz, sz);
       } else if (s.kind === 'sweep' || s.kind === 'orbit') {
-        // 斬擊不是憑空一條線：刀光的「長度」從 0 往外長到滿，同時跟著刀路掃過去。
-        // 前 55% 的時間拉到全長，後面才開始淡出——這樣看得到線是長出來的。
+        // 斬擊＝一條乾淨的薄月牙：長度從 0 長出來、跟著刀路掃。
+        // 只留兩層——壓扁的刀光貼圖＋刀鋒後一小段白色殘線。不再鋪整片扇形。
         ctx.translate(p.x, p.y);
         const ccw = s.kind === 'sweep' ? s.ang1 < s.ang0 : (s.spd || 1) < 0;
-        const grow = Math.min(1, s.t / ((s.dur || 0.2) * 0.55));
-        const eased = 1 - (1 - grow) * (1 - grow);          // easeOut：出鞘快、收尾穩
-        const a0 = s.kind === 'sweep'
-          ? s.ang0
-          : s.cur + (ccw ? 1.9 : -1.9);   // 迴旋類拖 1.9 rad 的殘尾
-        // 已經掃過的那段殘影：只在刀光目前的長度之內，不會糊成一大片
-        const rNow = s.reach * 1.05 * eased;
-        ctx.save();
+        const grow = Math.min(1, s.t / ((s.dur || 0.16) * 0.55));
+        const eased = 1 - (1 - grow) * (1 - grow);
+        const rNow = s.reach * 0.92 * eased;
+        // 殘線：刀鋒後方 0.5 rad 的細白弧，一閃即逝
+        const trailSpan = 0.5 * eased;
+        ctx.strokeStyle = 'rgba(255,255,255,' + (0.5 * (0.55 + 0.45 * kLife)) + ')';
+        ctx.lineWidth = 2.5;
         ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.arc(0, 0, rNow, a0, s.cur, ccw);
-        ctx.closePath();
-        ctx.clip();
-        ctx.globalAlpha *= 0.22;
-        ctx.fillStyle = s.w.color;
-        ctx.beginPath();
-        ctx.arc(0, 0, rNow, a0, s.cur, ccw);
-        ctx.arc(0, 0, rNow * 0.42, s.cur, a0, !ccw);
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
-        // 刀鋒本體：長度＝目前長出來的長度
+        ctx.arc(0, 0, rNow * 0.86, s.cur + (ccw ? trailSpan : -trailSpan), s.cur, ccw);
+        ctx.stroke();
+        // 刀鋒：貼圖壓扁成薄月牙（高度 62%），跟著角度走
         ctx.rotate(s.cur);
-        ctx.drawImage(fxImg, -rNow * 0.1, -rNow / 2, rNow, rNow);
+        ctx.drawImage(fxImg, -rNow * 0.08, -rNow * 0.31, rNow, rNow * 0.62);
       } else if (s.kind === 'slam') {
         const k = Math.min(1, s.t / s.delay);
         const sz = s.reach * 2 * k;
