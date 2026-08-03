@@ -215,6 +215,14 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .toast.bad{border-color:var(--bad);color:#e89a9a}
 #hud-hint{display:none !important}
+/* ---- 暫停選單 ---- */
+#panel-pause .pause-row{display:flex;align-items:center;gap:14px;margin:6px 0 4px;
+  background:var(--panel);border:2px solid var(--line);padding:12px 22px;box-shadow:0 3px 0 rgba(8,5,2,.4)}
+#panel-pause .pause-row label{font-size:14px;letter-spacing:.14em;color:var(--muted)}
+#panel-pause .pause-row input[type=range]{width:220px}
+#panel-pause .pause-row span{font-size:15px;font-weight:800;width:40px;text-align:right}
+#panel-pause .pause-btns{display:flex;gap:12px;margin-top:18px}
+
 /* ---- 像素道場皮膚：硬邊、木質、落影 ---- */
 .btn,.danger-btn{box-shadow:0 3px 0 rgba(8,5,2,.55),inset 0 2px 0 rgba(255,255,255,.06)}
 .btn:active:not(:disabled),.danger-btn:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(8,5,2,.55)}
@@ -237,7 +245,6 @@ button:disabled{cursor:not-allowed;opacity:.45}
       <div class="cn en">PENGUIN<br>CAN FIGHT</div>
       <div class="bar"></div>
     </div>
-    <div class="tagline">功夫企鵝　全近戰擂台</div>
     <div class="rule"></div>
     <button id="btn-play" class="btn primary">開始</button>
     <div class="keys">
@@ -299,6 +306,22 @@ button:disabled{cursor:not-allowed;opacity:.45}
       <button id="btn-retry" class="btn primary">再來一局</button>
       <button id="btn-menu" class="btn ghost">回主選單</button>
     </div>
+  </div>
+
+  <!-- 暫停選單（Esc） -->
+  <div id="panel-pause" class="overlay hidden">
+    <div class="title-md">暫停</div>
+    <div class="rule"></div>
+    <div class="pause-row">
+      <label>音量</label>
+      <input id="opt-vol" type="range" min="0" max="100" step="5">
+      <span id="opt-vol-val">80</span>
+    </div>
+    <div class="pause-btns">
+      <button id="btn-resume" class="btn primary">繼續遊戲</button>
+      <button id="btn-quit" class="btn ghost">放棄這一局，回主選單</button>
+    </div>
+    <div class="sub">Esc 繼續　·　M 靜音　·　F2 調參面板</div>
   </div>
 
   <!-- F2 即時調參面板 -->

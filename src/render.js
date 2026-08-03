@@ -921,15 +921,52 @@ function drawWeaponShape(c, w, reach, swing) {
     }
   }
   switch (w.icon) {
-    case 'fist':
-      roundRect(c, push, -6, 13, 12, 4); c.fill(); c.stroke();
-      c.fillStyle = shade(w.color, -50);
-      c.fillRect(push + 3, -6, 2, 12);
-      c.fillRect(push + 7, -6, 2, 12);
+    case 'fist': {
+      // 企鵝握不出人類的拳：整片鰭肢往內收攏，折成一個鈍圓的楔，打擊面是鰭端
+      loadWeaponImg('flipper_fist');
+      const fi = WEAPON_IMGS['flipper_fist'];
+      if (fi) {
+        const fw = 26, fh = fw * (fi.height / fi.width);
+        c.drawImage(fi, push - 4, -fh / 2, fw, fh);
+        break;
+      }
+      c.beginPath();
+      c.moveTo(push - 4, -5);
+      c.quadraticCurveTo(push + 9, -7.5, push + 15, -3.5);   // 鰭背隆起
+      c.quadraticCurveTo(push + 18.5, 0, push + 15, 3.5);    // 收攏的鰭端
+      c.quadraticCurveTo(push + 9, 7.5, push - 4, 5);        // 鰭腹
+      c.closePath();
+      c.fill(); c.stroke();
+      c.fillStyle = shade(w.color, -45);                      // 折起來的那一摺
+      c.beginPath();
+      c.moveTo(push + 10, -4.5);
+      c.quadraticCurveTo(push + 13.5, 0, push + 10, 4.5);
+      c.quadraticCurveTo(push + 12.5, 0, push + 10, -4.5);
+      c.fill();
       break;
-    case 'palm':
-      roundRect(c, push, -8, 10, 16, 4); c.fill(); c.stroke();
+    }
+    case 'palm': {
+      // 手刀＝同一片鰭完全打平，以薄的那一側朝前劈
+      loadWeaponImg('flipper_chop');
+      const pi = WEAPON_IMGS['flipper_chop'];
+      if (pi) {
+        const pw = 30, ph = pw * (pi.height / pi.width);
+        c.drawImage(pi, push - 4, -ph / 2, pw, ph);
+        break;
+      }
+      c.beginPath();
+      c.moveTo(push - 4, -4.5);
+      c.quadraticCurveTo(push + 10, -3.5, push + 20, -1.2);  // 打平的鰭，前端削薄
+      c.quadraticCurveTo(push + 22.5, 0, push + 20, 1.2);
+      c.quadraticCurveTo(push + 10, 3.5, push - 4, 4.5);
+      c.closePath();
+      c.fill(); c.stroke();
+      c.strokeStyle = shade(w.color, -45); c.lineWidth = 1.4;
+      c.beginPath();
+      c.moveTo(push + 2, -1.6); c.quadraticCurveTo(push + 11, -1.0, push + 18, -0.3);
+      c.stroke();
       break;
+    }
     case 'leg':
       c.beginPath(); c.moveTo(push, -4); c.lineTo(push + L * 0.5, -3);
       c.lineTo(push + L * 0.55, 5); c.lineTo(push, 5); c.closePath();
@@ -1335,27 +1372,34 @@ function drawStrikes() {
         ctx.rotate(s.ang);
         ctx.drawImage(fxImg, -sz / 2, -sz / 2, sz, sz);
       } else if (s.kind === 'sweep' || s.kind === 'orbit') {
-        // 斬擊不是憑空一條線：殘弧軌跡從起點「掃出來」，刀鋒上才是光刃貼圖
+        // 斬擊不是憑空一條線：刀光的「長度」從 0 往外長到滿，同時跟著刀路掃過去。
+        // 前 55% 的時間拉到全長，後面才開始淡出——這樣看得到線是長出來的。
         ctx.translate(p.x, p.y);
         const ccw = s.kind === 'sweep' ? s.ang1 < s.ang0 : (s.spd || 1) < 0;
+        const grow = Math.min(1, s.t / ((s.dur || 0.2) * 0.55));
+        const eased = 1 - (1 - grow) * (1 - grow);          // easeOut：出鞘快、收尾穩
         const a0 = s.kind === 'sweep'
           ? s.ang0
           : s.cur + (ccw ? 1.9 : -1.9);   // 迴旋類拖 1.9 rad 的殘尾
-        const rO = s.reach * 0.95, rI = s.reach * 0.42;
-        const cn = parseInt(s.w.color.slice(1), 16);
-        const grad = ctx.createRadialGradient(0, 0, rI, 0, 0, rO);
-        grad.addColorStop(0, 'rgba(255,255,255,0)');
-        grad.addColorStop(0.7, 'rgba(' + ((cn >> 16) & 255) + ',' + ((cn >> 8) & 255) + ',' + (cn & 255) + ',0.30)');
-        grad.addColorStop(1, 'rgba(255,255,255,0.55)');
-        ctx.fillStyle = grad;
+        // 已經掃過的那段殘影：只在刀光目前的長度之內，不會糊成一大片
+        const rNow = s.reach * 1.05 * eased;
+        ctx.save();
         ctx.beginPath();
-        ctx.arc(0, 0, rO, a0, s.cur, ccw);
-        ctx.arc(0, 0, rI, s.cur, a0, !ccw);
+        ctx.moveTo(0, 0);
+        ctx.arc(0, 0, rNow, a0, s.cur, ccw);
+        ctx.closePath();
+        ctx.clip();
+        ctx.globalAlpha *= 0.22;
+        ctx.fillStyle = s.w.color;
+        ctx.beginPath();
+        ctx.arc(0, 0, rNow, a0, s.cur, ccw);
+        ctx.arc(0, 0, rNow * 0.42, s.cur, a0, !ccw);
         ctx.closePath();
         ctx.fill();
+        ctx.restore();
+        // 刀鋒本體：長度＝目前長出來的長度
         ctx.rotate(s.cur);
-        const sz = s.reach * 1.05;
-        ctx.drawImage(fxImg, -sz * 0.1, -sz / 2, sz, sz);
+        ctx.drawImage(fxImg, -rNow * 0.1, -rNow / 2, rNow, rNow);
       } else if (s.kind === 'slam') {
         const k = Math.min(1, s.t / s.delay);
         const sz = s.reach * 2 * k;
@@ -1537,13 +1581,24 @@ function drawFxOver() {
       if (f.img) loadFx(f.img);
       const fimg = f.img && FX_IMGS[f.img];
       if (fimg) {
-        // 招式貼圖：黑底發光圖加法疊上，跟著揮擊角度轉（pivot 在左 10%）
+        // 招式貼圖：黑底發光圖加法疊上。用扇形遮罩讓刀光「長出來」，
+        // 掃到哪露到哪——不是整條線憑空出現。
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
         ctx.globalAlpha = (1 - k) * 0.9;
         ctx.translate(f.x, f.y);
-        ctx.rotate(f.angle || 0);
-        const fsz = f.size * 2.1 * (0.6 + k * 0.5);
+        const reveal = Math.min(1, k / 0.45);          // 前 45% 壽命把整條刀路掃完
+        const full = !f.arc || f.arc >= 360;
+        const halfA = full ? Math.PI : (f.arc * Math.PI / 180) / 2;
+        const base = f.angle || 0;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.arc(0, 0, f.size * 3, base - halfA, base - halfA + halfA * 2 * reveal);
+        ctx.closePath();
+        ctx.clip();
+        ctx.rotate(base);
+        // 招式的刀光同樣是長出來的：長度從三成拉到滿
+        const fsz = f.size * 2.1 * (0.3 + 0.75 * reveal);
         ctx.drawImage(fimg, -fsz * 0.1, -fsz / 2, fsz, fsz);
         ctx.restore();
         continue;

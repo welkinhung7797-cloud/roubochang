@@ -43,6 +43,11 @@
   const buffers = {};
   const lastPlay = {};
   let muted = false;
+  let curVol = 0.8;
+  try {
+    const sv = parseFloat(localStorage.getItem('penguin_vol_v1'));
+    if (!isNaN(sv)) curVol = Math.max(0, Math.min(1, sv));
+  } catch (e) {}
 
   function ensureCtx() {
     if (ctx) return true;
@@ -50,7 +55,7 @@
     if (!AC) return false;
     ctx = new AC();
     master = ctx.createGain();
-    master.gain.value = 0.8;
+    master.gain.value = curVol;
     master.connect(ctx.destination);
     // 預載全部
     for (const key in FILES) {
@@ -92,6 +97,14 @@
     g.gain.value = (VOL[key] || 0.5) * (opts.vol || 1);
     src.connect(g); g.connect(master);
     src.start();
+  };
+
+  window.sfxGetVolume = function () { return curVol; };
+  window.sfxSetVolume = function (v) {
+    curVol = Math.max(0, Math.min(1, v));
+    if (master) master.gain.value = curVol;
+    try { localStorage.setItem('penguin_vol_v1', String(curVol)); } catch (e) {}
+    return curVol;
   };
 
   window.sfxToggleMute = function () {

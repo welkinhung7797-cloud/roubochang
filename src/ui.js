@@ -7,6 +7,7 @@ let selectedChar = null;
 let selectedDanger = 0;
 
 function onModeChange() {
+  if (G.mode !== 'playing' && typeof showPause === 'function') showPause(false);
   ['panel-menu', 'panel-select', 'panel-levelup', 'panel-shop', 'panel-end'].forEach(id => {
     $(id).classList.add('hidden');
   });
@@ -569,13 +570,43 @@ function toggleTunePanel() {
   p.classList.toggle('hidden');
 }
 
+/* ---------- 暫停選單 ---------- */
+function showPause(on) {
+  const el = $('panel-pause');
+  if (!el) return;
+  el.classList.toggle('hidden', !on);
+  if (on && typeof sfxGetVolume === 'function') {
+    const v = Math.round(sfxGetVolume() * 100);
+    $('opt-vol').value = v;
+    $('opt-vol-val').textContent = v;
+  }
+}
+
+function initPauseMenu() {
+  const vol = $('opt-vol');
+  if (vol) {
+    vol.oninput = () => {
+      $('opt-vol-val').textContent = vol.value;
+      if (typeof sfxSetVolume === 'function') sfxSetVolume(vol.value / 100);
+    };
+  }
+  const r = $('btn-resume');
+  if (r) r.onclick = () => { G.paused = false; showPause(false); };
+  const q = $('btn-quit');
+  if (q) q.onclick = () => {
+    G.paused = false; showPause(false);
+    G.mode = 'menu';
+    onModeChange();
+  };
+}
+
 /* ---------- 輸入 ---------- */
 function initInput() {
   window.addEventListener('keydown', e => {
     const k = e.key.toLowerCase();
     G.keys[k] = true;
     if (k === ' ' || k === 'arrowup' || k === 'arrowdown') e.preventDefault();
-    if (k === 'escape' && G.mode === 'playing') G.paused = !G.paused;
+    if (k === 'escape' && G.mode === 'playing') { G.paused = !G.paused; showPause(G.paused); }
     if (G.mode === 'playing' && !G.paused) {
       if (k === ' ') castDash();
     }
@@ -877,6 +908,7 @@ function boot() {
   SAVE = loadSave();
   initRender();
   initInput();
+  initPauseMenu();
   $('btn-play').onclick = openSelect;
   $('btn-back').onclick = () => { G.mode = 'menu'; onModeChange(); };
   $('btn-start').onclick = beginRun;
