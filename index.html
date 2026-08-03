@@ -297,13 +297,71 @@ button:disabled{cursor:not-allowed;opacity:.45}
 #pause-combo-row[open] summary::before{content:'▾ '}
 #pause-combo{max-height:46vh;overflow-y:auto;padding:0 12px 10px}
 
-/* ---- 像素道場皮膚：硬邊、木質、落影 ---- */
-.btn,.danger-btn{box-shadow:0 3px 0 rgba(8,5,2,.55),inset 0 2px 0 rgba(255,255,255,.06)}
-.btn:active:not(:disabled),.danger-btn:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(8,5,2,.55)}
-.btn.primary{border-color:#8a5622;color:#241405}
-.btn.primary:hover:not(:disabled){color:#241405}
-.char-card,.lv-card,.shop-card,#loadout,#stats-panel{box-shadow:0 3px 0 rgba(8,5,2,.4)}
-.select-head h2,.shop-head h2,#levelup-title{color:#e8cf9f}
+/* ---- 少年漫畫皮膚 ----
+   語彙來自週刊格鬥漫畫的分格頁，不是手遊介面：
+   粗墨框＋硬落影（沒有模糊，漫畫的黑邊不會發光）／網點底／格子微微歪（印刷分格不是正方陣）／
+   標題白字包黑邊再壓一層黃（衝擊字）／重點後面放集中線。
+   雙字族：標題明體、內文黑體。 */
+:root{
+  --ink2:#100b06;
+  --font-title:"Noto Serif TC","Songti TC","PMingLiU","MingLiU",serif;
+  /* 網點：漫畫的灰階是網點不是半透明色塊 */
+  --tone:radial-gradient(circle at 1px 1px, rgba(255,255,255,.055) 1px, transparent 1.6px);
+}
+.btn,.danger-btn{border:3px solid var(--ink2);box-shadow:4px 4px 0 var(--ink2);
+  letter-spacing:.14em;font-weight:800}
+.btn:hover:not(:disabled),.danger-btn:hover{transform:translate(-1px,-1px);
+  box-shadow:5px 5px 0 var(--ink2)}
+.btn:active:not(:disabled),.danger-btn:active{transform:translate(3px,3px);box-shadow:1px 1px 0 var(--ink2)}
+.btn.primary{background:var(--gold);color:#1a1206;border-color:var(--ink2)}
+.btn.primary:hover:not(:disabled){background:#f5da5c;color:#1a1206}
+
+/* 卡片＝分格頁的一格：白紙、粗墨框、硬落影。
+   黑框畫在黑底上等於沒畫——漫畫的黑邊是靠白紙撐出來的，所以卡片必須翻成紙。
+   稀有度的色框留著當內襯，字色統一壓暗(filter)，不用去追 JS 塞了什麼顏色。 */
+.lv-card,.shop-card,.char-card{
+  /* 在卡片這一層直接改寫色票變數：底下所有規則不管權重多高，
+     只要它用的是 var(--text)/var(--muted)，就一起翻成紙上的深色。
+     用 !important 硬蓋會連「綠色是加成、紅色是代價」那層意思一起洗掉。 */
+  --text:#241a10; --muted:#6b5942; --line:#bcae90; --panel:#e7dcc6; --panel2:#ddd0b6;
+  --accent:#9a5a12; --gold:#8a6a12; --good:#3f7a33; --bad:#a63328;
+  background:#efe7d6;
+  background-image:radial-gradient(circle at 1px 1px, rgba(20,14,8,.11) 1px, transparent 1.6px);
+  background-size:4px 4px;
+  outline:3px solid var(--ink2);box-shadow:6px 6px 0 var(--ink2);color:#241a10}
+/* 稀有度／職業色是 JS 內嵌的亮色，在紙上會糊掉——整體壓暗但保留色相 */
+.lv-stat,.shop-name .nm,.shop-name .tier,.char-card .nm{filter:brightness(.62) saturate(1.6)}
+#loadout,#stats-panel,.mv-card,.combo-block,#pause-combo-row{
+  outline:3px solid #6b5a3e;box-shadow:5px 5px 0 rgba(8,5,2,.75);
+  background-image:var(--tone);background-size:5px 5px}
+/* 分格頁的格子不會排得筆直——每張歪一點點，滑到才擺正 */
+.lv-card:nth-child(odd),.shop-card:nth-child(odd){transform:rotate(-.7deg)}
+.lv-card:nth-child(even),.shop-card:nth-child(even){transform:rotate(.6deg)}
+.lv-card:hover,.shop-card:hover{transform:rotate(0) translateY(-3px);
+  box-shadow:7px 7px 0 var(--ink2);transition:transform .1s,box-shadow .1s}
+
+/* 衝擊字：白字、厚黑邊、底下再壓一層黃，微微上仰 */
+.title-xl,.title-md,#levelup-title,.select-head h2,.shop-head h2{
+  font-family:var(--font-title);color:#fff;
+  text-shadow:
+    3px 0 0 var(--ink2),-3px 0 0 var(--ink2),0 3px 0 var(--ink2),0 -3px 0 var(--ink2),
+    2px 2px 0 var(--ink2),-2px 2px 0 var(--ink2),2px -2px 0 var(--ink2),-2px -2px 0 var(--ink2),
+    6px 6px 0 var(--gold);
+  transform:rotate(-1.2deg)}
+.title-xl{letter-spacing:.14em;text-indent:.14em}
+/* 集中線：只放在真正的焦點後面，而且要往中心收——
+   漫畫的集中線在焦點附近是留白的，整片鋪滿只會變成放射狀壁紙把卡片吃掉。 */
+#panel-levelup::before{content:'';position:absolute;left:50%;top:44%;width:1500px;height:1500px;
+  transform:translate(-50%,-50%);pointer-events:none;opacity:.5;
+  background:repeating-conic-gradient(from 0deg at 50% 50%,
+    #fff 0deg .34deg, transparent .34deg 3.1deg);
+  -webkit-mask-image:radial-gradient(circle at 50% 50%,
+    transparent 14%, rgba(0,0,0,.55) 38%, rgba(0,0,0,.16) 70%, transparent 88%);
+  mask-image:radial-gradient(circle at 50% 50%,
+    transparent 14%, rgba(0,0,0,.55) 38%, rgba(0,0,0,.16) 70%, transparent 88%)}
+#panel-levelup>*{position:relative}
+.rule{height:5px;border:2px solid var(--ink2);background:var(--gold);width:150px;
+  transform:skewX(-24deg)}
 
 #errbox{position:absolute;left:12px;bottom:12px;background:#3a1c1c;border:2px solid #d9564f;
   color:#ffb3b3;font-size:12px;padding:8px 12px;max-width:600px;z-index:99}
