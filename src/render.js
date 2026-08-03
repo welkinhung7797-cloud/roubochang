@@ -56,7 +56,7 @@ function ensureFloorPattern() {
    兩個來源：居合鏈的反手收刀段（0.3s）、奧義居合結束的收刀硬直（0.5s） */
 function sheatheK(p) {
   if (!p) return -1;
-  if (p.iaiPhase && p.iaiPhase.phase === 'sheath') return 1 - Math.max(0, p.iaiPhase.t) / 0.3;
+  if (p.iaiPhase && p.iaiPhase.phase === 'sheath') return 1 - Math.max(0, p.iaiPhase.t) / 1.0;
   if (p.sheathing > 0) return 1 - p.sheathing / 0.5;
   return -1;
 }
@@ -72,16 +72,16 @@ function drawSheatheAnim(p) {
   if (p.face < 0) ctx.scale(-1, 1);
   const kw = 52, kh = kw * (img.height / img.width);
   const hx = -4, hy = 4;   // 腰間鞘口
-  if (k < 0.42) {
+  if (k < 0.22) {
     // 第一拍：反手甩刀——刀在身前快速翻轉 180°
-    const f = k / 0.42;
+    const f = k / 0.22;
     const ee = 1 - (1 - f) * (1 - f);   // easeOut，甩得快收得穩
     ctx.translate(hx + 12, hy - 8);
     ctx.rotate(-0.9 + ee * (Math.PI + 0.9));
     ctx.drawImage(img, -6, -kh / 2, kw, kh);
   } else {
     // 第二拍：水平收刀——刀尖先進鞘，露在外面的越來越短
-    const f = (k - 0.42) / 0.58;
+    const f = (k - 0.22) / 0.78;
     const vis = Math.max(0.06, 1 - f);
     ctx.save();
     ctx.translate(hx, hy);
@@ -1314,12 +1314,26 @@ function drawStrikes() {
         ctx.rotate(s.ang);
         ctx.drawImage(fxImg, -sz / 2, -sz / 2, sz, sz);
       } else if (s.kind === 'sweep' || s.kind === 'orbit') {
-        // 刀光隨掃掠「長出來」：0.13 秒內展開
-        const kGrow = Math.min(1, s.t / ((s.dur || 0.2) * 0.7));
-        const sz = s.reach * 1.15 * (0.45 + 0.55 * kGrow);
+        // 斬擊不是憑空一條線：殘弧軌跡從起點「掃出來」，刀鋒上才是光刃貼圖
         ctx.translate(p.x, p.y);
+        const ccw = s.kind === 'sweep' ? s.ang1 < s.ang0 : (s.spd || 1) < 0;
+        const a0 = s.kind === 'sweep'
+          ? s.ang0
+          : s.cur + (ccw ? 1.9 : -1.9);   // 迴旋類拖 1.9 rad 的殘尾
+        const rO = s.reach * 0.95, rI = s.reach * 0.42;
+        const cn = parseInt(s.w.color.slice(1), 16);
+        const grad = ctx.createRadialGradient(0, 0, rI, 0, 0, rO);
+        grad.addColorStop(0, 'rgba(255,255,255,0)');
+        grad.addColorStop(0.7, 'rgba(' + ((cn >> 16) & 255) + ',' + ((cn >> 8) & 255) + ',' + (cn & 255) + ',0.30)');
+        grad.addColorStop(1, 'rgba(255,255,255,0.55)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(0, 0, rO, a0, s.cur, ccw);
+        ctx.arc(0, 0, rI, s.cur, a0, !ccw);
+        ctx.closePath();
+        ctx.fill();
         ctx.rotate(s.cur);
-        ctx.globalAlpha *= (0.4 + 0.6 * kGrow);
+        const sz = s.reach * 1.05;
         ctx.drawImage(fxImg, -sz * 0.1, -sz / 2, sz, sz);
       } else if (s.kind === 'slam') {
         const k = Math.min(1, s.t / s.delay);

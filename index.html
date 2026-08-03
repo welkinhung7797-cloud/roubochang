@@ -59,7 +59,7 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .select-head h2{font-size:22px;font-weight:800;letter-spacing:.18em}
 .select-head .hint{color:var(--muted);font-size:12.5px;letter-spacing:.06em}
 #char-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:7px;width:100%;max-width:1200px;
-  overflow-y:auto;max-height:592px;padding-right:4px}
+  overflow-y:auto;max-height:548px;padding-right:4px}
 #char-grid::-webkit-scrollbar{width:8px}
 #char-grid::-webkit-scrollbar-thumb{background:#4a3826}
 .char-card{background:var(--panel);border:2px solid var(--line);padding:6px;cursor:pointer;transition:.12s;
@@ -81,7 +81,8 @@ button:disabled{cursor:not-allowed;opacity:.45}
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .char-best{font-size:10px;color:var(--gold);margin-top:4px}
 
-.select-foot{display:flex;align-items:center;gap:20px;margin-top:14px}
+.select-foot{display:flex;align-items:center;gap:16px;width:100%;max-width:1200px;margin:0 0 10px}
+.select-foot #btn-start{margin-left:auto}
 #danger-row{display:flex;gap:6px}
 .danger-btn{width:40px;height:40px;background:var(--panel);border:2px solid var(--line);
   font-size:17px;font-weight:800;color:var(--text)}
@@ -156,7 +157,7 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .tech-slot.clickable:hover{background:#2c2418}
 .char-combo{display:flex;align-items:center;gap:2px;font-size:14px;font-weight:900;margin-bottom:3px;line-height:1.2}
 .char-combo i{font-style:normal;color:#6b5c46;font-size:11px}
-#char-detail{position:absolute;left:50%;transform:translateX(-50%);bottom:104px;
+#char-detail{position:absolute;left:50%;transform:translateX(-50%);bottom:14px;
   width:calc(100% - 52px);max-width:1200px;background:#1a140d;
   border:2px solid var(--accent);padding:6px 14px;font-size:12.5px;line-height:1.6;z-index:5;
   pointer-events:none;max-height:96px;overflow:hidden}
@@ -252,8 +253,6 @@ button:disabled{cursor:not-allowed;opacity:.45}
       <h2>選擇職業</h2>
       <span class="hint">每個職業都有明確的強項與代價，決定這一局的打法</span>
     </div>
-    <div id="char-grid"></div>
-    <div id="char-detail" class="hidden"></div>
     <div class="select-foot">
       <span class="foot-label">危險等級</span>
       <div id="danger-row"></div>
@@ -261,6 +260,8 @@ button:disabled{cursor:not-allowed;opacity:.45}
       <button id="btn-start" class="btn primary">先選一個職業</button>
       <button id="btn-back" class="btn ghost">返回</button>
     </div>
+    <div id="char-grid"></div>
+    <div id="char-detail" class="hidden"></div>
   </div>
 
   <!-- 升級 -->

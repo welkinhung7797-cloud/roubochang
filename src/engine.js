@@ -780,7 +780,7 @@ function castDash() {
         hurtEnemy(e, techDmg(12), { fromAngle: ang0 });
       }
       // 進入收刀段，之後在 updateTechniques 走完整條鏈
-      p.iaiPhase = { phase: 'sheath', t: 0.3, boost: 0 };
+      p.iaiPhase = { phase: 'sheath', t: 1.0, boost: 0 };
       ok = true;
       break;
     }
@@ -1861,7 +1861,7 @@ function spawnStrike(w, reach) {
     s.ang0 = w.angle - half * w.swingDir;
     s.ang1 = w.angle + half * w.swingDir;
     s.cur = s.ang0;
-    s.dur = 0.13;
+    s.dur = 0.2;
   } else if (w.type === 'spin') {
     s.kind = 'orbit';
     s.cur = w.angle;
