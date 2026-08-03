@@ -1219,8 +1219,18 @@ function drawEnemies() {
 
     // 被金臂勾掛倒：整個人翻著飛（腳離地才叫 clothesline）
     if (e.spin) ctx.rotate(e.spin.a);
-    // 妖怪貼圖模式：飄浮＋微透明＝幽靈感
-    const imgKey = e.boss ? 'boss_' + e.id : e.id;
+    // 妖怪貼圖模式：飄浮＋微透明＝幽靈感。
+    // 狀態變體：挨打換痛臉、暈眩/被種換暈臉（有圖才換，缺圖照舊本體）
+    let imgKey = e.boss ? 'boss_' + e.id : e.id;
+    if (!e.boss) {
+      if (e.hitFlash > 0.04 || e.chopHit || e.reel) {
+        loadEnemyImg(e.id + '_hurt');
+        if (ENEMY_IMGS[e.id + '_hurt']) imgKey = e.id + '_hurt';
+      } else if ((e.stun > 0.35 && e.stun < 90) || e.flat) {
+        loadEnemyImg(e.id + '_dizzy');
+        if (ENEMY_IMGS[e.id + '_dizzy']) imgKey = e.id + '_dizzy';
+      }
+    }
     loadEnemyImg(imgKey);
     const eimg = ENEMY_IMGS[imgKey];
     if (eimg) {
@@ -1522,16 +1532,25 @@ function drawEnemyMarkers() {
         ctx.fillText('!!', 0, 0);
       }
     } else {
-      // 暈眩：三顆星繞頭轉（貼圖到貨前用程序星）
-      const spin = G.time * 5;
-      ctx.strokeStyle = 'rgba(255,220,80,0.5)';
-      ctx.lineWidth = 1.2;
-      ctx.beginPath(); ctx.ellipse(0, 0, e.r * 0.95, e.r * 0.32, 0, 0, Math.PI * 2); ctx.stroke();
-      ctx.fillStyle = '#ffd44a';
-      for (let i = 0; i < 3; i++) {
-        const a = spin + i * Math.PI * 2 / 3;
-        const sx = Math.cos(a) * e.r * 0.95, sy = Math.sin(a) * e.r * 0.32;
-        drawStar(sx, sy, 3.4);
+      // 暈眩：星星貼紙繞頭晃（到貨前用程序星）
+      loadMarker('fx_stun_stars');
+      const st = MARKER_IMGS['fx_stun_stars'];
+      if (st) {
+        const sw = e.r * 1.7;
+        ctx.rotate(Math.sin(G.time * 6) * 0.16);
+        ctx.globalAlpha = 0.95;
+        ctx.drawImage(st, -sw / 2, -sw / 2, sw, sw * (st.height / st.width));
+      } else {
+        const spin = G.time * 5;
+        ctx.strokeStyle = 'rgba(255,220,80,0.5)';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.ellipse(0, 0, e.r * 0.95, e.r * 0.32, 0, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = '#ffd44a';
+        for (let i = 0; i < 3; i++) {
+          const a = spin + i * Math.PI * 2 / 3;
+          const sx = Math.cos(a) * e.r * 0.95, sy = Math.sin(a) * e.r * 0.32;
+          drawStar(sx, sy, 3.4);
+        }
       }
     }
     ctx.restore();
