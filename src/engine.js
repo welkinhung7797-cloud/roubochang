@@ -229,7 +229,8 @@ function startWave(w) {
   P.dashChain = 0; P.dashChainT = 0; P.dashBeatCounted = false; P.ougiCd = 0;
   P.comboCd = 0; P.comboFiring = false; P.comboReadyCue = false; P.beatPopT = 0; P.comboStep = 0;
   P.comboSettle = 0; P.poseAfter = null; P.pendingCombo = null; P.comboFlash = 0; P.comboBreakT = 0;
-  P.extWindow = null; P.extCd = 0; P.lastComboVictim = null;
+  P.extWindow = null; P.extCd = 0; P.lastComboVictim = null; P.thrustChain = null;
+  G.mistCuts = [];
   P.suplexAnim = null; P.hipTossAnim = null; P.ddtState = null; P.tossState = null; P.gutRoll = null;
   G.hitstopEcho = null;
   if (P.airSlam && P.airSlam.e) { P.airSlam.e.grabbed = false; P.airSlam.e.stun = 0.5; }
@@ -1316,17 +1317,9 @@ function updateTechniques(dt) {
     }
   }
   if (p.comboCdMsgT > 0) p.comboCdMsgT -= dt;
-  // 連段窗口：停手太久前綴就散了——連段要一氣呵成，不是隔半分鐘慢慢湊。
-  // 只套用在有連段表的職業：他們的前綴是純站/移拍，一兩秒就湊得出來。
-  // 還在用舊奧義的職業前綴含衝刺拍（衝刺冷卻 5~9 秒），加窗口等於直接廢掉他們的奧義。
-  if (p.beatLog.length && COMBOS[G.char.id]) {
-    p.beatT += dt;
-    if (p.beatT > 2.5) {
-      // 斷連：兩拍以上才提示（打一下就散不算斷）
-      if (p.beatLog.length >= 2) { sfxComboBreak(); p.comboBreakT = 0.5; }
-      p.beatLog = []; p.beatT = 0; p.comboStep = 0; p.comboReadyCue = false;
-    }
-  }
+  // 連段拍譜不會過期（總監定案）：湊到的拍就是你的，不會因為停手而消失。
+  // 拍譜只在「打出收尾招」時清空——玩家可以慢慢找位置、等時機，不必被碼表追著跑。
+  if (p.beatLog.length) p.beatT += dt;
   if (p.flowT > 0) p.flowT -= dt;
 
   // ---- 站樁技 ----
@@ -1554,6 +1547,49 @@ function updateTechniques(dt) {
       // 掄甩不自動放開（總監指令）：抓著就一直掄，結束方式只有站定炸彈摔或人質陣亡
       e.x = Math.max(e.r, Math.min(ARENA.w - e.r, e.x));
       e.y = Math.max(e.r, Math.min(ARENA.h - e.r, e.y));
+    }
+  }
+  // ---- 霞斬：埋在地上的刀氣，時間到整片炸開 ----
+  if (G.mistCuts && G.mistCuts.length) {
+    for (let mi = G.mistCuts.length - 1; mi >= 0; mi--) {
+      const mc = G.mistCuts[mi];
+      mc.t -= dt;
+      if (mc.t > 0) continue;
+      for (const o of G.enemies) {
+        if (o.dead) continue;
+        if (dist2(o.x, o.y, mc.x, mc.y) > mc.r * mc.r) continue;
+        hurtEnemy(o, techDmg(mc.dmg), { crit: chance(0.4), trueDmg: true });
+        if (!o.dead) {
+          addCuts(o, mc.cuts, 0);
+          if (mc.sever) severCheck(o);
+        }
+      }
+      spawnFx('shock', mc.x, mc.y, '#e8f2ff', mc.r, { img: 'fx_ougi_cross' });
+      spawnFx('explode', mc.x, mc.y, '#e8f2ff', mc.r * 0.6);
+      G.screenShake = Math.max(G.screenShake, 12);
+      addHitstop(0.09, true);
+      sfxSever();
+      G.mistCuts.splice(mi, 1);
+    }
+  }
+  // ---- 三段突：連續三記直刺 ----
+  if (p.thrustChain) {
+    const tc = p.thrustChain;
+    tc.t -= dt;
+    if (!tc.e || tc.e.dead) { p.thrustChain = null; }
+    else if (tc.t <= 0) {
+      tc.left--;
+      tc.t = 0.11;
+      const last = tc.left <= 0;
+      hurtEnemy(tc.e, techDmg(tc.dmg), { crit: last, fromAngle: tc.ang });
+      if (!tc.e.dead) {
+        addCuts(tc.e, tc.cuts, tc.ang);
+        if (last && tc.severLast) severCheck(tc.e, 0, true);
+      }
+      spawnFx('spark', tc.e.x, tc.e.y, '#e8f2ff', tc.e.r, { angle: tc.ang });
+      addHitstop(last ? 0.09 : 0.03, last);
+      sfx('hit_blade', { pitch: 1 + (3 - tc.left) * 0.08 });
+      if (last) { p.thrustChain = null; p.staggerT = Math.max(p.staggerT, 0.15); }
     }
   }
   // ---- DDT：勾頭帶跑 → 坐倒把頭釘進地板 ----
@@ -1874,6 +1910,16 @@ function updateTechniques(dt) {
   // ---- 衝刺 ----
   if (p.dashState) {
     const s = p.dashState;
+    if (s.id === 'rebound' && s.t <= 0 && s.reboundLeft > 0) {
+      // 撞到場邊（或跑滿）就折返，回程加速再輾一次
+      s.reboundLeft--;
+      s.dx = -s.dx; s.dy = -s.dy;
+      s.spd *= s.backMul || 1.35;
+      s.t = s.dur0 * 0.9;
+      G.enemies.forEach(o => { o.hitByDash = false; });   // 回程重新計一次命中
+      spawnFx('slide', p.x, p.y, '#c98a3c', 44, { angle: Math.atan2(s.dy, s.dx) });
+      sfx('dash');
+    }
     if (s.pre && s.pre > 0) {
       // 衝撞的預備拍：重心後撤（8px），給眼睛一條基準線
       s.pre -= dt;
@@ -2001,6 +2047,20 @@ function updateTechniques(dt) {
           p.pose = { type: 'ddtp', ang: Math.atan2(s.dy, s.dx), t: 0, dur: 0.34, prio: 1 };
           sfx('grab');
           break;
+        } else if (s.id === 'rebound' && !e.hitByDash) {
+          // 跑繩輾過去：橫向撥開（你是從他們中間輾過去的，不是往後撞飛）
+          e.hitByDash = true; s.hitAny = true;
+          const aR = Math.atan2(s.dy, s.dx);
+          hurtEnemy(e, techDmg(s.chargeDmg || 34) * (s.boost || 1), { fromAngle: aR });
+          if (!e.dead) {
+            const sideSign = ((e.x - p.x) * -s.dy + (e.y - p.y) * s.dx) >= 0 ? 1 : -1;
+            const kb = e.boss ? 40 : (s.chargeKnock || 200);
+            e.knockX += -s.dy * sideSign * kb; e.knockY += s.dx * sideSign * kb;
+            e.stun = Math.max(e.stun, s.chargeStun || 0.5);
+            e.hitSquash = Math.max(e.hitSquash || 0, 0.24);
+          }
+          sfx('hit_blunt');
+          addHitstop(0.04, false);
         } else if (s.id === 'clothesline' && !e.hitByDash) {
           // 飛奔金臂勾：金臂勾的定義是把人的腳掀離地面——掛到的人翻著飛出去，
           // 不是被推走。撞一個掉一次速（被人牆拖住的重量感）。
@@ -2391,16 +2451,20 @@ function matchCombo(action) {
   const p = G.player;
   if (!p) return null;
   const log = p.beatLog;
+  // 取「前綴最長」的那一條：拍譜是 A·A 時按 C，AAC 要贏過 AC——
+  // 玩家累積得越多，出的招就該越強，不能被短連段搶先。
+  let best = null, bestNeed = -1;
   for (const c of comboList()) {
     const need = c.seq.length - 1;
+    if (need <= bestNeed) continue;
     if (c.seq[need] !== action) continue;
     if (log.length < need) continue;
     const tail = log.slice(log.length - need);
     let ok = true;
     for (let i = 0; i < need; i++) if (tail[i] !== c.seq[i]) { ok = false; break; }
-    if (ok) return c;
+    if (ok) { best = c; bestNeed = need; }
   }
-  return null;
+  return best;
 }
 
 /* 目前打得出來的連段（頭上提示用）。cd>0＝招還沒好，提示要照實講。 */
@@ -2549,6 +2613,30 @@ function castOugi(o, target) {
       p.lastComboVictim = eH;
       p.pose = { type: 'hiptossp', ang: p.face > 0 ? 0 : Math.PI, t: 0, dur: 0.36, prio: 1 };
       sfx('grab');
+      ok = true; break;
+    }
+    case 'area_delayed': {
+      // 霞斬：刀氣留在那片區域，1.2 秒後才整片炸開——全遊戲唯一要預判落點的招
+      const dirA = dashDir();
+      const axc = Math.max(60, Math.min(ARENA.w - 60, p.x + dirA.x * (pr.reach || 130)));
+      const ayc = Math.max(60, Math.min(ARENA.h - 60, p.y + dirA.y * (pr.reach || 130)));
+      G.mistCuts = G.mistCuts || [];
+      G.mistCuts.push({ x: axc, y: ayc, r: pr.radius || 130, t: pr.delay || 1.2,
+        dmg: pr.dmg || 52, cuts: pr.cuts || 2, sever: !!pr.severInArea });
+      spawnFx('swing', p.x, p.y, '#b8c6dc', 130, { angle: Math.atan2(dirA.y, dirA.x), arc: 90, type: 'arc' });
+      p.pose = { type: pr.pose || 'chop', ang: Math.atan2(dirA.y, dirA.x), t: 0, dur: 0.3, prio: 1 };
+      sfx('swing_blade');
+      ok = true; break;
+    }
+    case 'multi_thrust': {
+      // 三段突：連續三記直刺，最後一刺無視累積強制斬斷
+      const eT = target && !target.dead ? target : nearestEnemy(p.x, p.y, pr.range || 150);
+      if (!eT) break;
+      const aT2 = Math.atan2(eT.y - p.y, eT.x - p.x);
+      p.pose = { type: pr.pose || 'jab', ang: aT2, t: 0, dur: 0.34, prio: 1 };
+      p.thrustChain = { e: eT, left: pr.thrusts || 3, t: 0, dmg: pr.dmg || 18,
+        cuts: pr.cuts || 1, severLast: !!pr.severOnLast, ang: aT2 };
+      sfx('swing_blade');
       ok = true; break;
     }
     case 'delayed_cuts': {
@@ -2714,6 +2802,7 @@ function castOugi(o, target) {
         chargeDmg: pr.dmg, chargeKnock: pr.knock, chargeStun: pr.stun,
         chargeW: pr.width / 2, boost: 1,
       };
+      if (pr.pulses) { p.dashState.pulses = pr.pulses; p.dashState.alternate = pr.alternate; p.dashState.pulseCuts = pr.cuts; }
       p.pose = { type: pr.pose || 'swing', ang: aC, t: 0, dur: pr.len / spdC + 0.15, prio: 1 };
       spawnFx('slide', p.x, p.y, '#c98a3c', 40, { angle: aC });
       sfx('wind');
@@ -2752,6 +2841,48 @@ function castOugi(o, target) {
       if (!list.length) break;
       p.rushMulti = { targets: list, tick: 0, dmg: pr.dmg };
       p.iframe = Math.max(p.iframe, pr.count * 0.11 + 0.3);
+      ok = true; break;
+    }
+    case 'dive_splash': {
+      // 撲壓：跳出去用整個身體壓上去。受方原地被壓扁不位移，施術者可能一起倒地。
+      const dirV = dashDir();
+      const lenV = pr.len || 60;
+      const exV = Math.max(p.r, Math.min(ARENA.w - p.r, p.x + dirV.x * lenV));
+      const eyV = Math.max(p.r, Math.min(ARENA.h - p.r, p.y + dirV.y * lenV));
+      p.x = exV; p.y = eyV;
+      pushOutOfWalls(p);
+      let anyV = false;
+      for (const o2 of G.enemies) {
+        if (o2.dead) continue;
+        if (dist2(o2.x, o2.y, p.x, p.y) > (pr.radius || 80) * (pr.radius || 80)) continue;
+        hurtEnemy(o2, techDmg(pr.dmg || 28), { trueDmg: true });
+        if (!o2.dead) {
+          o2.stun = Math.max(o2.stun, pr.stun || 0.6);
+          o2.hitSquash = Math.max(o2.hitSquash || 0, 0.3);
+          o2.knockX = 0; o2.knockY = 0;   // 被壓的人原地扁掉，不飛
+          if (pr.prone) o2.flat = { t: 0.9 };
+        }
+        anyV = true;
+      }
+      spawnFx('shock', p.x, p.y, '#b07a4a', pr.radius || 80, { img: 'fx_slam_ring', squash: 0.45 });
+      spawnFx('explode', p.x, p.y, '#c9a06a', (pr.radius || 80) * 0.7);
+      p.pose = { type: pr.pose || 'slamland', ang: Math.atan2(dirV.y, dirV.x), t: 0, dur: 0.3, prio: 1 };
+      if (pr.selfProne) p.staggerT = Math.max(p.staggerT, pr.selfProne);
+      G.screenShake = Math.max(G.screenShake, 12);
+      sfxThrow('suplex');
+      ok = anyV || true;
+      break;
+    }
+    case 'rebound_line': {
+      // 跑繩：衝出去撞到場邊彈回來，去程回程各輾一次——全表唯一吃場地幾何的招
+      const dirR = dashDir();
+      p.dashState = { id: 'rebound', dx: dirR.x, dy: dirR.y,
+        t: (pr.out || 260) / 780, spd: 780, accel: true,
+        chargeDmg: pr.dmg || 34, chargeKnock: pr.knock || 200, chargeStun: pr.stun || 0.5,
+        chargeW: (pr.width || 70) / 2, boost: 1,
+        reboundLeft: 1, backMul: pr.backMul || 1.35, latched: [] };
+      p.pose = { type: 'lariat', ang: Math.atan2(dirR.y, dirR.x), t: 0, dur: 0.4, prio: 1 };
+      sfx('dash');
       ok = true; break;
     }
     case 'aoe_blast': {
@@ -3305,10 +3436,20 @@ function applyWeaponHit(w, e, reach, mulOverride, isEcho) {
   if (crit && !isEcho) {
     if (sp === 'iai' && !e.dead) hurtEnemy(e, base * 0.7 / w.critMult, { crit: true, fromAngle: w.angle });
     if (sp === 'crit_shock') {
-      spawnFx('shock', p.x, p.y, '#ffffff', 90);
+      // 拳頭是往前打穿的，不是往四周炸開（總監明令：近戰的拳不該是圓形範圍）。
+      // 震盪從命中點沿拳路往後方傳，只波及站在那條線上的人——貫通不是擴散。
+      const sa = w.angle;
+      const ex0 = e.x, ey0 = e.y;
+      const REACH = 96, HALFW = 30;
+      spawnFx('swing', ex0, ey0, '#ffffff', REACH, { angle: sa, arc: 34, type: 'arc' });
+      spawnFx('spark', ex0, ey0, '#ffffff', e.r, { angle: sa });
       G.enemies.forEach(o => {
-        if (!o.dead && o !== e && dist2(o.x, o.y, p.x, p.y) < 90 * 90) {
-          hurtEnemy(o, base * 0.5, { trueDmg: true });
+        if (o.dead || o === e) return;
+        const rx = o.x - ex0, ry = o.y - ey0;
+        const along = rx * Math.cos(sa) + ry * Math.sin(sa);      // 沿拳路往前
+        const side = Math.abs(-rx * Math.sin(sa) + ry * Math.cos(sa));
+        if (along >= -12 && along <= REACH && side <= HALFW + o.r) {
+          hurtEnemy(o, base * 0.5, { trueDmg: true, fromAngle: sa });
         }
       });
     }
@@ -3329,7 +3470,7 @@ function updatePlayer(dt) {
   if (k['s'] || k['arrowdown']) my += 1;
   // 衝刺中身體不歸自己管；踉蹌時腿軟
   if (p.dashState || p.staggerT > 0 || (p.iaiPhase && p.iaiPhase.phase === 'sheath') ||
-      p.suplexAnim || p.hipTossAnim || p.ddtState || p.tossState || p.gutRoll) { mx = 0; my = 0; }
+      p.suplexAnim || p.hipTossAnim || p.ddtState || p.tossState || p.gutRoll || p.thrustChain) { mx = 0; my = 0; }
   const len = Math.hypot(mx, my);
   const moving = len > 0;
   if (moving) { mx /= len; my /= len; }

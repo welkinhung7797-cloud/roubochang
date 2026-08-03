@@ -890,16 +890,6 @@ function drawPlayer() {
       ctx.restore();
       ctx.textAlign = 'left';
     }
-    if (p.comboBreakT > 0) {
-      const bk = p.comboBreakT / 0.5;
-      ctx.globalAlpha = bk * 0.8;
-      ctx.font = 'bold 11px ' + FONT;
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#8a795e';
-      ctx.fillText('連段斷了', 0, y0 - 10 + (1 - bk) * 14);
-      ctx.globalAlpha = 1;
-      ctx.textAlign = 'left';
-    }
     if (bl.length) {
       const bw = 9, gap = 2;
       const total = 3 * bw + 2 * gap;
@@ -910,8 +900,6 @@ function drawPlayer() {
         const isLast = i === bl.length - 1;
         const pop = isLast && p.beatPopT > 0 ? 1 + (p.beatPopT / 0.22) * 0.65 : 1;
         const w2 = bw * pop, h2 = 8 * pop;
-        const urgent = p.beatT > 1.9 && bl.length >= 2;
-        ctx.globalAlpha = urgent ? (0.5 + Math.sin(G.time * 26) * 0.5) : 1;
         ctx.fillStyle = 'rgba(10,12,16,0.7)';
         ctx.fillRect(bx + (bw - w2) / 2, y0 - 8 - (h2 - 8) / 2, w2, h2);
         if (beat) {
@@ -1026,6 +1014,10 @@ function drawWeaponSet(behind) {
     const isBehind = Math.sin(w.angle) < 0;
     if (isBehind !== behind) return;
     if (w.id === 'katana' && sheatheK(G.player) >= 0) return;   // 收刀動畫期間刀不在手上
+    // 劍豪的專屬幀每一張都已經把打刀握在手上了，再畫一把外掛的就是兩把刀。
+    // （買到的第二把打刀同理——一個人不會同時揮兩把同款刀，多的那把交給刀光表現。）
+    if (w.id === 'katana' && G.char.id === 'kenshi' &&
+        CHAR_FRAMES.kenshi && CHAR_FRAMES.kenshi.ready) return;
     const reach = w.range * rangeMul;
     const swingP = Math.max(0, w.swing);
     const holdD = 16 + i * 1.5;
