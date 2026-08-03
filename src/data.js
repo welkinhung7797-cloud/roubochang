@@ -965,3 +965,57 @@ function tierUnlock(wave) {
   if (wave >= 5) return 2;
   return 1;
 }
+
+/* ---------- 連段盤（總監 2026-08-04 定案，見 規格/爽度軸與50波成長設計.md §9） ----------
+   拍譜前綴收斂成三族 × 收尾三種 = 九格，每格是一個可以塞收尾招的插槽。
+   開局只開「站站」「移移」兩排（六格），混拍那排後期解鎖——不要讓玩家一開始就苦惱招式障礙。
+   收尾招從原本寫死的 COMBOS 轉出來當池子，玩家自己決定哪一招放哪一格。 */
+const BOARD_ROWS = [
+  { key: 'SS', name: '站站', hint: '站著不動打兩下', beats: ['S', 'S'] },
+  { key: 'MM', name: '移移', hint: '一邊移動打兩下', beats: ['M', 'M'] },
+  { key: 'MX', name: '混拍', hint: '一站一移各打一下', beats: null, lateUnlock: true },
+];
+const BOARD_COLS = [
+  { key: 'S', name: '站', act: '第三下站著不動打中' },
+  { key: 'M', name: '移', act: '第三下一邊移動打中' },
+  { key: 'D', name: '衝', act: '接著按 SPACE' },
+];
+const BOARD_ROW_KEYS = BOARD_ROWS.map(r => r.key);
+/* 混拍加成：純拍（站站站／移移移）普通，其餘變體較強——沿用總監 2026-08-03 定案 */
+const BOARD_MIX_MUL = 1.25;
+/* 收尾招放進非本命格：可以放，但打折。製造「這條線只剩衝格，要不要硬塞」的取捨 */
+const BOARD_OFFHOME_MUL = 0.7;
+
+/* 收尾招池：從既有連段表轉出來（params 與 kind 都是已經調過、測過的，不重寫） */
+const FINISHER_POOL = {};
+const FINISHER_MAP = {};
+(function buildFinisherPool() {
+  const PRICE = [0, 18, 30, 46, 68];
+  for (const cls in COMBOS) {
+    FINISHER_POOL[cls] = COMBOS[cls].map((c, i) => {
+      const f = {
+        id: cls + '_f' + i, cls,
+        name: c.name, kind: c.kind, params: c.params,
+        ext: c.ext, extName: c.extName, desc: c.desc, sig: !!c.sig,
+        home: c.seq[c.seq.length - 1],   // 本命格＝它原本的收尾拍
+        tier: 1, price: PRICE[1],
+      };
+      FINISHER_MAP[f.id] = f;
+      return f;
+    });
+  }
+})();
+
+/* 開局盤面：把原本的三拍連段放回它原本的位置，兩拍的（實測結構性打不出來）改成池子裡的備品 */
+function defaultBoard(clsId) {
+  const b = {};
+  (COMBOS[clsId] || []).forEach((c, i) => {
+    if (c.seq.length !== 3) return;              // 兩拍的不進開局盤
+    const pre = c.seq[0] + c.seq[1];
+    const row = pre === 'SS' ? 'SS' : pre === 'MM' ? 'MM' : 'MX';
+    const col = c.seq[2];
+    if (row === 'MX') return;                    // 混拍排開局沒解鎖
+    if (!b[row + '_' + col]) b[row + '_' + col] = clsId + '_f' + i;
+  });
+  return b;
+}

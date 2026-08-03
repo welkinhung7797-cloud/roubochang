@@ -209,6 +209,10 @@ function startRun(charId, danger) {
   G.time = 0; G.screenShake = 0; G.paused = false; G.pendingShop = false;
   G.kills = 0; G.stats = { dmgDealt: 0, dmgTaken: 0, src: {} };
   G.player = createPlayer(c);
+  // 連段盤是整局的資產（玩家買招、換格都存在這裡），不跨波重建。
+  // 開局只開「站站」「移移」兩排六格且全部填滿——不要讓玩家一開始就苦惱空格。
+  G.player.comboBoard = defaultBoard(charId);
+  G.player.boardRows = ['SS', 'MM'];
   G.shop = null;
   startWave(1);
 }
@@ -2502,6 +2506,24 @@ function castSpiralToss() {
 
 /* 這個職業的連段表：沒定義就把 OUGI 當成單條招牌連段（語意相同） */
 function comboList() {
+  const p = G.player;
+  // 有盤面就列盤面（玩家自己組的），沒有才退回職業預設表
+  if (p && p.comboBoard) {
+    const out = [];
+    for (const row of (p.boardRows || [])) {
+      for (const col of ['S', 'M', 'D']) {
+        const f = FINISHER_MAP[p.comboBoard[row + '_' + col]];
+        if (!f) continue;
+        out.push({
+          seq: (row === 'MX' ? ['S', 'M'] : row.split('')).concat(col),
+          name: f.name, kind: f.kind, params: f.params,
+          ext: f.ext, extName: f.extName, sig: f.sig, desc: f.desc,
+          row, col, fid: f.id, home: f.home,
+        });
+      }
+    }
+    return out;
+  }
   const id = G.char && G.char.id;
   if (!id) return [];
   // 有連段表的職業就只用連段表——奧義不併回拍序表。
@@ -2518,24 +2540,36 @@ function comboList() {
 }
 
 /* 前綴符合、且第三個動作＝action 的連段。action 是玩家「正在做的動作」不是已記錄的拍。 */
+/* 前綴兩拍 → 盤面哪一排。含 D 的前綴不成族（衝刺拍不當前綴用）。 */
+function boardRowOf(a, b) {
+  if (a === 'S' && b === 'S') return 'SS';
+  if (a === 'M' && b === 'M') return 'MM';
+  if ((a === 'S' && b === 'M') || (a === 'M' && b === 'S')) return 'MX';
+  return null;
+}
+
+/* 查連段盤：前綴兩拍決定「哪一排」，玩家這一下的動作決定「哪一格」。
+   舊版是在寫死的十條裡取最長前綴——那讓連段變成「這個職業長這樣」而不是
+   「我把它組成這樣」，而且兩拍的連段（SD／MD）在數學上被三拍的永遠遮蔽。 */
 function matchCombo(action) {
   const p = G.player;
-  if (!p) return null;
+  if (!p || !p.comboBoard) return null;
   const log = p.beatLog;
-  // 取「前綴最長」的那一條：拍譜是 A·A 時按 C，AAC 要贏過 AC——
-  // 玩家累積得越多，出的招就該越強，不能被短連段搶先。
-  let best = null, bestNeed = -1;
-  for (const c of comboList()) {
-    const need = c.seq.length - 1;
-    if (need <= bestNeed) continue;
-    if (c.seq[need] !== action) continue;
-    if (log.length < need) continue;
-    const tail = log.slice(log.length - need);
-    let ok = true;
-    for (let i = 0; i < need; i++) if (tail[i] !== c.seq[i]) { ok = false; break; }
-    if (ok) { best = c; bestNeed = need; }
-  }
-  return best;
+  if (log.length < 2) return null;
+  const row = boardRowOf(log[log.length - 2], log[log.length - 1]);
+  if (!row) return null;
+  if ((p.boardRows || []).indexOf(row) < 0) return null;   // 那一排還沒解鎖
+  const f = FINISHER_MAP[p.comboBoard[row + '_' + action]];
+  if (!f) return null;                                     // 空格：只出普攻，不變招
+  // 純拍（站站站／移移移）普通，混拍變體較強；放進非本命格打折但可以放
+  const pure = (row === 'SS' && action === 'S') || (row === 'MM' && action === 'M');
+  const boardMul = (pure ? 1 : BOARD_MIX_MUL) * (f.home === action ? 1 : BOARD_OFFHOME_MUL);
+  return {
+    seq: (row === 'MX' ? ['S', 'M'] : row.split('')).concat(action),
+    name: f.name, kind: f.kind, params: f.params,
+    ext: f.ext, extName: f.extName, sig: f.sig, desc: f.desc,
+    boardMul, row, col: action, fid: f.id, home: f.home,
+  };
 }
 
 /* 目前打得出來的連段（頭上提示用）。cd>0＝招還沒好，提示要照實講。 */
@@ -2561,7 +2595,8 @@ function castCombo(c, target) {
   // 不補這段的話「站定蓄滿五層 → 第三下貫手」那五層勁會原封不動留在身上。
   const focusMul = 1 + (p.focusStacks || 0) * 0.25;
   const prevDmgMul = G.__comboDmgMul;
-  G.__comboDmgMul = focusMul;
+  // 盤面倍率：混拍加成 × 本命/非本命。放在這裡才會同時吃到蓄勁。
+  G.__comboDmgMul = focusMul * (c.boardMul || 1);
   if (p.focusStacks > 0) {
     addDmgNum(p.x, p.y - 34, '寸勁 ×' + focusMul.toFixed(2), '#e8964a');
     p.focusStacks = 0;
