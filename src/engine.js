@@ -199,7 +199,10 @@ function startRun(charId, danger) {
   G.char = c;
   G.danger = danger;
   G.wave = 1;
-  G.materials = 0; G.totalMaterials = 0;
+  // 開局給一點本錢：第一波固定只賺得到 8 素材，而商店最便宜的道具 10、武器 9——
+  // 也就是「第一次進商店保證四張卡全部灰掉」。玩家第一次接觸商店就是「這東西壞了」，
+  // 之後很可能整局都按 Enter 跳過。給 12 讓第一次一定買得起一件。
+  G.materials = 12; G.totalMaterials = 12;
   G.xp = 0; G.level = 1; G.levelQueue = 0; G.levelChoices = null;
   G.enemies = []; G.projectiles = []; G.pickups = []; G.fx = []; G.damageNums = [];
   // 這些若不歸零會跨局殘留，讓同種子的兩局跑出不同結果，平衡量測就不可重現
@@ -2484,8 +2487,26 @@ function castSpiralToss() {
 function comboList() {
   const id = G.char && G.char.id;
   if (!id) return [];
-  if (COMBOS[id]) return COMBOS[id];
   const o = OUGI[id];
+  // ★ 有連段表的職業，招牌奧義本來被這裡 return 掉，變成永遠打不出來
+  //   （摔角手的螺旋摔投實測：拍譜 D·M·S 按 SPACE 出的是背後擒摔），
+  //   而商店卡片上還寫著「湊齊前綴按 SPACE 仍是螺旋摔投」——遊戲在教一個做不到的操作。
+  //   改成合併：奧義是最長的那一條（4 拍），matchCombo 取最長前綴自然會讓它贏過 3 拍的招。
+  if (COMBOS[id]) {
+    if (!o) return COMBOS[id];
+    const sq = o.seq[o.seq.length - 1] === 'D' ? o.seq : o.seq.concat('D');
+    // 撞名就不併：空手道的「極正拳」在連段表裡已經有一條（AAC），
+    // 劍豪的「十文字斬」是既有的延伸技名。同名兩條指令不同，玩家只會更亂。
+    const dup = COMBOS[id].some(c => c.name === o.name || c.extName === o.name);
+    if (dup) return COMBOS[id];
+    if (!COMBOS[id].__withOugi) {
+      COMBOS[id].__withOugi = COMBOS[id].concat([{
+        seq: sq, name: o.name, kind: o.kind, params: o.params,
+        desc: o.desc, sig: true,
+      }]);
+    }
+    return COMBOS[id].__withOugi;
+  }
   if (!o) return [];
   // 還沒做連段表的職業：奧義維持「湊齊指令後按 Space」——結尾不是 D 的就補一格 D，
   // 語意才跟連段樹一致（最後一格＝玩家做的動作），行為也跟改版前相同。

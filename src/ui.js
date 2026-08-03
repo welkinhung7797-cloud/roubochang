@@ -123,7 +123,15 @@ function comboHowTo(seq) {
 }
 
 function comboLinesHtml(chId) {
-  const list = (typeof COMBOS !== 'undefined' && COMBOS[chId]) ? COMBOS[chId] : null;
+  // 招牌奧義要跟連段表一起顯示，否則玩家在表上找不到、也就不知道它存在。
+  // 這裡不能只讀 COMBOS——引擎的 comboList() 是把奧義併進去的，兩邊不同步就會教錯。
+  let list = (typeof COMBOS !== 'undefined' && COMBOS[chId]) ? COMBOS[chId] : null;
+  if (list && typeof OUGI !== 'undefined' && OUGI[chId] &&
+      !list.some(c => c.name === OUGI[chId].name || c.extName === OUGI[chId].name)) {
+    const _o = OUGI[chId];
+    const _sq = _o.seq[_o.seq.length - 1] === 'D' ? _o.seq : _o.seq.concat('D');
+    list = list.concat([{ seq: _sq, name: _o.name, desc: _o.desc, sig: true }]);
+  }
   const rows = list && list.length
     ? list.slice()
     : (OUGI[chId] ? [{ seq: OUGI[chId].seq[OUGI[chId].seq.length - 1] === 'D'
@@ -159,7 +167,15 @@ function comboLinesHtml(chId) {
 function comboTableHtml(chId) {
   const ACT = { S: '站定打中', M: '移動打中', D: '按 Space' };
   const B = { S: '站', M: '移', D: '衝' };
-  const list = (typeof COMBOS !== 'undefined' && COMBOS[chId]) ? COMBOS[chId] : null;
+  // 招牌奧義要跟連段表一起顯示，否則玩家在表上找不到、也就不知道它存在。
+  // 這裡不能只讀 COMBOS——引擎的 comboList() 是把奧義併進去的，兩邊不同步就會教錯。
+  let list = (typeof COMBOS !== 'undefined' && COMBOS[chId]) ? COMBOS[chId] : null;
+  if (list && typeof OUGI !== 'undefined' && OUGI[chId] &&
+      !list.some(c => c.name === OUGI[chId].name || c.extName === OUGI[chId].name)) {
+    const _o = OUGI[chId];
+    const _sq = _o.seq[_o.seq.length - 1] === 'D' ? _o.seq : _o.seq.concat('D');
+    list = list.concat([{ seq: _sq, name: _o.name, desc: _o.desc, sig: true }]);
+  }
   if (list) {
     return list.map(c => {
       const pre = c.seq.slice(0, -1).map(b => B[b]).join('·');
@@ -248,11 +264,15 @@ function renderLevelUp() {
   $('levelup-title').textContent = '等級 ' + G.level + (G.levelQueue > 1 ? '　（還有 ' + (G.levelQueue - 1) + ' 次）' : '');
   const wrap = $('levelup-cards');
   wrap.innerHTML = '';
-  const gearColor = ['#d98a3c', '#c9576b', '#5a8ac9', '#77c47f'];
+  // ★ 這裡本來是 gearColor[i % 4]——第一張永遠橘、第二張永遠粉，跟內容零關係，
+  //   但玩家（跟我自己寫漫畫皮時）都會把它讀成稀有度。會誤導的顏色比沒有顏色更糟。
+  //   改成照實表達唯一真的存在的分類：獨門（拿過就從池子移除）vs 可疊。
+  const UNIQ_COL = '#e0c341', STACK_COL = '#8fd4e0';
+  const gearColorOf = g => (g.unique ? UNIQ_COL : STACK_COL);
   G.levelChoices.forEach((g, i) => {
     const el = document.createElement('button');
     el.className = 'lv-card';
-    el.style.borderColor = gearColor[i % 4];
+    el.style.borderColor = gearColorOf(g);
     const statLineHtml = g.stats
       ? '<div class="lv-cur">' + Object.keys(g.stats).map(k =>
           STAT_MAP[k].name + ' ' + (g.stats[k] > 0 ? '+' : '') + g.stats[k] + STAT_MAP[k].suffix
@@ -260,7 +280,7 @@ function renderLevelUp() {
       : '<div class="lv-cur">' + (g.unique ? '獨門裝備' : '可重複拿') + '</div>';
     el.innerHTML =
       '<img class="lv-icon" src="assets/icons/' + g.id + '.png" alt="" onerror="this.style.display=\'none\'">' +
-      '<div class="lv-stat" style="color:' + gearColor[i % 4] + '">' + g.name + '</div>' +
+      '<div class="lv-stat" style="color:' + gearColorOf(g) + '">' + g.name + '</div>' +
       '<div class="lv-desc" style="min-height:64px">' + g.desc + '</div>' +
       statLineHtml;
     el.onclick = () => { chooseLevelUp(i); };
