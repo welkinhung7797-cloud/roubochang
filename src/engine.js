@@ -901,16 +901,35 @@ function dashDir() {
   if (k['d'] || k['arrowright']) dx += 1;
   if (k['w'] || k['arrowup']) dy -= 1;
   if (k['s'] || k['arrowdown']) dy += 1;
+  let ax, ay;
   const l = Math.hypot(dx, dy);
-  if (l > 0) return { x: dx / l, y: dy / l };
-  const ml = Math.hypot(p.lastMoveX, p.lastMoveY) || 1;
-  return { x: p.lastMoveX / ml, y: p.lastMoveY / ml };
+  if (l > 0) { ax = dx / l; ay = dy / l; }
+  else { const ml = Math.hypot(p.lastMoveX, p.lastMoveY) || 1; ax = p.lastMoveX / ml; ay = p.lastMoveY / ml; }
+  // ★ 方位吸附（總監 2026-08-04）：鍵盤只給得出 8 個方向，而敵人不會剛好站在那 8 條線上。
+  //   在按的方向 ±35 度的錐形內找最近的敵人，直接對準他。
+  //   例：敵人在 10 點鐘、你只按得出 11 點鐘，照樣抓得到。
+  //   （16 方位在鍵盤上做不到——WASD 就是只有 8 個向量，除非加滑鼠瞄準。）
+  const aimA = Math.atan2(ay, ax);
+  let best = null, bestD = 1e9;
+  for (const e of G.enemies) {
+    if (e.dead || e.grabbed || e.thrown) continue;
+    const ex = e.x - p.x, ey = e.y - p.y;
+    const d = Math.hypot(ex, ey);
+    if (d < 12 || d > 460) continue;
+    if (Math.abs(angDiff(Math.atan2(ey, ex), aimA)) > 0.61) continue;   // ±35 度
+    if (d < bestD) { bestD = d; best = e; }
+  }
+  if (best) {
+    const bx = best.x - p.x, by = best.y - p.y, bd = Math.hypot(bx, by) || 1;
+    return { x: bx / bd, y: by / bd, lockOn: best };
+  }
+  return { x: ax, y: ay };
 }
 
 function dashTackle(d) {
   const p = G.player;
   const dir = dashDir();
-  p.dashState = { id: 'tackle', dx: dir.x, dy: dir.y, t: d.dashDur, spd: d.dashSpd,
+  p.dashState = { id: 'tackle', dx: dir.x, dy: dir.y, lockOn: dir.lockOn, t: d.dashDur, spd: d.dashSpd,
     carried: null, hitAny: false, risk: true };
   return true;
 }
@@ -918,14 +937,14 @@ function dashTackle(d) {
 function dashGrabSpin(d) {
   const p = G.player;
   const dir = dashDir();
-  p.dashState = { id: 'grab_spin', dx: dir.x, dy: dir.y, t: d.dashDur, spd: d.dashSpd, grabDef: d };
+  p.dashState = { id: 'grab_spin', dx: dir.x, dy: dir.y, lockOn: dir.lockOn, t: d.dashDur, spd: d.dashSpd, grabDef: d };
   return true;
 }
 
 function dashGeneric(d, kind) {
   const p = G.player;
   const dir = dashDir();
-  p.dashState = { id: kind, dx: dir.x, dy: dir.y, t: d.dashDur, spd: d.dashSpd };
+  p.dashState = { id: kind, dx: dir.x, dy: dir.y, lockOn: dir.lockOn, t: d.dashDur, spd: d.dashSpd };
   return true;
 }
 
@@ -2000,6 +2019,29 @@ function updateTechniques(dt) {
     const spdNow = s.accel
       ? s.spd * Math.min(1, 0.33 + runK / 0.25 * 0.67)
       : s.spd * (0.55 + 0.75 * slideK);
+    // ★ 途中可以轉彎（總監 2026-08-04：像開車一樣，不要 0～5 這段距離都改不了路徑）。
+    //   吸附鎖定的目標會持續追蹤（他會動，你也該跟著轉）；沒鎖定就吃當下的方向鍵。
+    //   轉向速率有上限——能修正，但不能原地掉頭，那樣衝刺就沒有「賭一把」的重量了。
+    {
+      let wx = 0, wy = 0;
+      if (s.lockOn && !s.lockOn.dead && !s.lockOn.thrown) {
+        wx = s.lockOn.x - p.x; wy = s.lockOn.y - p.y;
+      } else {
+        const k = G.keys || {};
+        if (k['a'] || k['arrowleft']) wx -= 1;
+        if (k['d'] || k['arrowright']) wx += 1;
+        if (k['w'] || k['arrowup']) wy -= 1;
+        if (k['s'] || k['arrowdown']) wy += 1;
+      }
+      const wl = Math.hypot(wx, wy);
+      if (wl > 0.001) {
+        const want = Math.atan2(wy / wl, wx / wl);
+        const cur = Math.atan2(s.dy, s.dx);
+        const turn = Math.max(-4.2 * dt, Math.min(4.2 * dt, angDiff(want, cur)));
+        const na = cur + turn;
+        s.dx = Math.cos(na); s.dy = Math.sin(na);
+      }
+    }
     p.x += s.dx * spdNow * dt;
     p.y += s.dy * spdNow * dt;
     // 飛奔金臂勾的寬走廊命中：手臂是整條橫桿（chargeW），不是貼身半徑
