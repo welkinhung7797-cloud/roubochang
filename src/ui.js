@@ -311,7 +311,9 @@ function renderShop() {
         '<canvas class="shop-icon" width="56" height="56"></canvas>' +
         '<div class="shop-name">' +
           '<div class="tier" style="color:' + (isTech ? e.color : TIER_COLOR[e.tier]) + '">' +
-            (isTech ? SLOT_NAME[MOVE_MAP[e.id].slot] : TIER_NAME[e.tier]) + '</div>' +
+            (isTech ? SLOT_NAME[MOVE_MAP[e.id].slot]
+              : e.kind === 'fin' ? '收尾招'
+              : TIER_NAME[e.tier]) + '</div>' +
           '<div class="nm">' + e.name + '</div>' +
         '</div>' +
       '</div>' +

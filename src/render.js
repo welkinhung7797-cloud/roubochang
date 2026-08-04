@@ -2715,6 +2715,20 @@ function drawIconTo(canvasEl, kind, id, tier) {
     c.restore();
     return;
   }
+  // ★ 收尾招（kind 'fin'）本來沒有分支，會掉到後面的道具/武器查表拿到 undefined 再讀 .tier 就爆。
+  //   跟商店卡片那個 bug 是同一個根：我加了新的商店品類，但沒有把所有依 kind 分派的地方補齊。
+  if (kind === 'fin') {
+    const f = (typeof FINISHER_MAP !== 'undefined') && FINISHER_MAP[id];
+    const col = f && f.home === 'D' ? '#ffd44a' : '#e8964a';
+    c.strokeStyle = col; c.lineWidth = 2.5;
+    roundRect(c, -14, -14, 28, 28, 5); c.stroke();
+    c.fillStyle = col;
+    c.font = 'bold 15px ' + FONT;
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(f ? (f.home === 'D' ? '衝' : '打') : '?', 0, 1);
+    c.restore();
+    return;
+  }
   if (kind === 'gear') {
     const g = GEAR_MAP[id];
     c.strokeStyle = '#d98a3c'; c.lineWidth = 2.5;
