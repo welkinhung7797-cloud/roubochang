@@ -1714,6 +1714,47 @@ function fxForWeapon(w) {
 }
 
 /* ---------- 攻擊實體：看得見的拳頭與刀光 ---------- */
+/* ★ 刃類的刀光：實心鍰刀形拖影（總監給的參考圖，Slynyrd 風格）。
+   重點三個：兩段色（白色前鋒＋淡藍刀腹）、兩端收尖、硬像素邊。
+   不用貼圖也不用粒子：直接累多邊形，頂點對齊到像素格。 */
+function drawBladeSmear(cx, cy, a0, a1, reach, k) {
+  const g = (typeof PIXEL_GRID !== 'undefined') ? PIXEL_GRID : 4;
+  const snap = v => Math.round(v / g) * g;
+  const span = a1 - a0;
+  if (Math.abs(span) < 0.02) return;
+  const N = 16;
+  // 兩道：外層淡藍刀腹、內層白色前鋒（參考圖就是這兩層）
+  const bands = [
+    { out: 1.0, thick: 0.30, col: '#C2C3C7', a: 0.85 },
+    { out: 0.99, thick: 0.14, col: '#FFF1E8', a: 1 },
+  ];
+  for (const b of bands) {
+    ctx.globalAlpha = b.a * (0.35 + 0.65 * k);
+    ctx.fillStyle = b.col;
+    ctx.beginPath();
+    for (let i = 0; i <= N; i++) {
+      const t = i / N;
+      const a = a0 + span * t;
+      // 兩端收尖：中間最胖，頭尾越來越薄
+      const taper = Math.sin(Math.PI * t);
+      const ro = reach * b.out;
+      const ri = ro - reach * b.thick * taper;
+      const x = cx + Math.cos(a) * (i === 0 ? ro : ro), y = cy + Math.sin(a) * ro;
+      if (i === 0) ctx.moveTo(snap(x), snap(y)); else ctx.lineTo(snap(x), snap(y));
+    }
+    for (let i = N; i >= 0; i--) {
+      const t = i / N;
+      const a = a0 + span * t;
+      const taper = Math.sin(Math.PI * t);
+      const ri = reach * b.out - reach * b.thick * taper;
+      ctx.lineTo(snap(cx + Math.cos(a) * ri), snap(cy + Math.sin(a) * ri));
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
 function drawStrikes() {
   const p = G.player;
   for (const s of G.strikes) {
@@ -1841,6 +1882,14 @@ function drawStrikes() {
       continue;
     }
     ctx.save();
+    if ((s.kind === 'sweep' || s.kind === 'orbit') && (w.klass === '刃' || w.klass === '棍')) {
+      // 實心鍰刀形拖影：從起手角度掃到目前角度
+      const kS = 1 - Math.min(1, s.t / (s.dur || 0.2));
+      ctx.translate(p.x, p.y);
+      drawBladeSmear(0, 0, s.ang0, s.cur, s.reach, kS);
+      ctx.restore();
+      continue;
+    }
     if (s.kind === 'thrust') {
       // 飛行拳影／掌風
       ctx.translate(s.x, s.y);

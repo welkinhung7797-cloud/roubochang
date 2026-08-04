@@ -3598,45 +3598,6 @@ function updateStrikes(dt) {
       s.cur = s.kind === 'sweep'
         ? s.ang0 + (s.ang1 - s.ang0) * k
         : s.cur + s.spd * dt;
-      // ★ 刃類的刀光改成粒子拖曳（總監 2026-08-04：線條感不夠順暢、不夠細緻）。
-      //   每一幀在刀尖喴幾顆，上一幀到這一幀之間還插值補幾點，
-      //   軌跡自然形成——這比畫一道弧形月牙順暢，而且因為是像素顆粒所以細緻。
-      if (typeof burstParticles === 'function' && (s.w.klass === '刃' || s.w.klass === '棍')) {
-        const SUB = 3;
-        for (let q = 1; q <= SUB; q++) {
-          const aq = prev + (s.cur - prev) * (q / SUB);
-          const rq = s.reach * (0.72 + rng() * 0.26);
-          burstParticles(p.x + Math.cos(aq) * rq, p.y + Math.sin(aq) * rq, {
-            n: 1, spd: 26, life: 0.2, size: 1.4, grav: 18,
-            col: q === SUB ? '#ffffff' : '#8fd4e0',
-          });
-        }
-      }
-      // ★ 刀斬子彈（總監 2026-08-04）：刃類揮到敵人的投射物時把它劈成兩半，
-      //   兩半樂得往前對發散飛出去打後面的人。動畫漫畫的招牌套路。
-      if (!s.ghost && (s.w.klass === '刃') && G.projectiles.length) {
-        for (const b of G.projectiles) {
-          if (b.dead || b.cut) continue;
-          const db = Math.hypot(b.x - p.x, b.y - p.y);
-          if (db > s.reach + b.r) continue;
-          const ab = Math.atan2(b.y - p.y, b.x - p.x);
-          if (Math.abs(angDiff(ab, s.cur)) > 0.5) continue;
-          b.dead = true;
-          const av = Math.atan2(b.vy, b.vx);
-          const sp = Math.hypot(b.vx, b.vy) * 1.25;
-          for (const sgn of [-1, 1]) {
-            const a2 = av + sgn * 0.26;
-            G.projectiles.push({
-              x: b.x, y: b.y, vx: Math.cos(a2) * sp, vy: Math.sin(a2) * sp,
-              r: Math.max(3, b.r * 0.7), dmg: b.dmg, life: 2.2,
-              owner: b.owner, color: '#dff2ff', cut: true,
-            });
-          }
-          burstParticles(b.x, b.y, { n: 8, spd: 150, life: 0.32, size: 2, col: '#ffffff' });
-          addHitstop(0.05, false);
-          sfx('hit_blade', { pitch: 1.35 });
-        }
-      }
       if (s.ghost) { if (s.t >= s.dur) s.dead = true; continue; }
       // 掃掠帶：上一幀角度到這一幀角度之間的扇區都算刀路
       for (const e of G.enemies) {
