@@ -14,21 +14,17 @@ let ctx = null, canvas = null;
    再用 imageSmoothingEnabled=false 放大貼回來。得到的是真的像素塊，
    而且比現在更快——要填的像素只有 1/PIXEL_SCALE^2。
    UI 是 HTML/DOM，不在 canvas 上，天然不受影響，所以文字照樣清楚。 */
-let PIXEL_SCALE = 3;
-let lowCv = null, lowCtx = null, outCtx = null;
+/* ★ 角色與場景維持高解析度（總監 2026-08-04），
+   像素感只保留在打擊粒子上——粒子畫在 PIXEL_GRID 的格子上，
+   尺寸也是格子的倍數，所以場景清晰而碎屑是顆粒的。 */
+const PIXEL_GRID = 4;
 
 function initRender() {
   canvas = document.getElementById('game');
   canvas.width = VIEW.w;
   canvas.height = VIEW.h;
-  outCtx = canvas.getContext('2d');
-  outCtx.imageSmoothingEnabled = false;
-  lowCv = document.createElement('canvas');
-  lowCv.width = Math.round(VIEW.w / PIXEL_SCALE);
-  lowCv.height = Math.round(VIEW.h / PIXEL_SCALE);
-  lowCtx = lowCv.getContext('2d');
-  lowCtx.imageSmoothingEnabled = false;
-  ctx = lowCtx;
+  ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
 }
 
 function roundRect(c, x, y, w, h, r) {
@@ -111,9 +107,7 @@ function drawSheatheAnim(p) {
 function drawGame() {
   if (!ctx) return;
   ctx.save();
-  // 所有繪圖坐標仍然用 VIEW 的尺寸，這裡一次縮放就完事——
-  // 不用去改幾千行繪圖程式碼。
-  ctx.setTransform(1 / PIXEL_SCALE, 0, 0, 1 / PIXEL_SCALE, 0, 0);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = '#12141a';
   ctx.fillRect(0, 0, VIEW.w, VIEW.h);
 
@@ -143,12 +137,6 @@ function drawGame() {
 
   ctx.restore();
   drawHud();
-  // 畫完了才放大貼回主畫布。HUD 也一起像素化：
-  // 它畫在 canvas 上、跟角色同一層，不一起化會格格不入。
-  if (outCtx && lowCv) {
-    outCtx.imageSmoothingEnabled = false;
-    outCtx.drawImage(lowCv, 0, 0, lowCv.width, lowCv.height, 0, 0, VIEW.w, VIEW.h);
-  }
 }
 
 /* ---------- 場地 ---------- */
@@ -2910,9 +2898,14 @@ function drawParticles() {
       if (PT.life[i] <= 0 || PT.col[i] !== c) continue;
       if (first) { ctx.fillStyle = PT_COLORS[c]; first = false; }
       const k = PT.life[i] / PT.max[i];
-      ctx.globalAlpha = k > 0.35 ? 1 : k / 0.35;
-      const s = PT.size[i];
-      ctx.fillRect(PT.x[i] - s * 0.5, PT.y[i] - s * 0.5, s, s);
+      // 不淡出，改成分段透明度——像素美術不做連續漸層
+      ctx.globalAlpha = k > 0.5 ? 1 : (k > 0.22 ? 0.65 : 0.3);
+      // ★ 場景是高解析的，所以粒子自己對齊到 PIXEL_GRID 的格子上，
+      //   尺寸也取格子的倍數——這樣碎屑看起來是顆粒的像素塊，
+      //   而不是一堆子像素級的小點。
+      const g = PIXEL_GRID;
+      const s = Math.max(g, Math.round(PT.size[i] * 2 / g) * g);
+      ctx.fillRect(Math.round(PT.x[i] / g) * g, Math.round(PT.y[i] / g) * g, s, s);
     }
   }
   ctx.globalAlpha = a;
