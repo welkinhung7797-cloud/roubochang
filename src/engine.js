@@ -2869,6 +2869,8 @@ function castOugi(o, target) {
       const a0 = Math.atan2(e0.y - p.y, e0.x - p.x);
       p.pose = { type: pr.pose || 'head', ang: a0, t: 0, dur: 0.3, prio: 1 };
       sfx('hit_blunt', { pitch: 0.62, vol: 1.3 });   // 頭槌／貫手類：低沉的「咚」，跟前兩下分家
+      // 手繪衝擊：摔角手的重擊需要一個「砦」的擴散，粒子只能做碎屑做不了面
+      spawnFx('impact_hand', e0.x, e0.y, '#FFF1E8', 86);
       // 重心真的壓過去：朝目標撞進一步（頭槌沒有位移就沒有頭槌的感覺）
       const lunge = pr.lunge !== undefined ? pr.lunge : 20;
       p.x = Math.max(p.r, Math.min(ARENA.w - p.r, p.x + Math.cos(a0) * lunge));
@@ -4847,7 +4849,9 @@ function spawnFx(type, x, y, color, size, extra) {
   const f = { type, x, y, color, size: size || 20, t: 0, life: 0.4 };
   if (extra) Object.assign(f, extra);
   if (type === 'swing') f.life = 0.22;
-  if (type === 'mangaline') f.life = 0.26;   // 手邊的速度線：要留得住一眼，不能跟 60ms 接觸窗同生共死
+  if (type === 'mangaline') f.life = 0.26;
+  // 手繪衝擊 sprite：7 幀 @ 12fps ≈ 0.58 秒（素材建議 12〜8fps）
+  if (type === 'impact_hand') f.life = 0.58;   // 手邊的速度線：要留得住一眼，不能跟 60ms 接觸窗同生共死
   if (type === 'spark') f.life = 0.2;
   if (type === 'slide') f.life = 0.5;
   if (type === 'iailine') f.life = 0.6;

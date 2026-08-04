@@ -2203,6 +2203,20 @@ function drawFxOver() {
       ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.moveTo(f.x, f.y + 2); ctx.lineTo(f.tx, f.ty + 2); ctx.stroke();
       ctx.restore();
+    } else if (f.type === 'impact_hand') {
+      // ★ 手繪衝擊（NopiA 素材，已縮到 96px 並量化到 PICO-8 16 色）。
+      //   一幀一次 drawImage，只存「第幾幀」一個整數，不配置物件。
+      //   實測 2000 個 sprite/幀 = 1.2ms（一幀預算 16.7ms），這裡最多幾十個。
+      loadFx('fx_impact_hand');
+      const img = FX_IMGS['fx_impact_hand'];
+      if (img && img.complete && img.naturalWidth) {
+        const N = Math.max(1, Math.round(img.naturalWidth / img.naturalHeight));
+        const fi = Math.min(N - 1, Math.floor((f.t / f.life) * N));
+        const sz = f.size || 64;
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(img, fi * img.naturalHeight, 0, img.naturalHeight, img.naturalHeight,
+          f.x - sz / 2, f.y - sz / 2, sz, sz);
+      }
     } else if (f.type === 'mangaline') {
       // 漫畫的速度線：長短不一、疏密不均。等長等距就變成雷達圖不是漫畫。
       const wait = f.delay || 0;
