@@ -1704,6 +1704,9 @@ function drawStar(x, y, r) {
 
 /* 武器類別 → 特效貼圖（招式差異的本體：同一套動畫，不同的靈氣） */
 function fxForWeapon(w) {
+  // ★ 刃類不再用發光貼圖的月牙（總監：刀光形狀也不對）——
+  //   改成刀尖的粒子拖曳，見 engine 的 sweep 推進。
+  if (w.klass === '刃' || w.klass === '棍') return null;
   // 拳腳類不給發光貼圖（總監：空手道家不是射光波）——他們的畫面語言是速度線＋逐格動畫
   if (BARE_ICONS[w.icon]) return null;
   if (w.klass === '刃') return 'fx_slash';
@@ -1855,7 +1858,8 @@ function drawStrikes() {
         ctx.lineTo(-30 - Math.min(20, s.traveled * 0.3), i * 4.5);
         ctx.stroke();
       }
-    } else if (s.kind === 'sweep') {
+    } else if (s.kind === 'sweep' && s.w.klass !== '刃' && s.w.klass !== '棍') {
+      // ★ 刃／棍改走刀尖粒子拖曳，不再畫殘弧
       // 刀路殘弧：從起點掃到當前角度
       ctx.translate(p.x, p.y);
       ctx.globalAlpha = 0.75;
