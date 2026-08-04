@@ -2320,7 +2320,13 @@ function addBeat(type, auto, swingId) {
       p.comboFiring = true;
       const fired = castCombo(c);
       p.comboFiring = false;
-      if (fired) { p.comboStep = 0; p.beatCd = 0.4; return; }
+      if (fired) {
+      // 放完就清空拍譜：固定成「打兩下、第三下變招」的節奏。
+      // 不清的話拍譜會一直停在滿的狀態，之後每一下都在撞冷卻——
+      // 玩家的體感就是「第三下常常沒出來」，因為它其實是第四、第五下在撞牆。
+      p.beatLog.length = 0;
+      p.comboStep = 0; p.beatCd = 0; return;
+    }
       const cdLeft = c.sig ? (p.ougiCd || 0) : (p.comboCd || 0);
       if (cdLeft > 0.15) {
         if ((p.comboCdMsgT || 0) <= 0) {
@@ -2679,6 +2685,7 @@ function comboReady() {
 /* 發動連段：招牌招走奧義演出＋冷卻，收尾招是輕演出 */
 function castCombo(c, target) {
   const p = G.player;
+  const _shake0 = G.screenShake, _hs0 = G.hitstop;   // H 欄要還原用
   // ★ 每一格自己的冷卻，不再四條共用一個。
   //   共用的時候實測：三局 1800 秒只放出 210 次＝平均 8.6 秒一次，
   //   而玩家湊到條件的次數遠多於此——攻速越快越常湊到，湊到的都被冷卻丟掉，
@@ -2721,13 +2728,16 @@ function castCombo(c, target) {
   } else {
     // 每格自己的冷卻。四格輪著用＝連段密度提高四倍，而且「輪著用」本身變成技巧。
     p.slotCd = p.slotCd || {};
-    p.slotCd[(c.row || '?') + '_' + (c.col || '?')] = 2.5;
+    // 每格 1.2 秒：清空拍譜之後要再打兩下才會來，本來就有天然間隔，
+    //  冷卻只要防「同一格被連續刷」就好，2.5 秒會把第三下擋掉。
+    p.slotCd[(c.row || '?') + '_' + (c.col || '?')] = 1.2;
     p.comboCd = 0.35;   // 極短的全域間隔，只防同一瞬間連續觸發
     p.comboSettle = 0.35;   // 句號：這 0.35 秒的靜止就是「一套打完了」
     // ★「再打中一下」那一欄是高頻連段（大足踢／巴投這種），每次都放字卡＋震動＋頓幀
     //   會很躁（總監 2026-08-04：動作有就好，華麗留給接 C 的延伸技）。
     //   所以 H 欄只留招式本身的動作，不做連段層級的演出。
     const _loud = (c.col !== 'H');
+    if (!_loud) { G.screenShake = _shake0; G.hitstop = _hs0; }   // 招式本身的震動與頓幀也還原
     if (_loud) {
       G.hitstopEcho = { delay: 0.06, dur: 0.04 };
       addDmgNum(p.x, p.y - 46, c.name, '#ffd44a', true);

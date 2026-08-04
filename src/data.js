@@ -971,7 +971,9 @@ function waveBudget(wave, danger) {
   //  所以增壓要靠減兵不是加兵，這裡的 1.3 是密度補償不是加難度。
   const durOld = 20 + (wave - 1) * 1.5;
   const durNew = waveDuration(wave) / TUNE.waveDurMul;
-  const density = (durOld / durNew) * 1.3;
+  // 總監 2026-08-04 回報「小怪生太少」。1.3 → 2.1：波長拉長後密度補償再加碼。
+  //（實測加兵反而讓後期更安全，所以這是體感補償不是加難度——前段才是它真正影響的地方。）
+  const density = (durOld / durNew) * 2.1;
   return (14 + 3.0 * wave + 0.8 * wave * wave) * density * d.count * TUNE.enemyCountMul;
 }
 
