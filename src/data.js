@@ -340,7 +340,9 @@ const SLOT_UI = {
   move:  { beat: '移', trig: '移動中自動',     act: '移動中打中', full: '移動技', color: '#8fd4e0' },
   dash:  { beat: '衝', trig: '按 SPACE',       act: '按 SPACE',   full: '衝刺技', color: '#ffd44a' },
 };
-const SLOT_ORDER = ['still', 'move', 'dash'];   // 全專案統一順序，跟連段書寫方向一致
+const SLOT_ORDER = ['still', 'move', 'dash'];   // 資料層仍保留三槽
+// 站樁技已停用（總監 2026-08-04：站著就只是站著，不要自動造成傷害），介面只列運作中的兩槽
+const SLOT_ORDER_ACTIVE = ['move', 'dash'];
 
 const MOVE_BRIEF = {
   tackle: '把敵人推去撞牆，撞空會踉蹌',

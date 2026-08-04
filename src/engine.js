@@ -1400,7 +1400,11 @@ function updateTechniques(dt) {
 
   // ---- 站樁技 ----
   const stillId = p.moves.still;
-  if (stillActive()) {
+  // ★ 站樁技整個拿掉（總監 2026-08-04）。原本站定 0.5 秒會自動放技能，
+  //   那是玩家沒有下任何指令卻一直在造成傷害＋噴震地波——他要的是「站著就只是站著」。
+  //   站定的意義留給連段的 A 拍（第三下站著打中＝變招），那是玩家主動做的。
+  //   站樁技的資料與招式仍在 MOVES 裡，只是不再自動觸發，也不再上架（見 rollShopEntry）。
+  if (false && stillActive()) {
     p.stillTechTimer += dt;
     if (stillId === 'quake_pulse' && p.stillTechTimer >= MOVE_MAP.quake_pulse.interval) {
       if (holdOrFire('stillTechTimer', MOVE_MAP.quake_pulse, MOVE_MAP.quake_pulse.radius + 20))
@@ -4579,7 +4583,8 @@ function rollShopEntry() {
   const maxT = tierUnlock(G.wave);
   // 招式（衝刺技／移動技／站樁技）：第 2 波起出現，還沒學過的才會上架
   const known = G.player.knownMoves;
-  const movePool = MOVES.filter(m => !known.includes(m.id));
+  // 站樁技已停用，不再上架
+  const movePool = MOVES.filter(m => !known.includes(m.id) && m.slot !== 'still');
   if (G.wave >= 2 && movePool.length && chance(0.16)) {
     const t = pick(movePool);
     return {

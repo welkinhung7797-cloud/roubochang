@@ -419,7 +419,7 @@ function renderLoadout() {
   const tRow = document.createElement('div');
   tRow.className = 'mv-row';
   // 順序統一成 站→移→衝，跟連段的書寫方向一致（之前是反的）
-  SLOT_ORDER.forEach(slot => {
+  SLOT_ORDER_ACTIVE.forEach(slot => {
     const def = moveDef(p.moves[slot]);
     const u = SLOT_UI[slot];
     const pool = movesBySlot(slot).filter(x => p.knownMoves.includes(x.id));
