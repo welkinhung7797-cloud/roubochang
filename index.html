@@ -548,11 +548,18 @@ button:disabled{cursor:not-allowed;opacity:.45}
   <div id="errbox" class="hidden"></div>
 </div>
 
-<script src="src/data.js"></script>
-<script src="src/engine.js"></script>
-<script src="src/audio.js"></script>
-<script src="src/render.js"></script>
-<script src="src/ui.js"></script>
+<!-- 開發期強制取最新：src/*.js 沒有版本號的話，改了程式碼重整瀏覽器還是吃快取的舊檔。
+     這輪已經因此誤判三次（以為改動沒生效，實際是瀏覽器沒重新下載）。
+     document.write 會保留執行順序，跟原本的五個 script 標籤等價。 -->
+<script>
+(function () {
+  var v = Date.now();
+  var files = ["data", "engine", "audio", "render", "ui"];
+  for (var i = 0; i < files.length; i++) {
+    document.write('<scr' + 'ipt src="src/' + files[i] + '.js?v=' + v + '"></scr' + 'ipt>');
+  }
+})();
+</script>
 <script>
 /* 固定舞台等比縮放，讓遊戲在任何視窗尺寸都完整可見 */
 (function () {

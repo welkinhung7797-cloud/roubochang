@@ -3448,6 +3448,7 @@ function spawnStrike(w, reach) {
     spawnFx('mangaline', p.x, p.y, '#ffd44a', s.reach * 0.74,
       { ang0: s.ang0, ang1: s.ang1, delay: s.windup || 0 });
   }
+  if (G.__quietFx) s.quiet = true;   // H 欄連段：攻擊實體自己畫的圈也不要
   G.strikes.push(s);
   if (G.strikes.length > 40) G.strikes.shift();
   // 揮擊風聲
@@ -4608,7 +4609,8 @@ function shopNextWave() {
 /* ---------- 特效 ---------- */
 function spawnFx(type, x, y, color, size, extra) {
   // H 欄連段（頭槌那種高頻的第三下）不要範圍特效——總監指定只留動作。
-  if (G.__quietFx && (type === 'explode' || type === 'shock' || type === 'burst' || type === 'burst_start')) return;
+  if (G.__quietFx && (type === 'explode' || type === 'shock' || type === 'burst'
+      || type === 'burst_start' || type === 'swing' || type === 'iailine')) return;
   const f = { type, x, y, color, size: size || 20, t: 0, life: 0.4 };
   if (extra) Object.assign(f, extra);
   if (type === 'swing') f.life = 0.22;

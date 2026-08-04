@@ -1760,7 +1760,7 @@ function drawStrikes() {
         }
         ctx.restore();
         ctx.globalAlpha = 1;
-      } else if (s.kind === 'sweep' || s.kind === 'orbit') {
+      } else if ((s.kind === 'sweep' || s.kind === 'orbit') && !s.quiet) {
         // 刃／棍等掃技：白墨雙弧線，順著揮向一格格畫出來
         const ccw = s.kind === 'sweep' ? s.ang1 < s.ang0 : (s.spd || 1) < 0;
         const a0b = s.kind === 'sweep' ? s.ang0 : s.cur + (ccw ? 1.2 : -1.2);
@@ -1771,7 +1771,7 @@ function drawStrikes() {
         ctx.strokeStyle = 'rgba(255,255,255,0.45)';
         ctx.lineWidth = 1.6;
         ctx.beginPath(); ctx.arc(p.x, p.y, s.reach * 0.66, a0b, s.cur, ccw); ctx.stroke();
-      } else if (s.kind === 'slam') {
+      } else if (s.kind === 'slam' && !s.quiet) {
         const k2 = Math.min(1, s.t / s.delay);
         ctx.globalAlpha = 0.5;
         ctx.strokeStyle = '#ffffff';
@@ -1814,7 +1814,7 @@ function drawStrikes() {
         ctx.rotate(-((a0v + a1v) / 2) + s.cur);
         ctx.fillStyle = 'rgba(255,255,255,0.95)';
         ctx.beginPath(); ctx.arc(rFull * 0.86, 0, 2.6, 0, Math.PI * 2); ctx.fill();
-      } else if (s.kind === 'slam') {
+      } else if (s.kind === 'slam' && !s.quiet) {
         const k = Math.min(1, s.t / s.delay);
         const sz = s.reach * 2 * k;
         ctx.translate(p.x, p.y);
