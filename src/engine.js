@@ -2119,7 +2119,11 @@ function updateTechniques(dt) {
     }
     // 沿路碰撞
     for (const e of G.enemies) {
-      if (e.dead || e === c || e.thrown || e.grabbed) continue;
+      // ★ mustCatch（衝刺 DDT）連「正在飛」的人也抓得到——
+      //   被 BIG FOOT 踢飛、正彈回來的那一隻正是最帥的目標。
+      //   其他衝刺維持原樣（飛行中的人不參與一般碰撞）。
+      if (e.dead || e === c || e.grabbed) continue;
+      if (e.thrown && !s.mustCatch) continue;
       if (s.id === 'shadow') break;   // 影遁：穿過所有人，零互動
       const rr = p.r + e.r + 4;
       if (dist2(e.x, e.y, p.x, p.y) < rr * rr) {
@@ -2165,6 +2169,7 @@ function updateTechniques(dt) {
         } else if (s.id === 'ddt' && !e.hitByDash && !e.boss) {
           // 勾住頭帶著跑，然後坐倒把頭釘進地板——單體處決，全表最重頓幀
           e.hitByDash = true; s.hitAny = true;
+          e.thrown = null; e.spin = null; e.lift = 0;   // 在空中抓下來：先停掉飛行狀態
           e.grabbed = true; e.stun = 99;
           p.ddtState = { e, t: 0, dx: s.dx, dy: s.dy };
           p.dashState = null;
@@ -2562,14 +2567,27 @@ function castExtension(move, victim) {
       // ★ 衝刺 DDT 要追人（總監 2026-08-04）。它的說明就寫著「衝向最近的人」，
       //   但原本只吃 dashDir() 的方向鍵吸附——沒按方向鍵時就直直往前衝，追不到。
       //   這裡直接鎖定最近的敵人，並且交給 dashState 的 lockOn 全程追蹤。
-      const tgtD = (victim && !victim.dead) ? victim : nearestEnemy(p.x, p.y, 520);
-      let dirD;
+      // ★ 衝刺 DDT 一定要抓得到人（總監 2026-08-04）：
+      //   (1) nearestEnemy 會跳過所有 thrown（正在飛的）敵人，
+      //       所以被 BIG FOOT 踢飛、正彈回來的人對它是隱形的——這裡自己找，不排除 thrown。
+      //   (2) 衝刺距離固定 180px，目標再遠一點就追不到。改成依距離拉長行程。
+      let tgtD = (victim && !victim.dead) ? victim : null;
+      if (!tgtD) {
+        let bd = 1e9;
+        for (const o of G.enemies) {
+          if (o.dead || o.grabbed) continue;          // 飛在空中的也算數
+          const d2 = dist2(o.x, o.y, p.x, p.y);
+          if (d2 < bd) { bd = d2; tgtD = o; }
+        }
+      }
+      let dirD, lenD = 180;
       if (tgtD) {
         const dxD = tgtD.x - p.x, dyD = tgtD.y - p.y, ddD = Math.hypot(dxD, dyD) || 1;
         dirD = { x: dxD / ddD, y: dyD / ddD, lockOn: tgtD };
+        lenD = Math.max(180, Math.min(700, ddD + 40));   // 距離多遠就衝多遠
       } else dirD = dashDir();
       p.dashState = { id: 'ddt', dx: dirD.x, dy: dirD.y, lockOn: dirD.lockOn,
-        t: 180 / 700, spd: 700, accel: true, boost: 1 };
+        t: lenD / 700, spd: 700, accel: true, boost: 1, mustCatch: true };
       G.ougiBanner = { name: '衝刺DDT', t: 1.2 };
       sfx('dash');
       return true;
