@@ -262,7 +262,10 @@ const COMBOS = {
      螺旋摔投退出拍序表，改掛在擒抱掄甩滿 3 秒按 C 的獎勵。 */
   wrestler: [
     { seq: ['S', 'S', 'S'], name: '頭槌', kind: 'strike_heavy',
-      params: { dmg: 38, stun: 0.6, radius: 78, cleaveMul: 0.5, pose: 'head', img: 'fx_slam', launch: 640 },
+      params: { dmg: 38, stun: 1.8, radius: 78, cleaveMul: 0.5, pose: 'head', img: 'fx_slam' },
+      // 頭槌不把人頂飛，改成原地暈眩（總監 2026-08-04）：
+      // 頂上去的力道是往下壓不是往外推，而且轟飛會把你自己的飯磗推走
+      // （摔角手射程只有 66）。損失的位移換成定身 0.6 → 1.8 秒。
       ext: 'running_ddt', extName: '衝刺DDT',
       desc: 'AAA：兩記手刀之後站定用頭撞上去。馬上按 C＝衝向最近的人接移動 DDT。' },
     { seq: ['M', 'M', 'M'], name: '大足踢', kind: 'knock_cone',

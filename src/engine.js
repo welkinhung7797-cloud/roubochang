@@ -2100,7 +2100,7 @@ function updateTechniques(dt) {
         if (L.t <= 0 || s.t <= 0.02) {
           L.done = true;
           L.e.grabbed = false;
-          L.e.thrown = { vx: Math.cos(aL2) * 820, vy: Math.sin(aL2) * 820, t: 0.6, decay: 2.0 };
+          L.e.thrown = { vx: Math.cos(aL2) * 820, vy: Math.sin(aL2) * 820, t: 0.6, decay: 2.0, bounce: 2 };
           L.e.spin = { v: (s.dx >= 0 ? -14 : 14), t: 0.45, a: 0 };
           L.e.stun = Math.max(L.e.stun, s.chargeStun || 1);
         }
@@ -2963,7 +2963,7 @@ function castOugi(o, target) {
             o2.stun = Math.max(o2.stun, pr.stun || 0.8);
             o2.hitSquash = Math.max(o2.hitSquash || 0, 0.28);
             if (pr.launch && !o2.boss) {
-              o2.thrown = { vx: Math.cos(aP) * pr.launch, vy: Math.sin(aP) * pr.launch, t: 0.5, decay: 2.2 };
+              o2.thrown = { vx: Math.cos(aP) * pr.launch, vy: Math.sin(aP) * pr.launch, t: 0.5, decay: 2.2, bounce: 2 };
             }
           }
           spawnFx('spark', o2.x, o2.y, '#ffd44a', o2.r, { angle: aP });
@@ -3058,8 +3058,9 @@ function castOugi(o, target) {
             o2.stun = Math.max(o2.stun, pr.stun * 0.4);
           } else {
             // BIG BOOT 是把人踢飛，不是推開——飛出去撞牆撞人才有破壞性
+            // BIG BOOT 是把人踢飛：飛到鏡頭邊界會彈回來（bounce）
             o2.thrown = { vx: Math.cos(a1) * (pr.launch || 700), vy: Math.sin(a1) * (pr.launch || 700),
-              t: 0.6, decay: 2.1 };
+              t: 0.6, decay: 2.1, bounce: 2 };
             o2.spin = { v: (Math.cos(a1) >= 0 ? -13 : 13), t: 0.6, a: 0 };
             o2.stun = Math.max(o2.stun, pr.stun);
             o2.hitSquash = Math.max(o2.hitSquash || 0, 0.26);
