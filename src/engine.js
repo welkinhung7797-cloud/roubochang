@@ -2768,7 +2768,9 @@ function castCombo(c, target) {
       addDmgNum(p.x, p.y - 46, c.name, '#ffd44a', true);
       G.screenShake = Math.max(G.screenShake, 7);
     } else {
-      p.comboSettle = 0.18;   // 高頻連段的句號也要短，不然一直卡頓
+      // 高頻連段的句號：太短會變成站著連續轟炸（總監回報「原地高速拍手掌然後爆炸」），
+      // 太長又會卡頓。0.28 是「看得出一下一下」但不打斷節奏的長度。
+      p.comboSettle = 0.28;
     }
     addHitstop(0.15, true);
     spawnFx('explode', p.x, p.y, '#ffffff', 62);
@@ -4647,8 +4649,9 @@ function shopNextWave() {
 /* ---------- 特效 ---------- */
 function spawnFx(type, x, y, color, size, extra) {
   // H 欄連段（頭槌那種高頻的第三下）不要範圍特效——總監指定只留動作。
-  if (G.__quietFx && (type === 'explode' || type === 'shock' || type === 'burst'
-      || type === 'burst_start' || type === 'swing' || type === 'iailine')) return;
+  // ★ 改白名單：黑名單一直漏（總監已經第四次指出還有圈圈）。
+  //   H 欄連段期間只准出命中火花與拖影，其餘一律不生成。
+  if (G.__quietFx && type !== 'spark' && type !== 'slide' && type !== 'hurt') return;
   const f = { type, x, y, color, size: size || 20, t: 0, life: 0.4 };
   if (extra) Object.assign(f, extra);
   if (type === 'swing') f.life = 0.22;
