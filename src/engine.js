@@ -2306,7 +2306,9 @@ function addBeat(type, auto, swingId) {
   // auto=true（站樁技/移動技自動命中）只能鋪前綴——收尾那一下必須是玩家自己打的，
   // 連段才是玩家「做出來」的，不是自己噴出來的。
   // comboFiring 防遞迴：連段招本身命中時不會再去觸發連段。
-  if (!auto && !p.comboFiring && (type === 'S' || type === 'M')) {
+  // ★ 命中後不再觸發連段——改成在揮擊之前決定（見 updateWeapons 的第三擊變形）。
+  //   留在這裡的話會變成「打了普攻，然後額外多一招」，那正是總監指出的概念錯誤。
+  if (false && !auto && !p.comboFiring && (type === 'S' || type === 'M')) {
     const c = matchCombo(type);
     if (c) {
       // 銜接：觸發的那一下命中發生在前一招接觸幀中段——立刻覆寫 pose 會看成「突然變招」。
@@ -2652,9 +2654,14 @@ function matchCombo(action) {
   if (!p || !p.comboBoard) return null;
   const log = p.beatLog;
   if (log.length < 2) return null;          // 至少要先打中兩下
-  const row = boardRowOf(log);
+  // ★ 變成什麼，由「你第三下在做什麼」決定（總監 2026-08-04）：
+  //   站著打中＝站的收尾招（頭槌）、移動打中＝移的收尾招（大足踢）。
+  //   前面兩拍只是「湊滿了」的計數，不決定出哪一招——舊寫法用累積的多數決定，
+  //   結果玩家站著打卻出移動系的招，跟他當下在做的事對不起來。
+  //   按 SPACE 那一格例外：衝刺沒有站/移之分，用累積的多數挑，所以總共四格。
+  const col = (action === 'D') ? 'D' : 'H';
+  const row = (col === 'H') ? action : boardRowOf(log);
   if (!row) return null;
-  const col = (action === 'D') ? 'D' : 'H';   // 收尾只分「再打中一下」與「按 SPACE」
   const f = FINISHER_MAP[p.comboBoard[row + '_' + col]];
   if (!f) return null;                        // 空格：只出普攻，不變招
   // 變體加成：收尾那一下換一個狀態打中。同一格同一招，獎勵你在最後一下變一下。
@@ -3345,8 +3352,28 @@ function updateWeapons(dt) {
         !p.suplexAnim && !p.hipTossAnim && !p.ddtState && !p.tossState && !p.gutRoll) {
       const d = Math.sqrt(dist2(p.x, p.y, target.x, target.y));
       if (d <= reach + target.r) {
-        fireWeapon(w, reach);
-        w.cdLeft = w.cd;
+        // ★ 第三擊「本身」變形（總監 2026-08-04 三度指正）：
+        //   湊滿兩拍之後，這一次揮擊直接換成收尾招——不是「打了普攻再額外放一招」。
+        //   所以判定要在揮擊之前，不能等命中之後才補。
+        //   變成什麼由「你這一下在做什麼」決定：站著＝頭槌、移動＝大足踢。
+        const _b = (typeof beatFromState === 'function') ? beatFromState() : null;
+        let _fired = false;
+        if (idx === 0 && _b && _b !== 'D' && (p.beatLog || []).length >= 2 && !p.comboFiring) {
+          const _c = matchCombo(_b);
+          if (_c) {
+            p.comboFiring = true;
+            _fired = castCombo(_c, target);
+            p.comboFiring = false;
+            if (_fired) {
+              p.beatLog.length = 0; p.comboStep = 0; p.beatCd = 0;
+              w.cdLeft = w.cd;   // 這一擊已經用掉了
+            }
+          }
+        }
+        if (!_fired) {
+          fireWeapon(w, reach);
+          w.cdLeft = w.cd;
+        }
       }
     }
   });

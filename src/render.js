@@ -331,6 +331,10 @@ function pickFrame(p) {
   if (p.gutRoll) return pick('roll', 0);
   if (p.dashState) {
     if (p.dashState.id === 'clothesline' || p.dashState.id === 'ddt') return pick('dash', 1);
+    // ★ 摔角手平常的衝刺是「雙手張開往前衝抓人」，不是縮成一團的俯衝（總監 2026-08-04）。
+    //   縮成一團那個是矛頭衝撞（SPEAR）才有的姿勢——把兩者分開，
+    //   不然玩家每次按 SPACE 都看到 SPEAR 的動作，那招的辨識度就沒了。
+    if (p.dashState.id === 'grab_spin') return pick('grab', Math.floor(t * 12) % 2);
     return pick('dash', Math.floor(t * 10) % 2);
   }
   if (p.grabState) return pick('grab', p.grabState.mode === 'hold' && p.stillHold > 0.2 ? 1 : 0);
