@@ -2312,7 +2312,11 @@ function addBeat(type, auto, swingId) {
       // 銜接：觸發的那一下命中發生在前一招接觸幀中段——立刻覆寫 pose 會看成「突然變招」。
       // 排隊到 0.18 秒（接觸幀播完）再出，玩家看到的才是「手刀打完→順勢頭槌」。
       const cdOk = c.sig ? (p.ougiCd || 0) <= 0 : (p.comboCd || 0) <= 0;
-      if (cdOk && p.pose && p.pose.prio >= 0 && p.pose.t < 0.18) {
+      // ★ 攻速一快，前一個排隊中的連段還沒演出來就被下一次命中覆寫，
+      //   結果兩次都沒出——總監回報「手刀變很快後 on hit 就失去連段效果」。
+      //   已經排隊就讓它先演完，這一拍照常入譜。
+      if (p.pendingCombo) { /* 讓它先演完，不覆寫 */ }
+      else if (cdOk && p.pose && p.pose.prio >= 0 && p.pose.t < 0.18) {
         p.pendingCombo = c; p.pendingComboWait = 0.12;
         p.beatCd = 0.4; p.beatT = 0;
         return;
@@ -2686,6 +2690,7 @@ function comboReady() {
 function castCombo(c, target) {
   const p = G.player;
   const _shake0 = G.screenShake, _hs0 = G.hitstop;   // H 欄要還原用
+  if (c.col === 'H') G.__quietFx = true;
   // ★ 每一格自己的冷卻，不再四條共用一個。
   //   共用的時候實測：三局 1800 秒只放出 210 次＝平均 8.6 秒一次，
   //   而玩家湊到條件的次數遠多於此——攻速越快越常湊到，湊到的都被冷卻丟掉，
@@ -2710,6 +2715,7 @@ function castCombo(c, target) {
   }
   const ok = castOugi(c, target);
   G.__comboDmgMul = prevDmgMul;
+  G.__quietFx = false;
   if (!ok) return false;
   p.beatLog = []; p.beatT = 0;
   if (c.ext && (p.extCd || 0) <= 0) {
@@ -4600,6 +4606,8 @@ function shopNextWave() {
 
 /* ---------- 特效 ---------- */
 function spawnFx(type, x, y, color, size, extra) {
+  // H 欄連段（頭槌那種高頻的第三下）不要範圍特效——總監指定只留動作。
+  if (G.__quietFx && (type === 'explode' || type === 'shock' || type === 'burst' || type === 'burst_start')) return;
   const f = { type, x, y, color, size: size || 20, t: 0, life: 0.4 };
   if (extra) Object.assign(f, extra);
   if (type === 'swing') f.life = 0.22;
