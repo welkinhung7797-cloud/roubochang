@@ -714,7 +714,9 @@ const WEAPONS = [
     dmg: 16, cd: 1.4, range: 77, arc: 45, knock: 0, critMult: 2.0, crit: 8, price: 23,
     stun: 2.0, dot: 12, desc: '定身 2 秒並持續流失生命，處理精英的答案。' },
   { id: 'katana', name: '打刀', klass: '刃', type: 'arc', icon: 'blade', color: '#4f5d75',
-    dmg: 32, cd: 1.0, range: 144, arc: 110, knock: 70, critMult: 2.0, crit: 9, price: 25,
+    // 範圍 144 → 96：企鵝高 46px、手臂尖端離身體中心約 20px，
+    // 加上一把打刀合理到約 90。144 是兩個企鵝高，畫面上完全對不起來。
+    dmg: 32, cd: 1.0, range: 96, arc: 110, knock: 70, critMult: 2.0, crit: 9, price: 25,
     desc: '長、狠、慢。一刀掃過整排雜兵。' },
   { id: 'tanto', name: '短刀', klass: '刃', type: 'thrust', icon: 'blade', color: '#33384a',
     dmg: 12, cd: 0.36, range: 80, arc: 28, knock: 25, critMult: 2.4, crit: 14, price: 17,

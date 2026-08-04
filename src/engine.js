@@ -3459,7 +3459,11 @@ function fireWeapon(w, reach) {
   // 第二下就被當成同一擊吃掉——玩家看到打中了，連段卻沒進。
   p.swingSeq = (p.swingSeq || 0) + 1;
   w.swingId = p.swingSeq;
-  if (w.klass !== '摔技') w.swingDir *= -1;   // 摔技鎖定揮向：圖與刀路不准反向
+  // ★ 刃類也鎖定揮向（總監 2026-08-04：「刀好像是反的」）。
+  //   每揮一次就左右翻，意思是一半的次數刀路跟角色拿刀的手是反的——
+  //   刀傑一律從右上往左下斬，與幀內畫的揮刀方向一致。
+  if (w.klass !== '摔技' && w.klass !== '刃') w.swingDir *= -1;
+  if (w.klass === '刃') w.swingDir = 1;
   // 揮武器時手臂跟著出去（起手式姿勢優先，不覆蓋）
   if (!p.pose || p.pose.prio !== 1) {
     p.pose = { type: w.klass === '摔技' ? 'chop' : 'swing', ang: w.angle, t: 0,
@@ -4763,6 +4767,17 @@ function shopNextWave() {
 
 /* ---------- 特效 ---------- */
 function spawnFx(type, x, y, color, size, extra) {
+  // ★ 角色的特效也改成像素粒子（總監 2026-08-04）：
+  //   不拆掉原本的圖形（那些還担負可讀性），而是在同一個位置附一叢粒子，
+  //   讓每一個特效都有顆粒感。粒子自己對齊像素格，成本只有 fillRect。
+  if (typeof burstParticles === 'function' && !G.__quietFx) {
+    const _r = size || 20;
+    if (type === 'explode') burstParticles(x, y, { n: 14, spd: _r * 3.2, life: 0.5, size: 2, col: color, grav: 180 });
+    else if (type === 'shock') burstParticles(x, y, { n: 10, spd: _r * 2.6, life: 0.42, size: 2, col: color, grav: 60 });
+    else if (type === 'spark') burstParticles(x, y, { n: 4, spd: 120, life: 0.28, size: 2, col: color, grav: 240,
+      dir: (extra && extra.angle !== undefined) ? extra.angle : undefined, spread: 1.2 });
+    else if (type === 'burst' || type === 'burst_start') burstParticles(x, y, { n: 12, spd: _r * 2.4, life: 0.45, size: 3, col: color, grav: 90 });
+  }
   // H 欄連段（頭槌那種高頻的第三下）不要範圍特效——總監指定只留動作。
   // ★ 改白名單：黑名單一直漏（總監已經第四次指出還有圈圈）。
   //   H 欄連段期間只准出命中火花與拖影，其餘一律不生成。
