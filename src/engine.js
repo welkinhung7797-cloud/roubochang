@@ -129,10 +129,13 @@ function recalcStats(p) {
   });
   if (p.waveStats) for (const k in p.waveStats) s[k] += p.waveStats[k];
   // 特性的屬性部分（體型、長臂、快手、血契…）跟道具走同一條加總路線
+  let sizeMul = 1;
   (p.traits || []).forEach(id => {
     const t = TRAIT_MAP[id];
     if (t && t.stats) for (const k in t.stats) s[k] += t.stats[k];
+    if (t && t.size) sizeMul *= t.size;   // 縮骨/巨軀：體型真的變
   });
+  if (p.baseR) p.r = p.baseR * sizeMul;
   // 武器流派套裝：同 klass 2 把小成、3 把大成
   const kc = {};
   p.weapons.forEach(w => kc[w.klass] = (kc[w.klass] || 0) + 1);
@@ -218,7 +221,7 @@ function startRun(charId, danger) {
   // 開局只開「站站」「移移」兩排六格且全部填滿——不要讓玩家一開始就苦惱空格。
   G.player.comboBoard = defaultBoard(charId);
   G.player.boardRows = ['S', 'M'];
-  G.player.traits = [];
+  G.player.traits = []; G.player.baseR = G.player.r;
   G.traitChoices = null;
   // 擁有池：盤上的六招開局就有，其餘靠商店買。同一招只能上一格，所以要記誰在盤上。
   G.player.ownedFinishers = Object.keys(G.player.comboBoard).map(k => G.player.comboBoard[k]);
@@ -589,6 +592,13 @@ function healPlayer(amount) {
 function hurtPlayer(amount, source) {
   const p = G.player;
   if (p.iframe > 0 || p.dead) return;
+  // 疾走：挨打就失效 6 秒
+  const _spT = traitOf('sprint');
+  if (_spT) p.sprintLock = _spT.sprint.lockout;
+  // 結界：完全擋下一次
+  if (p.wardUp) { p.wardUp = false; p.iframe = 0.4; addDmgNum(p.x, p.y - 30, '結界擋下', '#8fd4e0'); spawnFx('shock', p.x, p.y, '#8fd4e0', 60); return; }
+  // 制勝：控場累積的護盾
+  if ((p.traitShield || 0) > 0) { p.traitShield--; p.iframe = 0.3; addDmgNum(p.x, p.y - 30, '護盾', '#8fb0d9'); return; }
   const sp = G.char.special;
 
   // 化勁：奧義領域全化、化勁架式站樁時每 1.2 秒化一次
@@ -1030,6 +1040,7 @@ function quakePulse(d) {
       hurtEnemy(e, autoDmg(14), { trueDmg: true });
       if (!e.dead) {
         e.stun = Math.max(e.stun, e.boss ? 0.25 : 0.6);
+        traitOnControl(e);
         const a = Math.atan2(e.y - p.y, e.x - p.x);
         e.knockX += Math.cos(a) * 60; e.knockY += Math.sin(a) * 60;
       }
@@ -3486,6 +3497,41 @@ function applyWeaponHit(w, e, reach, mulOverride, isEcho, swingId) {
     crit, fromAngle: w.angle, weaponLifesteal: w.lifesteal,
   });
 
+  // ---- 特性：命中觸發 ----
+  if (!isEcho && p.traits && p.traits.length) {
+    if (hasTrait('burn_stack')) {
+      // 烈火拳：可以無限累加。每層 3 點/秒，沿用既有的 dot 通道所以會自動跳傷害數字。
+      e.burnStack = (e.burnStack || 0) + 1;
+      e.dot = e.burnStack * 3 * liveDamageMult();
+      e.dotTime = Math.max(e.dotTime || 0, 3.0);
+    }
+    if (hasTrait('blood_pact') && dealt > 0 && !e.dead) {
+      hurtEnemy(e, dealt * TRAIT_MAP.blood_pact.trueDmg, { trueDmg: true, noLifesteal: true });
+    }
+    if (p.chainReady) {
+      // 雷紋：連鎖閃電，跳三次遞減，附帶減速
+      p.chainReady = false;
+      const cf = TRAIT_MAP.chain_bolt.proc;
+      let from = e, mul = 1;
+      const hitSet = [e];
+      for (let j = 0; j < cf.jumps; j++) {
+        let best = null, bd = 220 * 220;
+        for (const o of G.enemies) {
+          if (o.dead || hitSet.indexOf(o) >= 0) continue;
+          const d2 = dist2(o.x, o.y, from.x, from.y);
+          if (d2 < bd) { bd = d2; best = o; }
+        }
+        if (!best) break;
+        mul *= 0.7;
+        hurtEnemy(best, techDmg(cf.dmg * mul));
+        best.slow = Math.max(best.slow || 0, cf.slow);
+        spawnFx('spark', best.x, best.y, '#ffd44a', 26,
+          { angle: Math.atan2(best.y - from.y, best.x - from.x) });
+        hitSet.push(best); from = best;
+      }
+      sfx('flash');
+    }
+  }
   // 記拍：這一下是在什麼狀態打中的（連段收尾判定統一在 addBeat 內）
   if (!isEcho) {
     const b = beatFromState();
@@ -3615,7 +3661,8 @@ function updatePlayer(dt) {
   const p = G.player;
   if (p.dead) return;
   updateTechniques(dt);
-  if (p.dead) return;   // 解縛反噬等絕技效果可能剛好歸零生命
+  if (p.dead) return;
+  updateTraits(dt);   // 解縛反噬等絕技效果可能剛好歸零生命
   const k = G.keys;
   let mx = 0, my = 0;
   if (k['a'] || k['arrowleft']) mx -= 1;
@@ -3638,6 +3685,9 @@ function updatePlayer(dt) {
   }
 
   let spd = BASE_SPEED_F() * liveSpeedMult();
+  // 疾走：+100% 移速，受傷後失效 6 秒
+  const _sp = traitOf('sprint');
+  if (_sp && (p.sprintLock || 0) <= 0) spd *= _sp.sprint.mul;
   if (p.grabState) spd *= 0.7;          // 掄著人跑比較慢
   if (moving) { p.lastMoveX = mx; p.lastMoveY = my; }
   p.vx = mx * spd; p.vy = my * spd;
@@ -4591,4 +4641,99 @@ function unownedFinishers() {
   if (!cls || !FINISHER_POOL[cls]) return [];
   const own = p.ownedFinishers || [];
   return FINISHER_POOL[cls].filter(f => own.indexOf(f.id) < 0);
+}
+
+/* ---------- 特性的引擎鉤子（總監 2026-08-04） ----------
+   資料在 data.js 的 TRAITS。數值面（長臂/快手/巨軀/血契）走 recalcStats，
+   這裡處理「會在畫面上發生事情」的那些——那才是選了要有感覺的部分。 */
+function updateTraits(dt) {
+  const p = G.player;
+  if (!p || !p.traits || !p.traits.length || p.dead) return;
+  p.traitT = p.traitT || {};
+
+  // 疾走：受傷後失效 6 秒（傷害入口設 p.sprintLock）
+  if (p.sprintLock > 0) p.sprintLock -= dt;
+
+  // 結界：每 30 秒一道護盾，擋下一次傷害
+  const ward = traitOf('ward');
+  if (ward) {
+    p.traitT.ward = (p.traitT.ward || 0) + dt;
+    if (p.traitT.ward >= ward.ward.every && !p.wardUp) {
+      p.traitT.ward = 0; p.wardUp = true;
+      spawnFx('shock', p.x, p.y, '#8fd4e0', 54);
+      addDmgNum(p.x, p.y - 42, '結界', '#8fd4e0');
+    }
+  }
+
+  // 腳程：移動累積到一定距離就回血
+  const pace = traitOf('pace');
+  if (pace) {
+    const mv = Math.hypot(p.vx || 0, p.vy || 0) * dt;
+    p.traitT.pace = (p.traitT.pace || 0) + mv;
+    if (p.traitT.pace >= pace.paceHeal.per) {
+      p.traitT.pace -= pace.paceHeal.per;
+      healPlayer(pace.paceHeal.hp);
+    }
+  }
+
+  // 週期型：念動（周圍衝擊）／斬返（大範圍斬擊，命中回血）／雷紋（下一擊連鎖閃電）
+  for (const id of p.traits) {
+    const t = TRAIT_MAP[id];
+    if (!t || !t.proc) continue;
+    const k = 'proc_' + id;
+    p.traitT[k] = (p.traitT[k] || 0) + dt;
+    if (p.traitT[k] < t.proc.every) continue;
+    p.traitT[k] = 0;
+    if (t.proc.kind === 'chain') { p.chainReady = true; addDmgNum(p.x, p.y - 46, '雷紋就緒', '#ffd44a'); continue; }
+    const r = t.proc.r;
+    spawnFx(t.proc.kind === 'reap' ? 'swing' : 'shock', p.x, p.y,
+      t.proc.kind === 'reap' ? '#e8f2ff' : '#a06fd0', r, { arc: 360 });
+    sfx(t.proc.kind === 'reap' ? 'swing_blade' : 'wind');
+    let hit = 0;
+    for (const e of G.enemies) {
+      if (e.dead || dist2(e.x, e.y, p.x, p.y) > r * r) continue;
+      hurtEnemy(e, techDmg(t.proc.dmg), { trueDmg: false });
+      hit++;
+    }
+    if (hit && t.proc.heal) healPlayer(t.proc.heal);
+  }
+
+  // 殘軌：衝刺路徑留下的點，時間到就爆
+  if (p.trailPts && p.trailPts.length) {
+    const tr = traitOf('dash_trail');
+    for (const pt of p.trailPts) {
+      pt.t -= dt;
+      if (pt.t > 0 || pt.done) continue;
+      pt.done = true;
+      spawnFx('explode', pt.x, pt.y, '#e0913c', tr ? tr.dashTrail.r : 62);
+      sfx('quake', { vol: 0.6 });
+      for (const e of G.enemies) {
+        if (e.dead) continue;
+        const rr = tr ? tr.dashTrail.r : 62;
+        if (dist2(e.x, e.y, pt.x, pt.y) < rr * rr) hurtEnemy(e, techDmg(tr ? tr.dashTrail.dmg : 34));
+      }
+    }
+    p.trailPts = p.trailPts.filter(x => !x.done);
+  }
+}
+
+/* 控場觸發（定身或擒抱成功時呼叫）：制勝＝護盾、流星＝彗星 */
+function traitOnControl(e) {
+  const p = G.player;
+  if (!p || !p.traits) return;
+  const sh = traitOf('stun_shield');
+  if (sh) {
+    p.traitShield = Math.min(sh.onControl.max, (p.traitShield || 0) + sh.onControl.shield);
+    spawnFx('shock', p.x, p.y, '#8fb0d9', 40);
+  }
+  const cm = traitOf('comet');
+  if (cm && e && !e.dead && (p.cometCd || 0) <= 0) {
+    p.cometCd = 1.2;
+    G.strikes.push({
+      w: { klass: '氣', dmg: cm.onControl.comet.dmg, cd: 1 }, reach: cm.onControl.comet.r,
+      kind: 'slam', t: 0, hit: [], delay: cm.onControl.comet.delay,
+      cometAt: { x: e.x, y: e.y },
+    });
+    spawnFx('shock', e.x, e.y, '#a06fd0', 30);
+  }
 }
