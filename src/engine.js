@@ -2757,7 +2757,7 @@ function comboReady() {
 function castCombo(c, target) {
   const p = G.player;
   const _shake0 = G.screenShake, _hs0 = G.hitstop;   // H 欄要還原用
-  if (c.col === 'H') { G.__quietFx = true; G.__quietUntil = G.time + 0.75; }
+  if (c.col === 'H') { G.__quietFx = true; G.__quietUntil = G.time + 0.75; G.__quietSfx = true; }
   // ★ 每一格自己的冷卻，不再四條共用一個。
   //   共用的時候實測：三局 1800 秒只放出 210 次＝平均 8.6 秒一次，
   //   而玩家湊到條件的次數遠多於此——攻速越快越常湊到，湊到的都被冷卻丟掉，
@@ -3362,8 +3362,7 @@ function castOugi(o, target) {
       spawnFx('shock', p.x, p.y, '#5a8ac9', 90);
       ok = true; break;
     }
-  }
-  return ok;
+  }  return ok;
 }
 
 /* ---------- 角度工具 ---------- */
@@ -3427,6 +3426,14 @@ function updateWeapons(dt) {
             p.comboFiring = true;
             _fired = castCombo(_c, target);
             p.comboFiring = false;
+            // ★ 在這裡重置才保證是最後：castCombo 收招演出那段還會放 ougi_hit，
+            //   在它內部提早關旗標那兩個就漏出來了。
+            if (G.__quietSfx) {
+              G.__quietSfx = false;
+              // 普通、但跟前兩下不同：同一個命中音降一個八度、稍大聲。
+              // 耳朵辨得出「這下不一樣」，但不會每兩秒被轟一次。
+              if (_fired) sfx('hit_mid', { pitch: 0.66, vol: 1.05 });
+            }
             if (_fired) {
               p.beatLog.length = 0; p.comboStep = 0; p.beatCd = 0;
               w.cdLeft = w.cd;   // 這一擊已經用掉了

@@ -268,6 +268,10 @@
   }
 
   window.sfx = function (key, opts) {
+    // ★ AA 後的第三下（H 欄連段）不要吵的音效（總監 2026-08-04）：
+    //   它每兩秒就來一次，拿奧義級的音效放會變成噪音。
+    //   招式自己的音效在這段全部擋掉，castCombo 會另外補一個普通但不同的。
+    if (typeof G !== 'undefined' && G && G.__quietSfx) return;
     if (key === 'chop_crack') return chopCrack(opts);
     if (muted || !ctx || !buffers[key] || !buffers[key].length) return;
     opts = opts || {};
