@@ -1909,7 +1909,11 @@ function updateTechniques(dt) {
       e.grabbed = true; e.stun = 99;
       // ★ 炸彈摔是把人夾在胯下扛起來，不是舉在頭頂（總監 2026-08-04）。
       //   人質跟著玩家的腳走，只有升空時整組一起上去。
-      e.x = p.x; e.y = p.y + 10;
+      // ★ 人質要跟著一起飛（總監 2026-08-04）：這是炸彈摔，人是被抱起來扛在身上的。
+      //   玩家在繪製時整個往上位移 a.h（render 的 translate(0,-air)），
+      //   所以人質也要扣掉同樣的高度，才會黏在玩家身上一起升空；
+      //   只寫 p.y + 10 的話玩家飛上去、人留在地面，看起來像是把人丟下了。
+      e.x = p.x; e.y = p.y + 10 - a.h;
       e.knockX = 0; e.knockY = 0;
       if (a.slam || a.t >= a.dur) doAirSlam(a);
     }
