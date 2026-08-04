@@ -2419,9 +2419,13 @@ function resonName(key, fallback) {
 function beatFromState() {
   const p = G.player;
   if (p.dashState) return 'D';
-  if (stillActive()) return 'S';
-  if (movingActive()) return 'M';
-  return null;
+  // ★ 舊寫法用 stillActive()／movingActive()，那兩個各自有 0.5 秒與 0.15 秒的門檻，
+  //   中間有一段「兩個都不是」的死區——實測佔 36% 的時間，打中了不記任何拍。
+  //   總監回報「連續三個手刀但頭上的框框沒有增加」就是踩到這個。
+  //   記拍改成單純的二分：打中的當下有沒有在動。沒有隱形計時器，玩家才預測得到。
+  //   （stillActive／movingActive 維持原樣不動——站樁技與移動技的觸發門檻是另一回事，
+  //     那個 0.5 秒是「站穩了才發動」的設計，不該跟記拍混為一談。）
+  return (p.vx || p.vy) ? 'M' : 'S';
 }
 
 /* ---------- 奧義 ----------
@@ -3418,7 +3422,10 @@ function spawnStrike(w, reach) {
     s.delay = Math.max(0.08, Math.min(0.26, w.cd * 0.13));
     w.swingDur = s.delay + 0.08;
   }
-  if (w.klass === '摔技' && s.kind === 'sweep') {
+  // 總監 2026-08-04：手刀拿掉速度線，專注在敵人被打的狀態。
+  // 手刀每 0.8 秒一次，速度線每次都畫等於畫面一直有東西閃；
+  // 打擊感八成是受方賣出來的（chopHit 的橫壓後仰＋胸口白閃＋脆響已經在做這件事）。
+  if (false && w.klass === '摔技' && s.kind === 'sweep') {
     // 漫畫速度線（總監指令）：線聚在手邊、順著揮向拖出去。
     // 特效自己有壽命，不跟著 60ms 的接觸窗一起消失——不然畫面上等於沒畫。
     spawnFx('mangaline', p.x, p.y, '#ffd44a', s.reach * 0.74,
