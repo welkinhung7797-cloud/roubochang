@@ -2199,10 +2199,21 @@ function updateTechniques(dt) {
           const aR = Math.atan2(s.dy, s.dx);
           hurtEnemy(e, techDmg(s.chargeDmg || 34) * (s.boost || 1), { fromAngle: aR });
           if (!e.dead) {
-            const sideSign = ((e.x - p.x) * -s.dy + (e.y - p.y) * s.dx) >= 0 ? 1 : -1;
             const kb = e.boss ? 40 : (s.chargeKnock || 200);
-            e.knockX += -s.dy * sideSign * kb; e.knockY += s.dx * sideSign * kb;
-            e.stun = Math.max(e.stun, s.chargeStun || 0.5);
+            if (s.id === 'clothesline' && !e.boss) {
+              // ★ 金臂勾：被掛到的人垂直往上飛、邊轉邊落地（總監 2026-08-04）。
+              //   橫掛的力道不是把人推開，是把人的腳從地上「抽掉」——
+              //   所以他該是原地騰空翻轉落下，不是往旁邊滑走。
+              e.knockX = 0; e.knockY = 0;
+              e.thrown = { vx: 0, vy: 0, t: 0.95, decay: 0.1, vert: true, h: 0, vh: 300 };
+              e.spin = { a: 0, v: 15, t: 0.95 };
+              e.stun = Math.max(e.stun, Math.max(1.4, s.chargeStun || 0.5));
+              spawnFx('slide', e.x, e.y, '#c98a3c', 34, { angle: -Math.PI / 2 });
+            } else {
+              const sideSign = ((e.x - p.x) * -s.dy + (e.y - p.y) * s.dx) >= 0 ? 1 : -1;
+              e.knockX += -s.dy * sideSign * kb; e.knockY += s.dx * sideSign * kb;
+              e.stun = Math.max(e.stun, s.chargeStun || 0.5);
+            }
             e.hitSquash = Math.max(e.hitSquash || 0, 0.24);
           }
           sfx('hit_blunt');
@@ -2826,7 +2837,7 @@ function castOugi(o, target) {
       if (pr.img) spawnFx('shock', e0.x, e0.y, '#e8e4dc', 90, { img: pr.img });
       if (pr.launch && !e0.dead && !e0.boss) {
         // 頭槌撞上的那一個直接轟出去
-        e0.thrown = { vx: Math.cos(a0) * pr.launch, vy: Math.sin(a0) * pr.launch, t: 0.55, decay: 2.2 };
+        e0.thrown = { vx: Math.cos(a0) * pr.launch, vy: Math.sin(a0) * pr.launch, t: 0.55, decay: 2.2, bounce: 2 };
         e0.spin = { v: (Math.cos(a0) >= 0 ? -14 : 14), t: 0.55, a: 0 };
       }
       if (pr.radius) {
@@ -3973,6 +3984,42 @@ function updateEnemies(dt) {
       th.t -= dt;
       if (e.spin) { e.spin.a += e.spin.v * dt; e.spin.t -= dt; if (e.spin.t <= 0) e.spin = null; }
       e.x += th.vx * dt; e.y += th.vy * dt;
+      // ★ 飛到鏡頭邊界彈回來（總監 2026-08-04）：大足踢／矛頭衝撞這類轟飛招，
+      //   人被打到畫面邊緣會反彈回場中，而不是貼在牆上停住。
+      //   用鏡頭視野當邊界而不是場地邊界——玩家看得到的那條線才是他感覺到的「牆」。
+      if (th.bounce > 0) {
+        const mx = 26;
+        const L = G.cam.x + mx, R = G.cam.x + VIEW.ww - mx;
+        const T = G.cam.y + mx, B = G.cam.y + VIEW.wh - mx;
+        let hit = false;
+        if (e.x < L && th.vx < 0) { e.x = L; th.vx = -th.vx; hit = true; }
+        else if (e.x > R && th.vx > 0) { e.x = R; th.vx = -th.vx; hit = true; }
+        if (e.y < T && th.vy < 0) { e.y = T; th.vy = -th.vy; hit = true; }
+        else if (e.y > B && th.vy > 0) { e.y = B; th.vy = -th.vy; hit = true; }
+        if (hit) {
+          th.bounce--;
+          th.t = Math.max(th.t, 0.35);          // 彈回來還要飛一段，不然一碰就停
+          th.vx *= 0.82; th.vy *= 0.82;
+          hurtEnemy(e, throwDmg(10 + e.maxHp * 0.06), { trueDmg: true });
+          e.spin = { a: (e.spin && e.spin.a) || 0, v: 14, t: 0.5 };
+          spawnFx('spark', e.x, e.y, '#e8964a', 30);
+          G.screenShake = Math.max(G.screenShake, 7);
+          sfxWallCrash(false);
+        }
+      }
+      if (th.vert) {
+        // 垂直騰空：往上衝、重力拉回、落地那一下才算完
+        th.vh -= 900 * dt; th.h = Math.max(0, (th.h || 0) + th.vh * dt);
+        e.lift = th.h;
+        if (th.h <= 0 && th.vh < 0) {
+          th.t = 0;
+          e.lift = 0;
+          hurtEnemy(e, throwDmg(12 + e.maxHp * 0.05), { trueDmg: true });
+          spawnFx('spark', e.x, e.y, '#c98a3c', 30);
+          G.screenShake = Math.max(G.screenShake, 6);
+          sfxWallCrash(false);
+        }
+      }
       const thd = Math.exp(-(th.decay || 3) * dt);
       th.vx *= thd; th.vy *= thd;
       const spd = Math.hypot(th.vx, th.vy);
