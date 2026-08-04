@@ -407,7 +407,14 @@ function drawBigFoot(img, _a, _b, dstX, dstY, dstW, dstH) {
   const p = G.player;
   const t = p.bigBootT || 0;
   if (t <= 0 || !img || !img.complete || !img.naturalWidth) return;
-  const grow = 1 + 0.5 * Math.min(1, (0.42 - t) / 0.10);   // 100ms 內長到 1.5 倍
+  // ★ 縮放曲線（總監 2026-08-04）：1.0 → 1.5 → 踢完再消回 1.0。
+  //   變大快（踢出去的 120ms）、收回慢（剩下的 300ms）——
+  //   快出慢收才有重量，兩邊一樣快會像在呼吸。
+  const el = 0.42 - t;                       // 已經過了多久
+  const UP = 0.12;
+  const grow = el < UP
+    ? 1 + 0.5 * (el / UP)                                    // 長大
+    : 1 + 0.5 * Math.max(0, 1 - (el - UP) / (0.42 - UP));    // 收回
   const iw = img.naturalWidth, ih = img.naturalHeight;
   const sx = BOOT_SRC.x * iw, sy = BOOT_SRC.y * ih;
   const sw = BOOT_SRC.w * iw, sh = BOOT_SRC.h * ih;
