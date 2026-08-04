@@ -1375,6 +1375,7 @@ function updateTechniques(dt) {
   if (p.resonCd > 0) p.resonCd -= dt;
   if (p.dashChainT > 0) p.dashChainT -= dt; else p.dashChain = 0;
   if (p.ougiCd > 0) p.ougiCd -= dt;
+  if (p.bigBootT > 0) p.bigBootT -= dt;
   if (p.comboCd > 0) p.comboCd -= dt;
   if (p.slotCd) for (const k in p.slotCd) if (p.slotCd[k] > 0) p.slotCd[k] -= dt;
   if (p.beatPopT > 0) p.beatPopT -= dt;
@@ -2558,6 +2559,27 @@ function castExtension(move, victim) {
     return okE;
   }
   switch (move) {
+    case 'big_boot': {
+      // ★ BIG BOOT：大腳特別大（總監指定）。
+      //   對準彈回來的那隻——彈回來的人正在飛，所以要能抓飛行中的目標。
+      let tB = (victim && !victim.dead) ? victim : null;
+      if (!tB) { let bd = 1e9; for (const o of G.enemies) { if (o.dead) continue;
+        const d2 = dist2(o.x, o.y, p.x, p.y); if (d2 < bd) { bd = d2; tB = o; } } }
+      const aB = tB ? Math.atan2(tB.y - p.y, tB.x - p.x) : (p.face > 0 ? 0 : Math.PI);
+      const okB = castOugi({ kind: 'knock_cone',
+        params: { dmg: 96, knock: 300, arc: 100, range: 150, stun: 1.2, launch: 900 } }, tB);
+      if (okB) {
+        p.pose = { type: 'kick', ang: aB, t: 0, dur: 0.42, prio: 1, bigFoot: 1 };
+        p.bigBootT = 0.42;   // 給 render 用：這段期間把腳畫得特別大
+        G.ougiBanner = { name: 'BIG BOOT', t: 1.2 };
+        G.screenShake = Math.max(G.screenShake, 15);
+        addHitstop(0.13, true);
+        sfx('hit_kick', { pitch: 0.7, vol: 1.3 });
+        burstParticles(p.x + Math.cos(aB) * 60, p.y + Math.sin(aB) * 60,
+          { n: 16, spd: 220, life: 0.45, size: 3, col: '#FFEC27', dir: aB, spread: 1.6 });
+      }
+      return okB;
+    }
     case 'clothesline': {
       const ok1 = castOugi({ kind: 'charge_line',
         params: { dmg: 90, len: 260, width: 96, knock: 380, stun: 1.0, pose: 'lariat', chargeSpd: 820 } });
@@ -3092,6 +3114,27 @@ function castOugi(o, target) {
       sfx('swing_leg');
       if (!ok) ok = true;   // 掃空也算出招（動作已經做出去了）
       break;
+    }
+    case 'rope_throw': {
+      // ★ 繩索投（總監 2026-08-04）：把人丟到畫面外再彈回來。
+      //   摔角擂台的繩索就是這樣用的——丟出去不是結束，是开始。
+      //   彈回來那一瞬間按 C 接 BIG BOOT，那才是這招的目的。
+      const eR = (target && !target.dead) ? target : nearestEnemy(p.x, p.y, 150);
+      if (!eR) break;
+      const aR = Math.atan2(eR.y - p.y, eR.x - p.x);
+      hurtEnemy(eR, techDmg(pr.dmg || 26), { fromAngle: aR });
+      if (!eR.dead) {
+        eR.knockX = 0; eR.knockY = 0;
+        eR.thrown = { vx: Math.cos(aR) * (pr.spd || 1500), vy: Math.sin(aR) * (pr.spd || 1500),
+          t: 1.1, decay: 0.55, bounce: 3 };
+        eR.spin = { a: 0, v: 17, t: 1.1 };
+        eR.stun = Math.max(eR.stun, pr.stun || 1.2);
+        p.lastComboVictim = eR;
+      }
+      p.pose = { type: 'hold', ang: aR, t: 0, dur: 0.3, prio: 1 };
+      burstParticles(eR.x, eR.y, { n: 10, spd: 170, life: 0.35, size: 2, col: '#FFA300', dir: aR, spread: 1.1 });
+      sfx('throw_hit');
+      ok = true; break;
     }
     case 'charge_line': {
       // 橫掛衝鋒：真的跑過去（不是瞬移）——dashState 帶位移，沿路撞到誰誰倒
