@@ -1589,7 +1589,9 @@ function updateTechniques(dt) {
         if (p.stillHold >= 0.5) {
           // 炸彈摔＝把人抱起來跳上天，滯空期間自己走位選落點（再按一次 Space 提早落地）
           sfx('dash');
-          p.airSlam = { e, t: 0, dur: 1.0, slam: false, dizzy: g.dizzy || 0 };
+          // 總監 2026-08-04：跳高一點、不要這麼快落地，不然來不及反應。
+          // dur 1.0 → 1.7 秒，而且改成「一起跳就升空」而不是最後 0.2 秒才跳。
+          p.airSlam = { e, t: 0, dur: 1.7, slam: false, dizzy: g.dizzy || 0, highJump: true };
           p.grabState = null; p.stillHold = 0;
         }
       }
@@ -1864,9 +1866,22 @@ function updateTechniques(dt) {
       if (a.x0 === undefined) { a.x0 = p.x; a.y0 = p.y; }
       const kA = Math.min(1, a.t / a.dur);
       // 扛跑（總監定案）：腳踩在地上跑去選落點，只有最後 0.2 秒跳起來——落差才賣得出去
-      const jumpK = kA > 0.82 ? (kA - 0.82) / 0.18 : 0;
-      const peak = a.bigDrop ? 104 : 62;
-      a.h = jumpK <= 0 ? 0 : (jumpK < 0.5 ? peak * (jumpK / 0.5) : peak * Math.max(0, 1 - Math.pow((jumpK - 0.5) / 0.5, 2)));
+      // 扛跑版：腳踩在地上跑去選落點，只有最後 0.2 秒跳起來——落差才賣得出去。
+      // 高跳版（站定炸彈摔）：一開始就升空、在頂點停久一點，玩家才有時間走位選落點。
+      let jumpK, peak;
+      if (a.highJump) {
+        jumpK = Math.min(1, kA / 0.88);          // 前 88% 都在空中，最後 12% 砸下來
+        peak = 150;                               // 62 → 150，跳得明顯高
+      } else {
+        jumpK = kA > 0.82 ? (kA - 0.82) / 0.18 : 0;
+        peak = a.bigDrop ? 104 : 62;
+      }
+      a.h = jumpK <= 0 ? 0
+        : a.highJump
+          ? (jumpK < 0.22 ? peak * (jumpK / 0.22)                       // 0.22 起跳
+             : jumpK < 0.78 ? peak                                       // 中段整整停在頂點
+             : peak * Math.max(0, 1 - Math.pow((jumpK - 0.78) / 0.22, 2)))
+          : (jumpK < 0.5 ? peak * (jumpK / 0.5) : peak * Math.max(0, 1 - Math.pow((jumpK - 0.5) / 0.5, 2)));
       p.iframe = Math.max(p.iframe, 0.08);   // 人在空中，地面的敵人碰不到（不是衝刺無敵）
       // 滯空位移上限：這是重新定位，不是傳送
       const dx0 = p.x - a.x0, dy0 = p.y - a.y0;
