@@ -2721,7 +2721,7 @@ function comboReady() {
 function castCombo(c, target) {
   const p = G.player;
   const _shake0 = G.screenShake, _hs0 = G.hitstop;   // H 欄要還原用
-  if (c.col === 'H') G.__quietFx = true;
+  if (c.col === 'H') { G.__quietFx = true; G.__quietUntil = G.time + 0.75; }
   // ★ 每一格自己的冷卻，不再四條共用一個。
   //   共用的時候實測：三局 1800 秒只放出 210 次＝平均 8.6 秒一次，
   //   而玩家湊到條件的次數遠多於此——攻速越快越常湊到，湊到的都被冷卻丟掉，
@@ -2746,7 +2746,7 @@ function castCombo(c, target) {
   }
   const ok = castOugi(c, target);
   G.__comboDmgMul = prevDmgMul;
-  G.__quietFx = false;
+  G.__quietFx = false;   // 立即旗標關掉，但 __quietUntil 還會擋住招式之後的連鎖
   if (!ok) return false;
   p.beatLog = []; p.beatT = 0;
   if (c.ext && (p.extCd || 0) <= 0) {
@@ -3701,7 +3701,9 @@ function applyWeaponHit(w, e, reach, mulOverride, isEcho, swingId) {
   if (!isEcho && w.klass === '摔技' && !e.dead) {
     const angC = Math.atan2(e.y - p.y, e.x - p.x);
     e.chopHit = { t: 0.22, ang: angC };
-    spawnFx('shock', e.x - Math.cos(angC) * e.r * 0.6, e.y - e.r * 0.35, '#ffffff', 26, { img: 'fx_chop_slap' });
+    // ★ 手刀的震波環拿掉（總監：手刀還是有奇怪的波型特效）。
+    // 每次命中每個敵人都噴一個，站在三隻人堆裡 10 秒就是 31 個圈。
+    // 受方的反應（chopHit 的橫壓後仰＋胸口白閃＋脆響）已經足夠表達這一擊。
   }
   if (!isEcho && (p.comboStep || 0) > 0 && !e.dead) p.lastComboVictim = e;
   // 刀留痕：劍豪的每一刀都在累積，不是每一刀都要見效
@@ -4022,9 +4024,12 @@ function updateEnemies(dt) {
           e.stun = Math.max(e.stun, hard ? 1.4 : 0.8);
           e.hitSquash = Math.max(e.hitSquash || 0, hard ? 0.3 : 0.2);
         }
-        spawnFx('explode', e.x, e.y, '#c2703c', hard ? 110 : 70);
-        spawnFx('shock', e.x, e.y, '#e8964a', hard ? 120 : 80, { img: 'fx_slam_ring', squash: 0.5 });
-        G.screenShake = Math.max(G.screenShake, hard ? 16 : 9);
+        // ★ 撞牆本來噴兩層（爆炸＋震波環）。轟飛系的連段一次會把好幾隻撞上去，
+        //   結果畫面全是圈——總監看到的「頭槌的圓圈特效」就是這個，不是頭槌自己的。
+        //   輕撞只留火花，重撞才給一個環。
+        if (hard) spawnFx('shock', e.x, e.y, '#e8964a', 96, { img: 'fx_slam_ring', squash: 0.5 });
+        else spawnFx('spark', e.x, e.y, '#e8964a', 26);
+        G.screenShake = Math.max(G.screenShake, hard ? 12 : 4);
         if (hard) addHitstop(0.09, true);
         sfxWallCrash(hard);
         // 撞牆的震波掃到旁邊的人（震撼性：一個人撞牆、周圍跟著遭殃）
@@ -4673,7 +4678,11 @@ function spawnFx(type, x, y, color, size, extra) {
   // H 欄連段（頭槌那種高頻的第三下）不要範圍特效——總監指定只留動作。
   // ★ 改白名單：黑名單一直漏（總監已經第四次指出還有圈圈）。
   //   H 欄連段期間只准出命中火花與拖影，其餘一律不生成。
-  if (G.__quietFx && type !== 'spark' && type !== 'slide' && type !== 'hurt') return;
+  // ★ 安靜窗有時效：招式本身噴的圈要擋，招式「之後」的連鎖（被轟飛的人落地、撞牆）也要擋。
+  //   只用瞬間旗標的話，castCombo 一結束旗標就關了，後面那批圈照樣冒出來——
+  //   總監看到的「頭槌的圓圈特效」就是這一批。
+  const _q = G.__quietFx || (G.time < (G.__quietUntil || 0));
+  if (_q && type !== 'spark' && type !== 'slide' && type !== 'hurt') return;
   const f = { type, x, y, color, size: size || 20, t: 0, life: 0.4 };
   if (extra) Object.assign(f, extra);
   if (type === 'swing') f.life = 0.22;
