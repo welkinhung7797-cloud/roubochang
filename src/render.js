@@ -131,7 +131,6 @@ function drawGame() {
   if (G.player) drawWeaponsFront();
   if (G.player) drawStrikes();
   drawProjectiles();
-  drawBigBoot(G.player);
   drawFxOver();
   drawParticles();
   drawDamageNums();
@@ -398,6 +397,28 @@ function pickFrame(p) {
 
 /* 全幀模式的玩家繪製：幀圖＋配件＋既有狀態特效（呼叫端已 translate 到玩家位置） */
 const FRAME_H = 46;   // 幀在世界座標的顯示高度
+/* ★ BIG BOOT：把「角色自己的腳」放大 1.5 倍（總監 2026-08-04）。
+   不另外畫一隻鞋子——先前的深藍鞋底是做錯的，那會變成兩條腿，
+   而且配色跟角色（棕身、橘腳）不同家族。
+   bigboot_2.png 量過：伸出去的那隻腳在 x 425–501、y 185–308（512px 圖），
+   佔橘色像素的 49%。把那塊裁下來重畫一次、放大 1.5 倍、內側對齊。 */
+const BOOT_SRC = { x: 425 / 512, y: 185 / 512, w: 76 / 512, h: 123 / 512 };
+function drawBigFoot(img, _a, _b, dstX, dstY, dstW, dstH) {
+  const p = G.player;
+  const t = p.bigBootT || 0;
+  if (t <= 0 || !img || !img.complete || !img.naturalWidth) return;
+  const grow = 1 + 0.5 * Math.min(1, (0.42 - t) / 0.10);   // 100ms 內長到 1.5 倍
+  const iw = img.naturalWidth, ih = img.naturalHeight;
+  const sx = BOOT_SRC.x * iw, sy = BOOT_SRC.y * ih;
+  const sw = BOOT_SRC.w * iw, sh = BOOT_SRC.h * ih;
+  const dw = dstW * BOOT_SRC.w, dh = dstH * BOOT_SRC.h;
+  const dx = dstX + dstW * BOOT_SRC.x, dy = dstY + dstH * BOOT_SRC.y;
+  // 內側邊缘鎖住，只往外跟上下長——腳掌變大，不是整隻腳飛出去
+  const gw = dw * grow, gh = dh * grow;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(img, sx, sy, sw, sh, dx, dy - (gh - dh) / 2, gw, gh);
+}
+
 function drawPlayerFramed(p, c) {
   const img = pickFrame(p);
   if (!img) return false;
@@ -441,6 +462,7 @@ function drawPlayerFramed(p, c) {
   }
   if (p.iframe > 0 && Math.floor(G.time * 20) % 2 === 0) ctx.filter = 'brightness(2.2)';
   ctx.drawImage(img, -w / 2, -FRAME_H * 0.62, w, FRAME_H);
+  drawBigFoot(img, w / 2, FRAME_H / 2, -w / 2, -FRAME_H * 0.62, w, FRAME_H);
   // 配件：疊在頭部（基底幀構圖固定，錨點統一）
   // 武士的腰間刀鞘（專屬幀已畫進去就不疊）
   const cfK = CHAR_FRAMES[c.id];
@@ -1754,38 +1776,6 @@ function drawBladeSmear(cx, cy, a0, a1, reach, k) {
     ctx.fill();
   }
   ctx.globalAlpha = 1;
-}
-
-/* ★ BIG BOOT 的大腳（總監：大腳會特別大）。
-   畫一隻跨大比例的鞋底往前踹，像素邊＋兩段色，
-   跟刀光一樣頂點對齊像素格——誌張是這招的重點，不是寫實。 */
-function drawBigBoot(p) {
-  const t = p.bigBootT || 0;
-  if (t <= 0) return;
-  const k = Math.min(1, (0.42 - t) / 0.12);        // 前 0.12 秒踢出去
-  const a = (p.pose && p.pose.ang !== undefined) ? p.pose.ang : (p.face > 0 ? 0 : Math.PI);
-  const g = (typeof PIXEL_GRID !== 'undefined') ? PIXEL_GRID : 4;
-  const snap = v => Math.round(v / g) * g;
-  const reach = 26 + 58 * k;
-  const L = 46, W = 34;                             // 鞋底尺寸：跨大比例
-  ctx.save();
-  ctx.translate(p.x, p.y + 4);
-  ctx.rotate(a);
-  ctx.globalAlpha = t > 0.12 ? 1 : t / 0.12;
-  // 小腿：一條粗幹連到鞋底
-  ctx.fillStyle = '#5F574F';
-  ctx.fillRect(snap(6), snap(-9), snap(reach - 6), snap(18));
-  // 鞋底本體
-  ctx.fillStyle = '#1D2B53';
-  ctx.fillRect(snap(reach), snap(-W / 2), snap(L), snap(W));
-  // 鞋底前端的亮面
-  ctx.fillStyle = '#C2C3C7';
-  ctx.fillRect(snap(reach + L - g * 2), snap(-W / 2), snap(g * 2), snap(W));
-  // 鞋底紋（三條橫槽）
-  ctx.fillStyle = '#5F574F';
-  for (let i = 1; i <= 3; i++) ctx.fillRect(snap(reach + i * (L / 4)), snap(-W / 2 + g), snap(g), snap(W - g * 2));
-  ctx.globalAlpha = 1;
-  ctx.restore();
 }
 
 function drawStrikes() {

@@ -3085,6 +3085,10 @@ function castOugi(o, target) {
       ok = true; break;
     }
     case 'knock_cone': {
+      // ★ bigBootT 本來只有 castExtension 的 big_boot 分支會設，
+      //   大腳升格成基礎招之後走的是這條路 → 腳完全不會變大。
+      p.bigBootT = 0.42;
+
       // 扇形踢飛：一整片掃出去，主打位移不是傷害
       const e1 = target && !target.dead ? target : nearestEnemy(p.x, p.y, pr.range);
       const a1 = e1 ? Math.atan2(e1.y - p.y, e1.x - p.x) : (p.face > 0 ? 0 : Math.PI);

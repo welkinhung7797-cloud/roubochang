@@ -106,7 +106,7 @@ const MOVES = [
     dashSpd: 850, dashDur: 0.26 },
   { id: 'suplex_grab', name: '擒抱', short: '擒', slot: 'dash', color: '#b07a4a', cd: 4, price: 46,
     desc: '滑行擒抱住撞到的第一個敵人。抓住之後：移動＝掄著他甩打周遭；站定＝炸彈摔砸出範圍重擊。抓不住頭目。',
-    dashSpd: 800, dashDur: 0.35, holdDur: 3.5 },
+    dashSpd: 560, dashDur: 0.5, holdDur: 3.5 },
   { id: 'iai_slash', name: '拔刀斬', short: '拔', slot: 'dash', color: '#4f5d75', cd: 4, price: 42,
     desc: '三段式居合：先甩刀掃前方，反手把刀水平收回鞘——整整一秒，這是居合的代價——然後瞬身到方向鍵指的位置，路徑閃過一道白光，光上的敵人在半拍之後才裂開，連中三刀。',
     dashSpd: 900, dashDur: 0.22 },
