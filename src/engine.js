@@ -537,6 +537,7 @@ function hurtEnemy(e, amount, opts) {
 function killEnemy(e) {
   if (e.dead) return;
   e.dead = true;
+  if (typeof poisonSpreadOnDeath === 'function') poisonSpreadOnDeath(e);
   G.kills++;
   G.waveKills = (G.waveKills || 0) + 1;
   addHitstop(e.elite || e.boss ? 0.10 : 0.05, true);
@@ -873,7 +874,14 @@ function castDash() {
   }
   if (ok) {
     sfx(id === 'flash_step' ? 'flash' : 'dash');
-    p.dashCd = d.cd * cdMul * TUNE.dashCdMul * (hasItem('master_obi') ? 0.8 : 1);
+    // 三段身法（特性）：改成充能制——用掉一次扣一格，格子空了才進冷卻。
+    const _tri = traitOf('triple_dash');
+    const _base = d.cd * cdMul * TUNE.dashCdMul * (hasItem('master_obi') ? 0.8 : 1);
+    if (_tri) {
+      p.dashCharge = (p.dashCharge === undefined) ? _tri.dashCharges : p.dashCharge;
+      p.dashCharge--;
+      p.dashCd = (p.dashCharge > 0) ? 0.25 : _base * _tri.dashCdMul;
+    } else p.dashCd = _base;
     if (p.dashState) p.dashState.boost = boost;
     if (boost > 1) addDmgNum(p.x, p.y - 34, '蓄勁 ×' + boost.toFixed(2), '#e8964a');
     p.pose = { type: 'dash', ang: 0, t: 0, dur: Math.max(0.25, d.dashDur || 0.25), prio: 1 };
@@ -3647,6 +3655,7 @@ function applyWeaponHit(w, e, reach, mulOverride, isEcho, swingId) {
     crit, fromAngle: w.angle, weaponLifesteal: w.lifesteal,
   });
 
+  if (!isEcho && typeof applyElements === 'function') applyElements(e);
   // ---- 特性：命中觸發 ----
   if (!isEcho && p.traits && p.traits.length) {
     if (hasTrait('burn_stack')) {
@@ -4078,6 +4087,8 @@ function updateEnemies(dt) {
     const ux = dx / d, uy = dy / d;
     e.face = ux > 0 ? 1 : -1;
     let spd = e.speed * (e.slow > 0 ? 0.6 : 1);
+    if (e.heavy > 0) spd *= ELEMENT_MAP.earth.apply.heavy.mul;      // 土：走不動
+    if (e.paralyze > 0 || e.freeze > 0) spd = 0;                     // 雷/冰：完全停住
     // 清場逾時的激怒狀態：直奔玩家、快到追得上，而且不再被牆卡住
     if (e.enraged) spd = Math.max(spd, 320) * 1.6;
     if (G.waveEnding > 0) spd *= 0.3;
@@ -4335,9 +4346,11 @@ function gainXp(n) {
   if (G.levelQueue > 0 && G.mode === 'playing') openLevelUp();
 }
 
-function grantItem(id) {
+function grantItem(id, element) {
   const def = ITEM_MAP[id];
-  G.player.items.push(def);
+  // ★ 帶元素的要複製一份再存——直接 push 共用的 def 會把元素寫進全域資料表，
+  //   之後每一個同名道具都會帶著它。
+  G.player.items.push(element ? Object.assign({}, def, { element }) : def);
   recalcStats(G.player);
 }
 
@@ -4560,10 +4573,15 @@ function rollShopEntry() {
     };
   } else {
     const it = rollItem(maxT);
+    // 元素：第 3 波起，三成的道具會附帶一種元素（雷/冰/火/毒/土/風）。
+    // 元素是行為不是數值，所以加價 1.45 倍。
+    let el = null;
+    if (G.wave >= 3 && chance(0.30)) el = pick(ELEMENTS).key;
     return {
-      kind: 'item', id: it.id, tier: it.tier,
-      name: it.name, color: TIER_COLOR[it.tier], icon: 'item',
-      price: Math.round(it.price * shopInflation(G.wave)),
+      kind: 'item', id: it.id, tier: it.tier, element: el,
+      name: (el ? ELEMENT_MAP[el].name + '　' : '') + it.name,
+      color: el ? ELEMENT_MAP[el].color : TIER_COLOR[it.tier], icon: 'item',
+      price: Math.round(it.price * shopInflation(G.wave) * (el ? ELEMENT_PRICE_MUL : 1)),
       locked: false, sold: false,
     };
   }
@@ -4625,7 +4643,7 @@ function shopBuy(idx, replaceSlot) {
     return { ok: true, msg: '購入 ' + e.name };
   } else {
     G.materials -= e.price;
-    grantItem(e.id);
+    grantItem(e.id, e.element);
     e.sold = true;
     return { ok: true, msg: '購入 ' + e.name };
   }

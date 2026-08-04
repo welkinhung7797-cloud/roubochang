@@ -1151,39 +1151,37 @@ let openBoardSlot = null;
 function boardHtml() {
   const p = G.player;
   if (!p || !p.comboBoard) return '';
-  const rows = BOARD_ROWS;
-  const cols = BOARD_COLS;
+  // 2×2（總監 2026-08-04 定案，術語統一用 A／B／C）：
+  // 打中兩下之後，第三下你做什麼，就決定變成哪一招。
+  // A＝站著不動打中、B＝一邊移動打中、C＝按 SPACE。
+  // 前兩拍只是「湊滿了」的計數，不決定出哪一招——它只影響變體加成。
   let h = '<div class="combo-head">連段盤' +
-    '<span>數「站」跟「移」哪個多，決定哪一排（不看順序）；收尾是再打一下還是按 SPACE，決定哪一欄</span></div>';
+    '<span>打中兩下之後，<b>第三下你做什麼</b>就決定變成哪一招</span></div>';
   h += '<div class="bd">';
   h += '<div class="bd-r bd-h"><div class="bd-c bd-lab"></div>' +
-    cols.map(c => '<div class="bd-c bd-hd"><b class="bw bw-' +
-      (c.key === 'S' ? 'still' : c.key === 'M' ? 'move' : 'dash') + '">' + c.name + '</b>' +
-      '<span>' + c.act + '</span></div>').join('') + '</div>';
-  for (const r of rows) {
-    const locked = (p.boardRows || []).indexOf(r.key) < 0;
-    h += '<div class="bd-r' + (locked ? ' locked' : '') + '">';
-    h += '<div class="bd-c bd-lab"><b>' + r.name + '</b><span>' +
-      (locked ? '第 ' + BOARD_MX_UNLOCK_WAVE + ' 波解鎖' : r.hint) + '</span></div>';
-    for (const c of cols) {
+    '<div class="bd-c bd-hd"><b class="bw bw-still">打中</b><span>第三下打中</span></div>' +
+    '<div class="bd-c bd-hd"><b class="bw bw-dash">C</b><span>第三下按 SPACE</span></div></div>';
+  for (const r of BOARD_ROWS) {
+    h += '<div class="bd-r">';
+    h += '<div class="bd-c bd-lab"><b>' + r.name + '</b><span>' + r.hint + '</span></div>';
+    for (const c of BOARD_COLS) {
       const key = r.key + '_' + c.key;
+      // C 欄只有一格有意義（衝刺沒有站/移之分），第二排的 C 格用累積多數挑，
+      // 但玩家看不到那個差異，所以只在第一排顯示 C 欄的說明避免誤導。
       const f = FINISHER_MAP[p.comboBoard[key]];
-      // 變體加成是「收尾那一下換狀態」，跟格子無關，所以格子上只標本命與否
       const off = f && ((f.home === 'D' ? 'D' : 'H') !== c.key);
-      h += '<div class="bd-c bd-slot' + (locked ? '' : ' on') + (f ? ' filled' : '') +
-        '" data-slot="' + key + '">';
+      h += '<div class="bd-c bd-slot on' + (f ? ' filled' : '') + '" data-slot="' + key + '">';
       if (f) {
-        h += '<b>' + f.name + '</b>';
-        h += '<i>' + (c.key === 'D' ? '按 SPACE 收尾' : '收尾換狀態 ×' + BOARD_MIX_MUL) +
+        h += '<b>' + f.name + '</b><i>' +
+          (c.key === 'H' ? '換個狀態打中 ×' + BOARD_MIX_MUL : '按 SPACE 收尾') +
           (off ? '　非本命 ×' + BOARD_OFFHOME_MUL : '') + '</i>';
       } else {
-        h += '<b class="empty">' + (locked ? '—' : '空格') + '</b>' +
-          '<i>' + (locked ? '' : '只出普攻') + '</i>';
+        h += '<b class="empty">空格</b><i>只出普攻</i>';
       }
       h += '</div>';
     }
     h += '</div>';
-    if (!locked && openBoardSlot && openBoardSlot.split('_')[0] === r.key) h += boardPickHtml();
+    if (openBoardSlot && openBoardSlot.split('_')[0] === r.key) h += boardPickHtml();
   }
   h += '</div>';
   return h;

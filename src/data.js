@@ -87,36 +87,36 @@ function blankStats() {
 */
 const MOVES = [
   /* ---- 衝刺技 ---- */
-  { id: 'tackle', name: '衝撞', short: '撞', slot: 'dash', color: '#c2703c', cd: 8, price: 42,
+  { id: 'tackle', name: '衝撞', short: '撞', slot: 'dash', color: '#c2703c', cd: 4, price: 42,
     desc: '低身衝刺，撞上的第一個敵人被一路推到牆上撞碎並震盪周圍。衝刺中受傷加重六成，撞空會踉蹌。',
     dashSpd: 860, dashDur: 0.5 },
-  { id: 'grab_spin', name: '迴旋抓摔', short: '抓', slot: 'dash', color: '#b07a4a', cd: 9, price: 44,
+  { id: 'grab_spin', name: '迴旋抓摔', short: '抓', slot: 'dash', color: '#b07a4a', cd: 4, price: 44,
     desc: '衝刺抓住碰到的第一個敵人，當武器掄一圈半再扔出去撞牆。抓不動頭目，但能絆他一跤。',
     dashSpd: 700, dashDur: 0.24, dur: 1.5, orbitR: 64, spinSpd: 7.5 },
-  { id: 'flash_step', name: '縮地', short: '縮', slot: 'dash', color: '#79d9c0', cd: 6, price: 38,
+  { id: 'flash_step', name: '縮地', short: '縮', slot: 'dash', color: '#79d9c0', cd: 4, price: 38,
     desc: '一瞬踏到最近敵人的背後，下一擊必定爆擊，短暫加快出手。' },
-  { id: 'mountain_bash', name: '鐵山靠', short: '靠', slot: 'dash', color: '#8a8f99', cd: 5, price: 34,
+  { id: 'mountain_bash', name: '鐵山靠', short: '靠', slot: 'dash', color: '#8a8f99', cd: 4, price: 34,
     desc: '短距離肩撞，把正面的敵人整排撞飛，並短暫硬化自身護甲。',
     lunge: 130 },
-  { id: 'knee_dash', name: '飛膝突進', short: '膝', slot: 'dash', color: '#d97a5a', cd: 7, price: 40,
+  { id: 'knee_dash', name: '飛膝突進', short: '膝', slot: 'dash', color: '#d97a5a', cd: 4, price: 40,
     desc: '飛身衝刺，落點一記飛膝：範圍傷害並讓命中的敵人僵直。',
     dashSpd: 830, dashDur: 0.3 },
-  { id: 'drunk_roll', name: '醉步翻滾', short: '醉', slot: 'dash', color: '#d9a441', cd: 6, price: 38,
+  { id: 'drunk_roll', name: '醉步翻滾', short: '醉', slot: 'dash', color: '#d9a441', cd: 4, price: 38,
     desc: '看似跌倒的翻滾衝刺，滾完甩尾掃倒周圍一圈。跌得瀟灑，但沒有無敵。',
     dashSpd: 850, dashDur: 0.26 },
-  { id: 'suplex_grab', name: '擒抱', short: '擒', slot: 'dash', color: '#b07a4a', cd: 9, price: 46,
+  { id: 'suplex_grab', name: '擒抱', short: '擒', slot: 'dash', color: '#b07a4a', cd: 4, price: 46,
     desc: '滑行擒抱住撞到的第一個敵人。抓住之後：移動＝掄著他甩打周遭；站定＝炸彈摔砸出範圍重擊。抓不住頭目。',
     dashSpd: 800, dashDur: 0.35, holdDur: 3.5 },
-  { id: 'iai_slash', name: '拔刀斬', short: '拔', slot: 'dash', color: '#4f5d75', cd: 6, price: 42,
+  { id: 'iai_slash', name: '拔刀斬', short: '拔', slot: 'dash', color: '#4f5d75', cd: 4, price: 42,
     desc: '三段式居合：先甩刀掃前方，反手把刀水平收回鞘——整整一秒，這是居合的代價——然後瞬身到方向鍵指的位置，路徑閃過一道白光，光上的敵人在半拍之後才裂開，連中三刀。',
     dashSpd: 900, dashDur: 0.22 },
-  { id: 'lunge_thrust', name: '飛込正拳', short: '突', slot: 'dash', color: '#e8e4dc', cd: 6, price: 42,
+  { id: 'lunge_thrust', name: '飛込正拳', short: '突', slot: 'dash', color: '#e8e4dc', cd: 4, price: 42,
     desc: '踏進去的一記正拳，只打碰到的第一個敵人，把他釘在原地——落地後的下一拳必定爆擊。',
     dashSpd: 900, dashDur: 0.26 },
-  { id: 'shadow_dash', name: '影遁', short: '影', slot: 'dash', color: '#33384a', cd: 5, price: 38,
+  { id: 'shadow_dash', name: '影遁', short: '影', slot: 'dash', color: '#33384a', cd: 4, price: 38,
     desc: '所有衝刺技裡距離最遠的瞬身，穿過敵人但不造成傷害。純機動——記住，衝刺沒有無敵。',
     dashSpd: 1300, dashDur: 0.4 },
-  { id: 'sumo_press', name: '橫綱推壓', short: '推', slot: 'dash', color: '#c9576b', cd: 6, price: 40,
+  { id: 'sumo_press', name: '橫綱推壓', short: '推', slot: 'dash', color: '#c9576b', cd: 4, price: 40,
     desc: '短距離衝壓，把周遭一整圈的敵人撞飛震傷。人群管理的答案。',
     lunge: 130 },
 
@@ -1010,12 +1010,12 @@ function tierUnlock(wave) {
        這把「第三下要在 0.34 秒內放開方向鍵」那個手忙腳亂的要求整個拿掉
        （實測那是德式背摔 39 次誤觸的來源）。 */
 const BOARD_ROWS = [
-  { key: 'S', name: '站多', hint: '這幾下裡站著打的比較多' },
-  { key: 'M', name: '移多', hint: '這幾下裡移動打的比較多' },
+  { key: 'S', name: 'A', hint: '第三下站著不動打中' },
+  { key: 'M', name: 'B', hint: '第三下一邊移動打中' },
 ];
 const BOARD_COLS = [
-  { key: 'H', name: '打', act: '再打中一下' },
-  { key: 'D', name: '衝', act: '按 SPACE' },
+  { key: 'H', name: '打中', act: '第三下打中就變招' },
+  { key: 'D', name: 'C', act: '第三下按 SPACE' },
 ];
 const BOARD_ROW_KEYS = BOARD_ROWS.map(r => r.key);
 /* 第三下換一個狀態打中＝變體加成。同一格同一招，但獎勵你在收尾那下變一下——
