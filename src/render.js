@@ -138,6 +138,7 @@ function drawGame() {
   if (G.player) drawStrikes();
   drawProjectiles();
   drawFxOver();
+  drawParticles();
   drawDamageNums();
 
   ctx.restore();
@@ -2896,4 +2897,23 @@ function drawTally() {
   }
   ctx.textAlign = 'left';
   ctx.restore();
+}
+
+/* 粒子繪製：一次 fillRect，沒有 save/restore、沒有狀態切換。
+   同色的連著畫，減少 fillStyle 的切換次數。 */
+function drawParticles() {
+  if (!PT.n) return;
+  const a = ctx.globalAlpha;
+  for (let c = 0; c < PT_COLORS.length; c++) {
+    let first = true;
+    for (let i = 0; i < PT.n; i++) {
+      if (PT.life[i] <= 0 || PT.col[i] !== c) continue;
+      if (first) { ctx.fillStyle = PT_COLORS[c]; first = false; }
+      const k = PT.life[i] / PT.max[i];
+      ctx.globalAlpha = k > 0.35 ? 1 : k / 0.35;
+      const s = PT.size[i];
+      ctx.fillRect(PT.x[i] - s * 0.5, PT.y[i] - s * 0.5, s, s);
+    }
+  }
+  ctx.globalAlpha = a;
 }

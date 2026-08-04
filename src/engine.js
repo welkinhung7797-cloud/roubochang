@@ -537,6 +537,9 @@ function hurtEnemy(e, amount, opts) {
 function killEnemy(e) {
   if (e.dead) return;
   e.dead = true;
+  // 死亡爆碎：六十隻同時死也只是幾百個 fillRect
+  burstParticles(e.x, e.y, { n: e.boss ? 40 : (e.elite ? 20 : 10), spd: 150,
+    life: 0.5, size: e.boss ? 3 : 2, col: e.color || '#ffffff' });
   if (typeof poisonSpreadOnDeath === 'function') poisonSpreadOnDeath(e);
   G.kills++;
   G.waveKills = (G.waveKills || 0) + 1;
@@ -3690,6 +3693,12 @@ function applyWeaponHit(w, e, reach, mulOverride, isEcho, swingId) {
   });
 
   if (!isEcho && typeof applyElements === 'function') applyElements(e);
+  // 命中碇碎屑：往受擊方向噴，重擊噴更多
+  if (!isEcho && dealt > 0) {
+    const _pa = (w.angle !== undefined) ? w.angle : Math.atan2(e.y - p.y, e.x - p.x);
+    burstParticles(e.x, e.y, { n: crit ? 9 : 5, dir: _pa, spread: 1.5,
+      spd: crit ? 150 : 100, life: 0.34, size: 2, col: crit ? '#ffd44a' : '#ffffff' });
+  }
   // ---- 特性：命中觸發 ----
   if (!isEcho && p.traits && p.traits.length) {
     if (hasTrait('burn_stack')) {
@@ -3853,7 +3862,8 @@ function updatePlayer(dt) {
   if (p.dead) return;
   updateTechniques(dt);
   if (p.dead) return;
-  updateTraits(dt);   // 解縛反噬等絕技效果可能剛好歸零生命
+  updateTraits(dt);
+  updateParticles(dt);   // 解縛反噬等絕技效果可能剛好歸零生命
   const k = G.keys;
   let mx = 0, my = 0;
   if (k['a'] || k['arrowleft']) mx -= 1;
@@ -5071,4 +5081,58 @@ function poisonSpreadOnDeath(e) {
     o.poisonTime = el.apply.poison.dur;
   }
   spawnFx('shock', e.x, e.y, el.color, r);
+}
+
+/* ---------- 粒子系統（總監 2026-08-04） ----------
+   六十隻怪同時被打碎也不能卡，所以用「扁平陣列的固定池」：
+   - 預先配置好，執行期不 new 任何物件 → 沒有垃圾回收停頓
+   - 每顆粒子只有位置、速度、壽命、顏色索引，用 Float32Array 存
+   - 繪製是一次 fillRect，沒有 save/restore、沒有狀態切換
+   ★不要用 DOM／SVG 做這件事：每個元素都要跑樣式計算與版面配置，
+     500 個元素會吃掉整個影格；canvas 畫 500 個方塊只是 500 次繪圖呼叫。
+   畫面已經像素化（427×240），一顆粒子就是 1～2 個像素，成本極低。 */
+const PT_MAX = 1200;
+const PT = {
+  x: new Float32Array(PT_MAX), y: new Float32Array(PT_MAX),
+  vx: new Float32Array(PT_MAX), vy: new Float32Array(PT_MAX),
+  life: new Float32Array(PT_MAX), max: new Float32Array(PT_MAX),
+  size: new Float32Array(PT_MAX), col: new Int16Array(PT_MAX),
+  grav: new Float32Array(PT_MAX),
+  n: 0,          // 目前使用到的上界
+};
+const PT_COLORS = ['#ffffff', '#ffd44a', '#e8964a', '#d9564f', '#8fd4e0',
+  '#8fc47f', '#b08a5a', '#9fd8c8', '#c3b295'];
+
+/* 噴一叢粒子。opts: {n, spd, spread, life, size, col, grav, dir} */
+function burstParticles(x, y, opts) {
+  const o = opts || {};
+  const cnt = o.n || 8;
+  const ci = Math.max(0, PT_COLORS.indexOf(o.col || '#ffffff'));
+  const dir = (o.dir === undefined) ? null : o.dir;
+  const spread = (o.spread === undefined) ? Math.PI * 2 : o.spread;
+  for (let k = 0; k < cnt; k++) {
+    // 池滿了就覆蓋最舊的——寧可蓋掉也不要配置新記憶體
+    let i = -1;
+    for (let j = 0; j < PT.n; j++) if (PT.life[j] <= 0) { i = j; break; }
+    if (i < 0) { if (PT.n < PT_MAX) i = PT.n++; else i = (PT.rr = ((PT.rr || 0) + 1) % PT_MAX); }
+    const a = (dir === null) ? rng() * Math.PI * 2 : dir + (rng() - 0.5) * spread;
+    const sp = (o.spd || 90) * (0.45 + rng() * 0.85);
+    PT.x[i] = x; PT.y[i] = y;
+    PT.vx[i] = Math.cos(a) * sp; PT.vy[i] = Math.sin(a) * sp;
+    PT.max[i] = PT.life[i] = (o.life || 0.42) * (0.6 + rng() * 0.7);
+    PT.size[i] = o.size || 2;
+    PT.col[i] = ci;
+    PT.grav[i] = (o.grav === undefined) ? 220 : o.grav;
+  }
+}
+
+function updateParticles(dt) {
+  for (let i = 0; i < PT.n; i++) {
+    if (PT.life[i] <= 0) continue;
+    PT.life[i] -= dt;
+    PT.vy[i] += PT.grav[i] * dt;
+    PT.vx[i] *= 0.94; PT.vy[i] *= 0.985;
+    PT.x[i] += PT.vx[i] * dt;
+    PT.y[i] += PT.vy[i] * dt;
+  }
 }
