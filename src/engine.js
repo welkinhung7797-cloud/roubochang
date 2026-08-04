@@ -1346,6 +1346,7 @@ function updateTechniques(dt) {
   if (p.dashChainT > 0) p.dashChainT -= dt; else p.dashChain = 0;
   if (p.ougiCd > 0) p.ougiCd -= dt;
   if (p.comboCd > 0) p.comboCd -= dt;
+  if (p.slotCd) for (const k in p.slotCd) if (p.slotCd[k] > 0) p.slotCd[k] -= dt;
   if (p.beatPopT > 0) p.beatPopT -= dt;
   if (p.comboFlash > 0) p.comboFlash -= dt;
   if (p.comboBreakT > 0) p.comboBreakT -= dt;
@@ -2606,7 +2607,8 @@ function comboReady() {
   for (const act of ['S', 'M', 'D']) {
     const c = matchCombo(act);
     if (c) {
-      const cd = c.sig ? Math.max(0, p.ougiCd || 0) : Math.max(0, p.comboCd || 0);
+      const cd = c.sig ? Math.max(0, p.ougiCd || 0)
+        : Math.max(0, (p.slotCd && p.slotCd[(c.row || '?') + '_' + (c.col || '?')]) || 0);
       out.push({ act, name: c.name, sig: !!c.sig, cd });
     }
   }
@@ -2616,8 +2618,18 @@ function comboReady() {
 /* 發動連段：招牌招走奧義演出＋冷卻，收尾招是輕演出 */
 function castCombo(c, target) {
   const p = G.player;
+  // ★ 每一格自己的冷卻，不再四條共用一個。
+  //   共用的時候實測：三局 1800 秒只放出 210 次＝平均 8.6 秒一次，
+  //   而玩家湊到條件的次數遠多於此——攻速越快越常湊到，湊到的都被冷卻丟掉，
+  //   體感就是「常常沒觸發」。分開之後玩家可以輪著用（站多→移多→站多），
+  //   而「輪著用」正是連段盤要的戰略。
   if (c.sig) { if ((p.ougiCd || 0) > 0) return false; }
-  else if ((p.comboCd || 0) > 0) return false;
+  else {
+    p.slotCd = p.slotCd || {};
+    const _k = (c.row || '?') + '_' + (c.col || '?');
+    if ((p.slotCd[_k] || 0) > 0) return false;
+    if ((p.comboCd || 0) > 0) return false;   // 極短的全域間隔，防同一瞬間連發
+  }
   // 蓄勁要能灌進收尾招：連段走 castOugi 繞過了 applyWeaponHit 的 focusStacks 結算，
   // 不補這段的話「站定蓄滿五層 → 第三下貫手」那五層勁會原封不動留在身上。
   const focusMul = 1 + (p.focusStacks || 0) * 0.25;
@@ -2646,7 +2658,10 @@ function castCombo(c, target) {
     addHitstop(0.12, true);
     sfx('ougi_cast'); sfx('ougi_hit');
   } else {
-    p.comboCd = 2.5;
+    // 每格自己的冷卻。四格輪著用＝連段密度提高四倍，而且「輪著用」本身變成技巧。
+    p.slotCd = p.slotCd || {};
+    p.slotCd[(c.row || '?') + '_' + (c.col || '?')] = 2.5;
+    p.comboCd = 0.35;   // 極短的全域間隔，只防同一瞬間連續觸發
     p.comboSettle = 0.35;   // 句號：這 0.35 秒的靜止就是「一套打完了」
     G.hitstopEcho = { delay: 0.06, dur: 0.04 };
     addDmgNum(p.x, p.y - 46, c.name, '#ffd44a', true);
@@ -4736,4 +4751,88 @@ function traitOnControl(e) {
     });
     spawnFx('shock', e.x, e.y, '#a06fd0', 30);
   }
+}
+
+/* ---------- 元素狀態 ---------- */
+/* 玩家目前帶的元素（道具給的，可以同時有多種） */
+function playerElements() {
+  const p = G.player;
+  if (!p || !p.items) return [];
+  const out = [];
+  p.items.forEach(it => { if (it.element && out.indexOf(it.element) < 0) out.push(it.element); });
+  return out;
+}
+
+/* 命中時附加元素狀態。雷與冰有各自的內部冷卻，不然硬控會變成永久鎖住。 */
+function applyElements(e) {
+  const p = G.player;
+  if (!e || e.dead) return;
+  for (const key of playerElements()) {
+    const el = ELEMENT_MAP[key];
+    if (!el) continue;
+    const a = el.apply;
+    if (a.paralyze) {
+      if ((e.elemCd_thunder || 0) > 0) continue;
+      e.elemCd_thunder = el.cd;
+      e.paralyze = Math.max(e.paralyze || 0, a.paralyze);
+      spawnFx('spark', e.x, e.y - e.r, el.color, 22);
+    } else if (a.freeze) {
+      if ((e.elemCd_ice || 0) > 0) continue;
+      e.elemCd_ice = el.cd;
+      e.freeze = Math.max(e.freeze || 0, a.freeze);
+      spawnFx('shock', e.x, e.y, el.color, e.r * 1.8);
+    } else if (a.burn) {
+      e.burnStack = Math.min(a.burn.max, (e.burnStack || 0) + 1);
+      e.dot = Math.max(e.dot || 0, e.burnStack * a.burn.per * liveDamageMult());
+      e.dotTime = Math.max(e.dotTime || 0, a.burn.dur);
+    } else if (a.poison) {
+      e.poisonStack = Math.min(a.poison.max, (e.poisonStack || 0) + 1);
+      e.poison = e.poisonStack * a.poison.per * liveDamageMult();
+      e.poisonTime = a.poison.dur;
+    } else if (a.heavy) {
+      e.heavyStack = (e.heavyStack || 0) + 1;
+      e.heavy = a.heavy.dur;
+      if (e.heavyStack >= a.heavy.stunAt) {
+        e.heavyStack = 0;
+        e.stun = Math.max(e.stun || 0, 1.0);
+        spawnFx('explode', e.x, e.y, el.color, e.r * 2.2);
+        traitOnControl(e);
+      }
+    } else if (a.gust) {
+      e.gust = a.gust.dur;
+      spawnFx('slide', e.x, e.y, el.color, e.r * 1.6, { angle: Math.atan2(e.y - p.y, e.x - p.x) });
+    }
+  }
+}
+
+/* 每幀推進元素狀態。★放在 updateEnemies 的迴圈裡呼叫。 */
+function updateElementStatus(e, dt) {
+  if (e.elemCd_thunder > 0) e.elemCd_thunder -= dt;
+  if (e.elemCd_ice > 0) e.elemCd_ice -= dt;
+  if (e.paralyze > 0) e.paralyze -= dt;
+  if (e.freeze > 0) e.freeze -= dt;
+  if (e.heavy > 0) { e.heavy -= dt; if (e.heavy <= 0) e.heavyStack = 0; }
+  if (e.gust > 0) e.gust -= dt;
+  if (e.poisonTime > 0) {
+    e.poisonTime -= dt;
+    hurtEnemy(e, (e.poison || 0) * dt, { noLifesteal: true, trueDmg: true });
+    if (e.poisonTime <= 0) { e.poison = 0; e.poisonStack = 0; }
+  }
+}
+
+/* 毒的傳染：目標死亡時把層數分給附近的人。這是毒跟火的分野——
+   火是「單體燒得快」，毒是「群體慢慢化開」。 */
+function poisonSpreadOnDeath(e) {
+  if (!e.poisonStack) return;
+  const el = ELEMENT_MAP.poison;
+  const r = el.apply.poison.spread;
+  const give = Math.max(1, Math.floor(e.poisonStack / 2));
+  for (const o of G.enemies) {
+    if (o.dead || o === e) continue;
+    if (dist2(o.x, o.y, e.x, e.y) > r * r) continue;
+    o.poisonStack = Math.min(el.apply.poison.max, (o.poisonStack || 0) + give);
+    o.poison = o.poisonStack * el.apply.poison.per * liveDamageMult();
+    o.poisonTime = el.apply.poison.dur;
+  }
+  spawnFx('shock', e.x, e.y, el.color, r);
 }

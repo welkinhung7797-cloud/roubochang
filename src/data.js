@@ -1173,3 +1173,34 @@ const TRAITS = [
 ];
 const TRAIT_MAP = {};
 TRAITS.forEach(t => TRAIT_MAP[t.id] = t);
+
+/* ---------- 元素屬性（總監 2026-08-04） ----------
+   商店道具可以帶一種元素，命中時對敵人附加狀態。
+   六種各有各的用處，不是同一個減益換皮：
+   雷＝硬控最短但完全停止／冰＝停久但受擊解除／火＝高傷短時可疊／毒＝低傷長時且會傳染／
+   土＝壓住腳步（移速）／風＝打亂動作（攻速＋受擊退加倍）。
+   ★土與風都是「緩速」，但一個讓它走不動、一個讓它打不出來——總監指定要有區別。 */
+const ELEMENTS = [
+  { key: 'thunder', name: '雷', color: '#ffd44a', icon: '⚡',
+    brief: '麻痺 0.45 秒——完全不能動，最短但最硬的控。',
+    apply: { paralyze: 0.45 }, cd: 2.2 },
+  { key: 'ice', name: '冰', color: '#8fd4e0', icon: '❄',
+    brief: '凍結 1.4 秒，但再被打到就碎。適合拉開距離。',
+    apply: { freeze: 1.4 }, cd: 4.0 },
+  { key: 'fire', name: '火', color: '#e0913c', icon: '🔥',
+    brief: '燃燒：每層 4/秒、持續 3 秒，最多疊 8 層。傷害高但時間短。',
+    apply: { burn: { per: 4, dur: 3, max: 8 } } },
+  { key: 'poison', name: '毒', color: '#8fc47f', icon: '☠',
+    brief: '中毒：每層 1.6/秒、持續 8 秒，最多疊 12 層。目標死亡時傳染給附近的人。',
+    apply: { poison: { per: 1.6, dur: 8, max: 12, spread: 90 } } },
+  { key: 'earth', name: '土', color: '#b08a5a', icon: '⛰',
+    brief: '沉重：移動速度 -45%，持續 2.5 秒。疊到第 3 層直接定身 1 秒。',
+    apply: { heavy: { mul: 0.55, dur: 2.5, stunAt: 3 } } },
+  { key: 'wind', name: '風', color: '#9fd8c8', icon: '🌀',
+    brief: '亂流：攻擊速度 -40%，持續 3 秒，而且受到的擊退加倍。',
+    apply: { gust: { atk: 0.6, knock: 2.0, dur: 3 } } },
+];
+const ELEMENT_MAP = {};
+ELEMENTS.forEach(e => ELEMENT_MAP[e.key] = e);
+/* 帶元素的道具在商店的加價倍率——元素是行為不是數值，值得貴一點 */
+const ELEMENT_PRICE_MUL = 1.45;
