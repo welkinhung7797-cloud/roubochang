@@ -1297,9 +1297,19 @@ function updateTechniques(dt) {
   const p = G.player;
   if (p.dashCd > 0) p.dashCd -= dt * (1 + Math.max(0, p.stats.atkSpd) / 200);
   if (p.pose) {
-    p.pose.t += dt;
+    // ★ HOLD FOR MORE IMPACT（Slynyrd 的像素攻擊教學，動畫師 agent 設計）：
+    //   到了接觸幀就把「畫面」停住一段，但世界照跑。
+    //   這跟 addHitstop 不同——頓幀凍的是全世界（updateGame 直接 return），
+    //   拿它做 150ms 的保持會讓整場敌人一起卡住，看起來像掉幀不像有力。
+    //   頓幀 = 撞擊的「頓」（全世界、短）；pose hold = 姿勢的「持」（只有攻方、長）。
+    if (p.pose.holdAt !== undefined && p.pose.t >= p.pose.holdAt
+        && (p.pose.held || 0) < p.pose.holdDur) {
+      p.pose.held = (p.pose.held || 0) + dt;   // 定格：t 不推進，受方的 reel/lift/spin 照跑
+    } else p.pose.t += dt;
     if (p.pose.t >= p.pose.dur) {
-      if (p.pose.prio === 1 && p.comboSettle > 0) p.poseAfter = { type: p.pose.type, t: 0.18 };
+      // HOLD 已經吃掉停頓額度，收招定格要縮短，兩個疊起來會變慢動作
+      const after = (p.pose.holdAt !== undefined) ? 0.10 : 0.18;
+      if (p.pose.prio === 1 && p.comboSettle > 0) p.poseAfter = { type: p.pose.type, t: after };
       p.pose = null;
     }
   }
@@ -2867,7 +2877,10 @@ function castOugi(o, target) {
       const e0 = target && !target.dead ? target : nearestEnemy(p.x, p.y, 150);
       if (!e0) break;
       const a0 = Math.atan2(e0.y - p.y, e0.x - p.x);
-      p.pose = { type: pr.pose || 'head', ang: a0, t: 0, dur: 0.3, prio: 1 };
+      // 接觸幀在 k>=0.42（即 126ms），定格 100ms。
+      // 傷害仍在 t=0 結算（改成延遲結算風險大），但至少畫面會停在撞上去那張。
+      p.pose = { type: pr.pose || 'head', ang: a0, t: 0, dur: 0.3, prio: 1,
+        holdAt: 0.126, holdDur: TUNE.poseHold };
       sfx('hit_blunt', { pitch: 0.62, vol: 1.3 });   // 頭槌／貫手類：低沉的「咚」，跟前兩下分家
       // 手繪衝擊：摔角手的重擊需要一個「砦」的擴散，粒子只能做碎屑做不了面
       spawnFx('impact_hand', e0.x, e0.y, '#FFF1E8', 86);

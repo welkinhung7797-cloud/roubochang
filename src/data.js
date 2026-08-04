@@ -29,7 +29,10 @@ const TUNE_DEFS = [
   { g: '經濟', k: 'matMul',         n: '素材掉落倍率',   def: 1.0,   min: 0.3, max: 5,    step: 0.1 },
   { g: '經濟', k: 'waveDurMul',     n: '波長倍率',       def: 1.0,   min: 0.5, max: 2,    step: 0.1 },
 ];
-const TUNE = {};
+const TUNE = {
+  // 接觸幀定格的長度。動畫師標這是「最沒把握的數字」：
+  // 高頻招一場會出現很多次，100ms × 高頻可能累積成滞感。實機調。
+  poseHold: 0.10,};
 TUNE_DEFS.forEach(d => TUNE[d.k] = d.def);
 (function loadTune() {
   try {
