@@ -5176,14 +5176,69 @@ const PT = {
   grav: new Float32Array(PT_MAX),
   n: 0,          // 目前使用到的上界
 };
-const PT_COLORS = ['#ffffff', '#ffd44a', '#e8964a', '#d9564f', '#8fd4e0',
-  '#8fc47f', '#b08a5a', '#9fd8c8', '#c3b295'];
+/* ★ 8-bit 的味道七成來自「顏色被限制」，不是形狀。
+   這裡用 PICO-8 的 16 色——它是辨識度最高的幻想主機調色盤，
+   高飽和、高對比，打擊特效用起來很醇。
+   ★ 關鍵：不管呼叫端傳什麼顏色，一律就近吸附到這 16 色。
+   那才是「受限調色盤」，而不是「多了幾個預設色」。 */
+const PT_COLORS = [
+  '#000000', '#1D2B53', '#7E2553', '#008751', '#AB5236', '#5F574F', '#C2C3C7', '#FFF1E8',
+  '#FF004D', '#FFA300', '#FFEC27', '#00E436', '#29ADFF', '#83769C', '#FF77A8', '#FFCCAA',
+];
+const PT_RGB = PT_COLORS.map(h => [
+  parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]);
+const _palCache = {};
+/* 任意色 → 調色盤索引（最近 RGB 距離，結果快取）。
+   黑色與深色不當粒子——碎屑要看得見，所以前六色排除。 */
+function paletteIndex(hex) {
+  if (!hex) return 7;
+  if (_palCache[hex] !== undefined) return _palCache[hex];
+  let r = 255, g = 255, b = 255;
+  if (hex.charAt(0) === '#' && hex.length >= 7) {
+    r = parseInt(hex.slice(1, 3), 16); g = parseInt(hex.slice(3, 5), 16); b = parseInt(hex.slice(5, 7), 16);
+  }
+  // ★ 改用色相角比對。RGB 距離對色相根本不敏感——
+  //   淡綠 #8fc47f 的 R 值剛好跟薰衣草 #83769C 一樣，所以會被拉走。
+  //   有色相的就比色相（輔以亮度），無色相的才比亮度。
+  const hue = (R, Gc, B) => {
+    const mx = Math.max(R, Gc, B), mn = Math.min(R, Gc, B), d = mx - mn;
+    if (d === 0) return -1;
+    let h;
+    if (mx === R) h = ((Gc - B) / d) % 6;
+    else if (mx === Gc) h = (B - R) / d + 2;
+    else h = (R - Gc) / d + 4;
+    h *= 60; if (h < 0) h += 360;
+    return h;
+  };
+  const mx0 = Math.max(r, g, b), mn0 = Math.min(r, g, b);
+  const sat = mx0 > 0 ? (mx0 - mn0) / mx0 : 0;
+  const hs = hue(r, g, b);
+  const lum = (r * 0.3 + g * 0.59 + b * 0.11);
+  let best = 7, bd = 1e9;
+  for (let i = 6; i < PT_RGB.length; i++) {
+    const c = PT_RGB[i];
+    const hp = hue(c[0], c[1], c[2]);
+    const lp = (c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11);
+    let d;
+    if (sat > 0.15 && hs >= 0) {
+      if (hp < 0) continue;                       // 有色相就不配給無彩色
+      let dh = Math.abs(hs - hp); if (dh > 180) dh = 360 - dh;
+      d = dh * dh * 4 + (lum - lp) * (lum - lp) * 0.35;
+    } else {
+      if (hp >= 0 && sat <= 0.15) d = (lum - lp) * (lum - lp) + 4000;   // 無彩優先配無彩
+      else d = (lum - lp) * (lum - lp);
+    }
+    if (d < bd) { bd = d; best = i; }
+  }
+  _palCache[hex] = best;
+  return best;
+}
 
 /* 噴一叢粒子。opts: {n, spd, spread, life, size, col, grav, dir} */
 function burstParticles(x, y, opts) {
   const o = opts || {};
   const cnt = o.n || 8;
-  const ci = Math.max(0, PT_COLORS.indexOf(o.col || '#ffffff'));
+  const ci = paletteIndex(o.col || '#FFF1E8');   // 任意色一律吸附到調色盤
   const dir = (o.dir === undefined) ? null : o.dir;
   const spread = (o.spread === undefined) ? Math.PI * 2 : o.spread;
   for (let k = 0; k < cnt; k++) {
