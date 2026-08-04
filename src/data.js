@@ -973,7 +973,8 @@ function waveBudget(wave, danger) {
   const durNew = waveDuration(wave) / TUNE.waveDurMul;
   // 總監 2026-08-04 回報「小怪生太少」。1.3 → 2.1：波長拉長後密度補償再加碼。
   //（實測加兵反而讓後期更安全，所以這是體感補償不是加難度——前段才是它真正影響的地方。）
-  const density = (durOld / durNew) * 2.1;
+  // 總監 2026-08-04：怪數量再變兩倍。2.1 → 4.2。
+  const density = (durOld / durNew) * 4.2;
   return (14 + 3.0 * wave + 0.8 * wave * wave) * density * d.count * TUNE.enemyCountMul;
 }
 

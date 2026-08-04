@@ -1907,7 +1907,9 @@ function updateTechniques(dt) {
       const dd0 = Math.hypot(dx0, dy0);
       if (dd0 > 260) { p.x = a.x0 + dx0 / dd0 * 260; p.y = a.y0 + dy0 / dd0 * 260; }
       e.grabbed = true; e.stun = 99;
-      e.x = p.x; e.y = p.y - 30 - a.h * 0.35;
+      // ★ 炸彈摔是把人夾在胯下扛起來，不是舉在頭頂（總監 2026-08-04）。
+      //   人質跟著玩家的腳走，只有升空時整組一起上去。
+      e.x = p.x; e.y = p.y + 10;
       e.knockX = 0; e.knockY = 0;
       if (a.slam || a.t >= a.dur) doAirSlam(a);
     }
@@ -2530,8 +2532,17 @@ function castExtension(move, victim) {
     }
     case 'running_ddt': {
       // 衝過去勾住頭帶著跑，坐倒把頭釘進地板——單體處決，全表最重頓幀
-      const dirD = dashDir();
-      p.dashState = { id: 'ddt', dx: dirD.x, dy: dirD.y, t: 180 / 700, spd: 700, accel: true, boost: 1 };
+      // ★ 衝刺 DDT 要追人（總監 2026-08-04）。它的說明就寫著「衝向最近的人」，
+      //   但原本只吃 dashDir() 的方向鍵吸附——沒按方向鍵時就直直往前衝，追不到。
+      //   這裡直接鎖定最近的敵人，並且交給 dashState 的 lockOn 全程追蹤。
+      const tgtD = (victim && !victim.dead) ? victim : nearestEnemy(p.x, p.y, 520);
+      let dirD;
+      if (tgtD) {
+        const dxD = tgtD.x - p.x, dyD = tgtD.y - p.y, ddD = Math.hypot(dxD, dyD) || 1;
+        dirD = { x: dxD / ddD, y: dyD / ddD, lockOn: tgtD };
+      } else dirD = dashDir();
+      p.dashState = { id: 'ddt', dx: dirD.x, dy: dirD.y, lockOn: dirD.lockOn,
+        t: 180 / 700, spd: 700, accel: true, boost: 1 };
       G.ougiBanner = { name: '衝刺DDT', t: 1.2 };
       sfx('dash');
       return true;
@@ -3348,7 +3359,8 @@ function updateWeapons(dt) {
       const base = p.face > 0 ? -0.45 : Math.PI + 0.45;
       w.angle = base + spread * (p.face > 0 ? 1 : -1) + Math.sin(G.time * 2 + idx) * 0.05;
     }
-    if (w.cdLeft <= 0 && target && (p.comboSettle || 0) <= 0.17 &&
+    // ★ 人在空中（炸彈摔滯空）不該還有地面的打擊判定——會變成一邊抱著人一邊出手刀
+    if (w.cdLeft <= 0 && target && (p.comboSettle || 0) <= 0.17 && !p.airSlam &&
         !p.suplexAnim && !p.hipTossAnim && !p.ddtState && !p.tossState && !p.gutRoll) {
       const d = Math.sqrt(dist2(p.x, p.y, target.x, target.y));
       if (d <= reach + target.r) {
@@ -3698,14 +3710,10 @@ function applyWeaponHit(w, e, reach, mulOverride, isEcho, swingId) {
     const co = cs === 1 ? { pitch: 1.0 } : (cs >= 2 ? { pitch: 1.18, vol: 1.2 } : undefined);
     const force = Math.max(0, Math.min(1,
       (crit ? 0.35 : 0) + base / Math.max(24, e.maxHp * 0.55)));
+    // ★ 只播 sfxHit。它本身就是分層合成（transient 銳度＋body 重量＋tail 材質），
+    //   每個武器類別有自己的配方。下面本來還會再疊一個單體音效，
+    //   那是分層系統做好之前的遺留——結果每一次命中都聽到兩個聲音。
     sfxHit(w.klass, force, co);
-    if (w.klass === '摔技') sfx('chop_crack', co);
-    else if (w.klass === '刃') sfx('hit_blade', co);
-    else if (w.klass === '腿') sfx('hit_kick', co);
-    else if (w.klass === '棍' || w.klass === '重械' || w.klass === '軟兵') sfx('hit_blunt', co);
-    else if (crit || base >= e.maxHp * 0.3) sfx('hit_heavy', co);
-    else if (base >= 20) sfx('hit_mid', co);
-    else sfx('hit_light', co);
   }
 
   if (!isEcho) addMomentum(w.type === 'grab' ? 6 : 3);
