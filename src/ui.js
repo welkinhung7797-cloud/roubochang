@@ -298,7 +298,11 @@ function renderShop() {
     el.className = 'shop-card' + (e.sold ? ' sold' : '');
     const isTech = e.kind === 'tech';
     el.style.borderColor = e.sold ? '#2a2f3a' : (isTech ? e.color : TIER_COLOR[e.tier]);
-    const info = isTech ? techShopInfo(e) : (e.kind === 'weapon' ? weaponShopInfo(e) : itemShopInfo(e));
+    // ★ 收尾招（kind 'fin'）本來沒有自己的資訊產生器，會掉進道具那條路去查 ITEM_MAP，
+    //   拿到 undefined 再讀 .stats 就爆——總監在第四波進第五波時遇到的就是這個。
+    const info = isTech ? techShopInfo(e)
+      : (e.kind === 'weapon' ? weaponShopInfo(e)
+      : (e.kind === 'fin' ? finShopInfo(e) : itemShopInfo(e)));
     const p = G.player;
     const mergeable = e.kind === 'weapon' && e.tier < 4 &&
       p.weapons.some(w => w.id === e.id && w.tier === e.tier);
@@ -1240,4 +1244,19 @@ function renderTraitPick() {
     el.onclick = () => { chooseTrait(i); };
     wrap.appendChild(el);
   });
+}
+
+
+/* 收尾招的商店卡：講清楚它本命在哪一欄、以及買下來要自己上盤 */
+function finShopInfo(e) {
+  const f = FINISHER_MAP[e.id];
+  if (!f) return '<div class="flavor">（資料遺失）</div>';
+  const homeCol = (f.home === 'D') ? '衝（按 SPACE）' : '打（再打中一下）';
+  const at = (typeof boardSlotOf === 'function') ? boardSlotOf(f.id) : null;
+  return '<div class="kv"><span>本命欄</span><b>' + homeCol + '</b></div>' +
+    '<div class="kv"><span>階級</span><b>' + (TIER_NAME[f.tier] || '普通') + '</b></div>' +
+    (at ? '<div class="kv"><span>目前</span><b>已在盤上</b></div>' : '') +
+    '<div class="flavor">' + String(f.desc || '').replace(/^[A-Z]{1,4}：/, '') + '</div>' +
+    '<div class="buy-note">買下來不會自動上盤——到下面的連段盤點一格放上去。' +
+    '放進非本命欄效果 ×' + BOARD_OFFHOME_MUL + '，但放得進去。</div>';
 }
