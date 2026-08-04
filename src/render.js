@@ -2329,7 +2329,10 @@ function drawHud() {
     const BEAT_COL = { S: '#e8964a', M: '#8fd4e0', D: '#ffd44a' };
     // 目前已敲出的節拍（上排）
     ctx.textAlign = 'center';
-    for (let i = 0; i < 3; i++) {
+    // ★ 兩格不是三格：機制是「打中兩下、第三下就變招」，
+    //   畫三個空格等於告訴玩家「要填滿三格才會發生事情」——概念反了。
+    //   兩格填滿＝下一下就是連段，這才跟實際規則對得起來。
+    for (let i = 0; i < 2; i++) {
       const bx = baseX + 26 + i * 34;
       const beat = p.beatLog[i];
       ctx.fillStyle = 'rgba(10,12,16,0.8)';

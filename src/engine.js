@@ -2372,7 +2372,8 @@ function addBeat(type, auto, swingId) {
     if (full && !p.comboReadyCue) { p.comboReadyCue = true; sfxComboReady(); }
     else if (!full) { p.comboReadyCue = false; if (prog >= 1) sfxBeat(prog); }
   }
-  if (p.beatLog.length > 3) p.beatLog.shift();
+  // 拍譜只留兩拍：第三下就是收尾，留三拍等於多存一個永遠用不到的。
+  if (p.beatLog.length > 2) p.beatLog.shift();
   // 同拍共鳴：三拍同型自動觸發輕增益——喜歡「一直移動一直打」的玩家不用搓招也有獎勵
   if ((p.resonCd || 0) <= 0 && p.beatLog.length === 3) {
     const rs = p.beatLog.join('');
