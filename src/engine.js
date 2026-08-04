@@ -2663,9 +2663,17 @@ function castCombo(c, target) {
     p.slotCd[(c.row || '?') + '_' + (c.col || '?')] = 2.5;
     p.comboCd = 0.35;   // 極短的全域間隔，只防同一瞬間連續觸發
     p.comboSettle = 0.35;   // 句號：這 0.35 秒的靜止就是「一套打完了」
-    G.hitstopEcho = { delay: 0.06, dur: 0.04 };
-    addDmgNum(p.x, p.y - 46, c.name, '#ffd44a', true);
-    G.screenShake = Math.max(G.screenShake, 7);
+    // ★「再打中一下」那一欄是高頻連段（大足踢／巴投這種），每次都放字卡＋震動＋頓幀
+    //   會很躁（總監 2026-08-04：動作有就好，華麗留給接 C 的延伸技）。
+    //   所以 H 欄只留招式本身的動作，不做連段層級的演出。
+    const _loud = (c.col !== 'H');
+    if (_loud) {
+      G.hitstopEcho = { delay: 0.06, dur: 0.04 };
+      addDmgNum(p.x, p.y - 46, c.name, '#ffd44a', true);
+      G.screenShake = Math.max(G.screenShake, 7);
+    } else {
+      p.comboSettle = 0.18;   // 高頻連段的句號也要短，不然一直卡頓
+    }
     addHitstop(0.15, true);
     spawnFx('explode', p.x, p.y, '#ffffff', 62);
     sfx('ougi_hit');
