@@ -3815,10 +3815,13 @@ function updatePlayer(dt) {
   const len = Math.hypot(mx, my);
   const moving = len > 0;
   if (moving) { mx /= len; my /= len; }
-  // 面向打擊目標，不是面向移動方向——身體要參與戰鬥
+  // ★ 移動時看移動方向，站定時才看最近的敵人（總監 2026-08-04）。
+  //   舊寫法是「永遠看最近的敵人」——敵人在左邊時你按右，角色還是朝左，
+  //   按什麼方向跟畫面上的反應對不起來，那是最基本的操作回饋。
+  //   攻擊的瞄準（w.angle）本來就是另外算的，所以面向跟著移動不影響打得到誰。
   const aimT = nearestEnemy(p.x, p.y, 320);
-  if (aimT) p.aimAng = Math.atan2(aimT.y - p.y, aimT.x - p.x);
-  else if (moving) p.aimAng = Math.atan2(my, mx);
+  if (moving) p.aimAng = Math.atan2(my, mx);
+  else if (aimT) p.aimAng = Math.atan2(aimT.y - p.y, aimT.x - p.x);
   if (p.aimAng !== undefined) {
     const ca = Math.cos(p.aimAng);
     if (Math.abs(ca) > 0.25) p.face = ca > 0 ? 1 : -1;
