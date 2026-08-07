@@ -24,6 +24,13 @@ function rng() {
   return ((_seed >>> 8) & 0xffffff) / 0x1000000;
 }
 function rnd(a, b) { return a + rng() * (b - a); }
+/* ★★ 粒子專用亂數流（2026-08-04）：跟戰鬥亂數完全分開。
+   踩過的坑：burstParticles 每顆粒子吃 3 次 rng()，而粒子噴不噴由 G.__quietFx 決定——
+   於是「特效有沒有出現」會改變亂數流，暴擊/掉寶/生怪全部跟著重骰。
+   同種子驗證因此掛掉，但更嚴重的是：以後每一次調特效都會無聲改變遊戲平衡。
+   視覺絕對不准動到模擬的亂數。 */
+let _pseed = 12345;
+function prng() { _pseed = (_pseed * 1664525 + 1013904223) | 0; return ((_pseed >>> 8) & 0xffffff) / 0x1000000; }
 function rndInt(a, b) { return Math.floor(rnd(a, b + 1)); }
 function pick(arr) { return arr[Math.floor(rng() * arr.length)]; }
 function chance(p) { return rng() < p; }
@@ -213,6 +220,11 @@ function startRun(charId, danger) {
   G.materials = 12; G.totalMaterials = 12;
   G.xp = 0; G.level = 1; G.levelQueue = 0; G.levelChoices = null;
   G.enemies = []; G.projectiles = []; G.pickups = []; G.fx = []; G.damageNums = [];
+  G.runKills = {}; G.achToast = null;
+  G.mates = [];   // trail 在 updateMates 裡惰性初始化（這裡 G.player 還沒建好）
+  // 安靜旗標會跨局殘留：一局在連段中途結束，下一局開場所有特效就被擋掉。
+  G.__quietFx = false; G.__quietUntil = 0; G.__quietSfx = false; G.__comboDmgMul = 0;
+  _pseed = 12345;   // 粒子流也歸零，錄影/回放才長一樣
   // 這些若不歸零會跨局殘留，讓同種子的兩局跑出不同結果，平衡量測就不可重現
   G.time = 0; G.screenShake = 0; G.paused = false; G.pendingShop = false;
   G.kills = 0; G.stats = { dmgDealt: 0, dmgTaken: 0, src: {} };
@@ -224,7 +236,12 @@ function startRun(charId, danger) {
   G.player.traits = []; G.player.baseR = G.player.r;
   G.traitChoices = null;
   // 擁有池：盤上的六招開局就有，其餘靠商店買。同一招只能上一格，所以要記誰在盤上。
-  G.player.ownedFinishers = Object.keys(G.player.comboBoard).map(k => G.player.comboBoard[k]);
+  // ★ 去重：BIG BOOT 故意同時佔 S_M 與 M_S 兩格（總監的表就是這樣寫的，
+  //   「混拍＝大腳」不分順序），所以盤面值會有重複，而商店那套「同一招只能上一格」
+  //   的檢查會被重複值搞混。
+  G.player.ownedFinishers = Object.keys(G.player.comboBoard)
+    .map(k => G.player.comboBoard[k])
+    .filter((v, i, a) => v && a.indexOf(v) === i);
   G.shop = null;
   startWave(1);
 }
@@ -246,7 +263,8 @@ function startWave(w) {
   G.player.momentum = 0; G.player.burst = 0;
   // 招式與奧義狀態不跨波：波開始一律乾淨，冷卻歸零當開波紅利
   const P = G.player;
-  P.grabState = null; P.dashState = null; P.flurry = null;
+  P.grabState = null; P.dashState = null; P.flurry = null; P.lariat = null;
+  P.stepT = 0; P.stepFx = false;
   P.burstMulti = null; P.rushMulti = null; P.kneeChain = null; P.ougiField = 0;
   P.beatLog = []; P.beatT = 0; P.beatState = null; P.beatCd = 0; P.triCd = 0; P.stillHold = 0;
   P.dashChain = 0; P.dashChainT = 0; P.dashBeatCounted = false; P.ougiCd = 0;
@@ -329,6 +347,14 @@ function genArena(w) {
 
 /* 圓形實體被推出牆與冰塊；回傳 true＝這一幀有撞到（給撞牆技判定用） */
 function pushOutOfWalls(o) {
+  // ★★ 激怒＝穿得過障礙物，這件事必須在這裡判斷，不能在呼叫點各自處理。
+  //   踩過的坑：原本只在 clampEnemy 裡讓激怒跳過推牆，但 pushOutOfWalls 有三個呼叫點，
+  //   其中迴力腰帶的撞牆判定每幀都會呼叫它一次，而那個呼叫本身就有推牆的副作用。
+  //   於是只要玩家身上有那件道具，激怒穿牆就被整個繞過去——實測：盾兵座標固定在
+  //   361,380 一個像素都不動，clearT 累積到 4000 秒還在原地，連 40 秒保底每幀
+  //   往玩家搬 10px 都被原封推回來，整波永遠打不完。
+  //   代價：激怒的敵人不再吃撞牆傷害。這是對的——它本來就不該被牆擋住。
+  if (o.enraged) return false;
   let hit = false;
   for (const wl of G.walls) {
     const nx = Math.max(wl.x, Math.min(wl.x + wl.w, o.x));
@@ -530,13 +556,65 @@ function hurtEnemy(e, amount, opts) {
   if (G.char.special === 'no_regen') ls *= 1.5;
   if (ls > 0 && !opts.noLifesteal) healPlayer(dmg * ls);
 
-  if (e.hp <= 0) killEnemy(e);
+  if (e.hp <= 0) killEnemy(e, opts.src);
   return dmg;
 }
 
-function killEnemy(e) {
+/* ---------- 死因追蹤（總監 2026-08-05 成就系統） ----------
+   ★ 不逐一改 103 個 hurtEnemy 呼叫點，而是在系統入口設 _dmgSrc。
+     castOugi 用 KIND_SRC 一張表涵蓋大部分招式；其餘八個點各自標。
+   opts.src 優先於 _dmgSrc，讓個別呼叫可以覆寫。 */
+let _dmgSrc = null;
+function withSrc(src, fn) {
+  const prev = _dmgSrc; _dmgSrc = src;
+  try { return fn(); } finally { _dmgSrc = prev; }
+}
+const ACH_KEY = 'penguin_ach_v1';
+let ACH = null;
+function achLoad() {
+  if (ACH) return ACH;
+  ACH = { kills: {}, best: {} };
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const raw = JSON.parse(localStorage.getItem(ACH_KEY) || 'null');
+      if (raw && raw.kills) ACH = raw;
+    }
+  } catch (err) {}
+  return ACH;
+}
+function achSave() {
+  try { if (typeof localStorage !== 'undefined') localStorage.setItem(ACH_KEY, JSON.stringify(ACH)); }
+  catch (err) {}
+}
+/* 這一局的死因統計；跨局的累積在 ACH.kills */
+function recordKill(src) {
+  const k = (typeof KILL_SRC_MAP !== 'undefined' && KILL_SRC_MAP[src]) ? src : 'strike';
+  G.runKills = G.runKills || {};
+  G.runKills[k] = (G.runKills[k] || 0) + 1;
+  const a = achLoad();
+  a.kills[k] = (a.kills[k] || 0) + 1;
+  a.kills.__all = (a.kills.__all || 0) + 1;
+  // ★ 不是每次擊殺都寫 localStorage——一局幾千次擊殺會把主執行緒寫爆。
+  //   只在跨過成就門檻時寫，其餘等 onRunEnd 收尾。
+  if (typeof ACHIEVEMENTS !== 'undefined') {
+    for (const ac of ACHIEVEMENTS) {
+      if (ac.src !== k && !(ac.src === '__all')) continue;
+      const cur = a.kills[ac.src] || 0;
+      const idx = ac.tiers.indexOf(cur);
+      if (idx >= 0) {
+        a.best[ac.id] = idx + 1;
+        achSave();
+        G.achToast = { name: ac.name, tier: idx + 1, t: 3.2 };
+      }
+    }
+  }
+}
+function achFlush() { if (ACH) achSave(); }
+
+function killEnemy(e, src) {
   if (e.dead) return;
   e.dead = true;
+  recordKill(src || _dmgSrc || 'strike');
   // 死亡爆碎：六十隻同時死也只是幾百個 fillRect
   burstParticles(e.x, e.y, { n: e.boss ? 40 : (e.elite ? 20 : 10), spd: 150,
     life: 0.5, size: e.boss ? 3 : 2, col: e.color || '#ffffff' });
@@ -816,16 +894,8 @@ function castDash() {
   const id = p.moves.dash;
   const d = MOVE_MAP[id];
 
-  // 連段判定：前綴湊齊時，這一下 Space 放的是連段招而不是衝刺技。
-  // 連段招不是衝刺，不吃衝刺冷卻。
-  const cd = matchCombo('D');
-  if (cd) {
-    const okC = castCombo(cd);
-    if (okC) {
-      p.dashCd = Math.max(p.dashCd, d.cd * 0.8 * TUNE.dashCdMul * (hasItem('master_obi') ? 0.8 : 1));
-      return true;
-    }
-  }
+  // ★ 這裡原本有一段 matchCombo('D')＝「C 當第三拍放連段」。C 改成延伸技鍵之後
+  //   那條路永遠 null，拿掉。
   if (p.dashCd > 0) return false;
 
   // 通用節拍加成：站拍＝這次衝刺傷害 +25%／拍，移拍＝冷卻 -15%／拍
@@ -834,10 +904,13 @@ function castDash() {
   const boost = 1 + stillBeats * 0.25;
   const cdMul = 1 - Math.min(0.45, moveBeats * 0.15);
 
-  // 拍譜在出招前就結清（換成蓄勁/縮冷卻），switch 內命中記的 D 拍才能存活；
-  // 出招失敗（例：縮地沒目標）就原封還原，不能白吃玩家的拍。
-  const beatSnapshot = p.beatLog;
-  p.beatLog = []; p.beatT = 0; p.dashBeatCounted = false;
+  // ★★ 這裡原本會清空拍譜。舊設計裡合理——C 就是第三拍，出招前當然結清。
+  //   但 C 改成延伸技鍵之後，這行變成「玩家每按一次 C，辛苦鋪的兩拍就被刪掉」，
+  //   而 C 現在是玩家會一直按的鍵。實測 A/B（同種子同參數）：
+  //   清空＝每 35.8 秒才出一次連段；保留＝每 12.8 秒一次，差 2.8 倍。
+  //   蓄勁/縮冷卻照舊吃 beatSnapshot，只是不再把拍譜吃掉。
+  const beatSnapshot = p.beatLog.slice();
+  p.beatT = 0; p.dashBeatCounted = false;
   let ok = false;
   switch (id) {
     case 'tackle': ok = dashTackle(d); break;
@@ -1026,6 +1099,7 @@ function startGrab(e, d) {
 /* 飛天炸彈摔落地：把人砸進地板，落點炸一圈 */
 function doAirSlam(a) {
   const p = G.player, e = a.e;
+  _dmgSrc = 'throw';
   p.airSlam = null;
   p.poseAfter = { type: 'slamland', t: 0.28 };   // 落地壓扁定格（slam_2）
   p.staggerT = Math.max(p.staggerT, 0.35 + 0.65 * (a.dizzy || 0));   // 掄越久，落地後越站不穩
@@ -1614,7 +1688,7 @@ function updateTechniques(dt) {
             const rr = o.r + e.r + 4;
             if (dist2(o.x, o.y, e.x, e.y) < rr * rr) {
               hitAny = true;
-              hurtEnemy(o, throwDmg(4 + e.maxHp * 0.035), { trueDmg: true });
+              hurtEnemy(o, throwDmg(4 + e.maxHp * 0.035), { trueDmg: true, src: 'spin' });
               if (!o.dead) {
                 const a = Math.atan2(o.y - e.y, o.x - e.x);
                 o.knockX += Math.cos(a) * 140; o.knockY += Math.sin(a) * 140;
@@ -1688,6 +1762,35 @@ function updateTechniques(dt) {
       if (last) { p.thrustChain = null; p.staggerT = Math.max(p.staggerT, 0.15); }
     }
   }
+  // ---- 螺旋打樁：自身旋轉的打擊技（直升機）----
+  if (p.lariat) {
+    const la = p.lariat;
+    la.t += dt;
+    // 轉速由 dur 決定圈數：2.3 圈 / dur 秒
+    la.ang += (2.3 * Math.PI * 2 / la.dur) * dt;
+    la.tick -= dt;
+    if (la.tick <= 0) {
+      la.tick = la.tickT;
+      for (const e of G.enemies) {
+        if (e.dead) continue;
+        const rr = la.radius + e.r;
+        if (dist2(e.x, e.y, p.x, p.y) > rr * rr) continue;
+        // 同一個人有自己的被掃冷卻：不然每 tick 都吃滿，貼身的人會瞬間蒸發
+        if ((e.lariatCd || 0) > G.time) continue;
+        e.lariatCd = G.time + la.hitCd;
+        hurtEnemy(e, techDmg(la.dmg), { fromAngle: Math.atan2(e.y - p.y, e.x - p.x), src: 'spin' });
+        if (!e.dead) {
+          const ka = Math.atan2(e.y - p.y, e.x - p.x);
+          e.knockX += Math.cos(ka) * la.knock; e.knockY += Math.sin(ka) * la.knock;
+          e.stun = Math.max(e.stun, la.stun);
+          la.hits++;
+          p.lastComboVictim = e;
+        }
+      }
+      sfx('swing_leg', { pitch: 1.15, vol: 0.5 });
+    }
+    if (la.t >= la.dur) p.lariat = null;
+  }
   // ---- DDT：勾頭帶跑 → 坐倒把頭釘進地板 ----
   if (p.ddtState) {
     const ds = p.ddtState;
@@ -1708,13 +1811,25 @@ function updateTechniques(dt) {
       } else if (ds.t < 0.2) {
         e.x = p.x + ds.dx * 20; e.y = p.y + ds.dy * 20 - 4; e.lift = 8;
       } else if (ds.t < 0.34) {
-        // 後倒種地：向前再滑一點——把向前的動能轉成向下的
         const k2 = (ds.t - 0.2) / 0.14;
-        p.x = Math.max(p.r, Math.min(ARENA.w - p.r, p.x + ds.dx * 140 * dt));
-        p.y = Math.max(p.r, Math.min(ARENA.h - p.r, p.y + ds.dy * 140 * dt));
-        e.x = p.x + ds.dx * 18; e.y = p.y + ds.dy * 18;
-        e.lift = 8 * (1 - k2);
-        e.spin = { v: 0, t: 0.1, a: k2 * Math.PI * 0.9 };
+        if (ds.side) {
+          // ★ 側摔：抓著人從正面橫掃到身側，砸在自己旁邊的地板上。
+          //   自己不再往前滑（側摔是原地擰身，不是向前種地），
+          //   受方繞著玩家掃過 100 度再落地——這才讀得出「橫的」而不是「往前插」。
+          const base = Math.atan2(ds.dy, ds.dx);
+          const sweep = base + (Math.PI * 0.56) * k2 * (p.face > 0 ? 1 : -1);
+          const rad = 26 - 8 * k2;
+          e.x = p.x + Math.cos(sweep) * rad; e.y = p.y + Math.sin(sweep) * rad;
+          e.lift = 10 * (1 - k2);
+          e.spin = { v: 0, t: 0.1, a: k2 * Math.PI * 0.55 * (p.face > 0 ? 1 : -1) };
+        } else {
+          // 後倒種地：向前再滑一點——把向前的動能轉成向下的
+          p.x = Math.max(p.r, Math.min(ARENA.w - p.r, p.x + ds.dx * 140 * dt));
+          p.y = Math.max(p.r, Math.min(ARENA.h - p.r, p.y + ds.dy * 140 * dt));
+          e.x = p.x + ds.dx * 18; e.y = p.y + ds.dy * 18;
+          e.lift = 8 * (1 - k2);
+          e.spin = { v: 0, t: 0.1, a: k2 * Math.PI * 0.9 };
+        }
       } else {
         e.lift = 0; e.grabbed = false; e.spin = null;
         hurtEnemy(e, techDmg(88), { crit: true, trueDmg: true });
@@ -1722,7 +1837,8 @@ function updateTechniques(dt) {
         spawnFx('explode', e.x, e.y, '#e8e4dc', 70);
         G.screenShake = Math.max(G.screenShake, 15);
         addHitstop(0.11, true);
-        sfxThrow('ddt');
+        sfxThrow(ds.side ? 'suplex' : 'ddt');   // 側摔是悶的橫向撞擊，不是 DDT 那記尖的
+        if (ds.side) G.ougiBanner = { name: '追擊側摔', t: 1.0 };
         p.lastComboVictim = e;
         p.ddtState = null;
         p.staggerT = Math.max(p.staggerT, 0.25);
@@ -1883,7 +1999,11 @@ function updateTechniques(dt) {
           // 接住：直接轉扛跑炸彈摔，高度接續不重新升空
           ts.caught = true;
           p.tossState = null;
-          p.airSlam = { e, t: 0, dur: 1.0, slam: false, dizzy: 0, carry: true, bigDrop: true };
+          // spiral：螺旋高空摔的滯空段要轉起來（總監指定「抓人飛上去螺旋摔」）。
+          // 沒有新幀，用旋轉本身讀出「螺旋」——受方也一起轉，不然只有玩家轉會像脫節。
+          p.airSlam = { e, t: 0, dur: 1.0, slam: false, dizzy: 0, carry: true, bigDrop: true,
+            spiral: !!p.spiralNext };
+          p.spiralNext = false;
           p.pose = null;
           addHitstop(0.06, true);
           sfxThrow('catchAir');
@@ -1975,7 +2095,7 @@ function updateTechniques(dt) {
           const rr = o.r + e.r + 4;
           if (dist2(o.x, o.y, e.x, e.y) < rr * rr) {
             orbHit = true;
-            hurtEnemy(o, throwDmg(4 + e.maxHp * 0.04) * (g.super ? 1.5 : 1), { trueDmg: true });
+            hurtEnemy(o, throwDmg(4 + e.maxHp * 0.04) * (g.super ? 1.5 : 1), { trueDmg: true, src: 'spin' });
             if (!o.dead) {
               const a = Math.atan2(o.y - e.y, o.x - e.x);
               o.knockX += Math.cos(a) * 150; o.knockY += Math.sin(a) * 150;
@@ -2185,9 +2305,11 @@ function updateTechniques(dt) {
           e.hitByDash = true; s.hitAny = true;
           e.thrown = null; e.spin = null; e.lift = 0;   // 在空中抓下來：先停掉飛行狀態
           e.grabbed = true; e.stun = 99;
-          p.ddtState = { e, t: 0, dx: s.dx, dy: s.dy };
+          p.ddtState = { e, t: 0, dx: s.dx, dy: s.dy, side: !!s.side };
           p.dashState = null;
-          p.pose = { type: 'ddtp', ang: Math.atan2(s.dy, s.dx), t: 0, dur: 0.34, prio: 1 };
+          // 側摔用 frontslam 那組幀（伸手抓出去 → 橫掃過身前，水平軸），
+          // DDT 用 ddt 那組（坐倒插頭，垂直軸）。兩個摔法的軸向不同，不能共用。
+          p.pose = { type: s.side ? 'hiptossp' : 'ddtp', ang: Math.atan2(s.dy, s.dx), t: 0, dur: 0.34, prio: 1 };
           sfx('grab');
           break;
         } else if (s.id === 'tobigeri' && !e.hitByDash) {
@@ -2552,7 +2674,7 @@ function severCheck(e, bonus, force) {
    摔角手的專屬摔投走 switch 的硬編碼分支，其他職業用 EXT_MOVES 表（kind + params）即可。 */
 function castExtension(move, victim) {
   const p = G.player;
-  p.extCd = 8;
+  p.extCd = TUNE.extCd;
   // 資料驅動的延伸技：查表 → 走既有的 castOugi kind 管線
   const def = (typeof EXT_MOVES !== 'undefined') && EXT_MOVES[move];
   if (def) {
@@ -2627,6 +2749,66 @@ function castExtension(move, victim) {
       sfx('dash');
       return true;
     }
+    case 'side_slam': {
+      // BIG BOOT 接 C：追上去把他側摔進地板。
+      // ★ 追人的機構直接用 running_ddt 那套，不是偷懶——BIG BOOT 會把人 thrown 出去，
+      //   而 nearestEnemy 會跳過所有飛行中的敵人，全檔只有這裡有「不排除 thrown＋依距離拉長行程」。
+      // ★ 追不到人怎麼辦（總監 2026-08-04 裁示）：原地砸地板造成範圍傷害。
+      //   SIDE SLAM 的重量本來就在「砸」那一下，有沒有抱到人只影響有沒有單體目標，
+      //   砸地板照樣成立——比「追丟就取消」（玩家白按）或「無限追」（變成傳送）都好。
+      let tS = (victim && !victim.dead) ? victim : null;
+      if (!tS) {
+        let bd = 1e9;
+        for (const o of G.enemies) {
+          if (o.dead || o.grabbed) continue;          // 飛在空中的也算數
+          const d2 = dist2(o.x, o.y, p.x, p.y);
+          if (d2 < bd) { bd = d2; tS = o; }
+        }
+      }
+      if (!tS || dist2(tS.x, tS.y, p.x, p.y) > 700 * 700) {
+        // 追不到：原地砸。範圍比追擊版小，傷害也低——這是保底不是等價替代。
+        // 52/140 是對「真的追丟」的情境量的：平均 74、中位 48，
+        // 對照成功抓到的側摔 83——比抓到明顯差但不是白按。
+        // 半徑放到 170 平均會變 87，反而高於抓到，那就沒有人想抓了。
+        const okG = castOugi({ kind: 'aoe_blast',
+          params: { dmg: 52, radius: 140, stun: 1.2, pose: 'slam' } });
+        if (okG) {
+          G.ougiBanner = { name: '側摔．砸地', t: 1.2 };
+          G.screenShake = Math.max(G.screenShake, 14);
+          addHitstop(0.12, true);
+          sfx('quake');
+        } else p.extCd = 0;
+        return okG;
+      }
+      // 追擊速度 850：受方被大腳踢飛的初速是 560，追擊 700 在前 0.2 秒是追不上的。
+      //   實測抓到率 700→50%、850→67%、1000→70%（1000 以上沒有邊際效益，
+      //   剩下的 30% 是受方斜著飛的幾何問題，加速度救不了）。
+      // 上限 0.30 秒：實測「追丟」全部在 0.25~0.28 秒就結束了，成功的全部在 0.25 秒內抓到，
+      //   所以這個上限一次都不會少抓，只是把最壞情況的鎖定時間從 1 秒砍到 0.3 秒。
+      const dxS = tS.x - p.x, dyS = tS.y - p.y, ddS = Math.hypot(dxS, dyS) || 1;
+      // side:true → 抓到之後走側摔演出（橫掃）而不是 DDT 的坐倒插頭。
+      // 追擊/擒抱的機構沿用 ddt 那套（全檔只有它會追飛行中的目標），只換演出。
+      p.dashState = { id: 'ddt', side: true, dx: dxS / ddS, dy: dyS / ddS, lockOn: tS,
+        t: Math.min(0.30, Math.max(180, Math.min(700, ddS + 40)) / 850), spd: 850,
+        accel: true, boost: 1, mustCatch: true };
+      G.ougiBanner = { name: '追擊側摔', t: 1.2 };
+      sfx('dash');
+      return true;
+    }
+    case 'spiral_air': {
+      // 迴旋螺旋槳接 C：抓著正在掄的那個一起飛上去砸下來。
+      // 螺旋打樁改成打擊技之後這裡不再有 grabState 可以接手，
+      // 改成拿打樁最後掃到的那個人（沒有就讓 toss_powerbomb 自己找最近的）。
+      // 舊註解保留備查：grab_super 時代必須先清 grabState，否則 toss_powerbomb 會搶走
+      // 正在掄的那個人而 grabState 沒清，敵人座標被兩邊搶著寫，畫面上會在兩處跳。
+      const vS = (p.lastComboVictim && !p.lastComboVictim.dead) ? p.lastComboVictim : null;
+      p.lariat = null;   // 提早收掉旋轉，接摔的動作才不會疊在轉裡面
+      p.grabState = null;
+      p.spiralNext = true;   // 給下面的拋接段：這一次是螺旋摔，滯空要轉
+      const okSp = castExtension('toss_powerbomb', vS || victim);
+      if (!okSp) p.spiralNext = false;
+      return okSp;
+    }
     case 'gut_roll': {
       // 抱腰翻滾：撲抱住滾出去，滾四圈四段 hit，壓到路過的一起痛
       const mx0 = p.lastMoveX || (p.face > 0 ? 1 : -1), my0 = p.lastMoveY || 0;
@@ -2698,11 +2880,11 @@ function comboList() {
   if (p && p.comboBoard) {
     const out = [];
     for (const row of (p.boardRows || [])) {
-      for (const col of ['H', 'D']) {
+      for (const col of ['S', 'M']) {
         const f = FINISHER_MAP[p.comboBoard[row + '_' + col]];
         if (!f) continue;
         out.push({
-          seq: [row, row].concat(col === 'D' ? 'D' : row),
+          seq: [row, row].concat(col),
           name: f.name, kind: f.kind, params: f.params,
           ext: f.ext, extName: f.extName, sig: f.sig, desc: f.desc,
           row, col, fid: f.id, home: f.home,
@@ -2750,20 +2932,27 @@ function matchCombo(action) {
   //   前面兩拍只是「湊滿了」的計數，不決定出哪一招——舊寫法用累積的多數決定，
   //   結果玩家站著打卻出移動系的招，跟他當下在做的事對不起來。
   //   按 SPACE 那一格例外：衝刺沒有站/移之分，用累積的多數挑，所以總共四格。
-  const col = (action === 'D') ? 'D' : 'H';
-  const row = (col === 'H') ? action : boardRowOf(log);
+  // ★ 排＝前兩拍的多數，欄＝你第三下在做什麼（總監 2026-08-04 二次定案）。
+  //   前一版是 row = action，前綴根本沒被讀——實測五種不同前綴的第三下打中全部出頭槌。
+  //   C 不再是欄：它現在專職觸發延伸技（頭槌接 C＝原地背摔），不跟盤面搶輸入。
+  if (action === 'D') return null;
+  const col = action;
+  const row = boardRowOf(log);
   if (!row) return null;
   const f = FINISHER_MAP[p.comboBoard[row + '_' + col]];
   if (!f) return null;                        // 空格：只出普攻，不變招
-  // 變體加成：收尾那一下換一個狀態打中。同一格同一招，獎勵你在最後一下變一下。
-  const last = log[log.length - 1];
-  const varied = (col === 'H') && (action !== last);
-  // 本命只分兩欄：原本收尾拍是 D 的招本命在「衝」欄，其餘（站/移收尾）本命在「打」欄。
-  // 舊的三欄本命判定套進 2×2 會讓「站站+移動打中」誤判成非本命而吃 0.7 折。
-  const homeCol = (f.home === 'D') ? 'D' : 'H';
-  const boardMul = (varied ? BOARD_MIX_MUL : 1) * (homeCol === col ? 1 : BOARD_OFFHOME_MUL);
+  // 混拍格加成：前綴偏站卻用移動收尾（或反過來）＝你切換了狀態，加成給這個。
+  // 注意這在新盤上是「格子的固有屬性」而不是「玩家當下的操作」——S_M／M_S 恆 ×1.25。
+  // 後果：玩家日後從商店換別的招進這兩格，那招也會吃到 +25%。UI 要把這兩格標成加成格。
+  const varied = (col !== row);
+  // ★ 本命判定要看「排或欄任一命中」，不能只看欄。
+  //   只看欄的話 BIG BOOT（home='M'）在 S_M 是本命 ×1.25、在 M_S 卻非本命 ×0.875——
+  //   同一招在總監指定的兩格差 43%，而總監的表寫的是「AAB 跟 BBA 都是大腳」。
+  const boardMul = (varied ? BOARD_MIX_MUL : 1) *
+    ((f.home === row || f.home === col) ? 1 : BOARD_OFFHOME_MUL);
   return {
     seq: [row, row].concat(action),
+    cd: f.cd,
     name: f.name, kind: f.kind, params: f.params,
     ext: f.ext, extName: f.extName, sig: f.sig, desc: f.desc,
     boardMul, row, col, fid: f.id, home: f.home, varied,
@@ -2774,7 +2963,7 @@ function matchCombo(action) {
 function comboReady() {
   const p = G.player;
   const out = [];
-  for (const act of ['S', 'M', 'D']) {
+  for (const act of ['S', 'M']) {   // C 已經不是盤面的一欄，問它永遠是 null
     const c = matchCombo(act);
     if (c) {
       const cd = c.sig ? Math.max(0, p.ougiCd || 0)
@@ -2789,7 +2978,10 @@ function comboReady() {
 function castCombo(c, target) {
   const p = G.player;
   const _shake0 = G.screenShake, _hs0 = G.hitstop;   // H 欄要還原用
-  if (c.col === 'H') { G.__quietFx = true; G.__quietUntil = G.time + 0.75; G.__quietSfx = true; }
+  // 四格全部走安靜模式：這些是「打中就變招」的高頻連段，每次都放圈圈特效＋字卡會很躁
+  // （總監 2026-08-04：動作有就好，華麗留給接 C 的延伸技）。
+  // 舊寫法只擋 H 欄——新盤沒有 H 欄，不改的話這行永遠 false，圈圈特效全部跑回來。
+  G.__quietFx = true; G.__quietUntil = G.time + 0.75; G.__quietSfx = true;
   // ★ 每一格自己的冷卻，不再四條共用一個。
   //   共用的時候實測：三局 1800 秒只放出 210 次＝平均 8.6 秒一次，
   //   而玩家湊到條件的次數遠多於此——攻速越快越常湊到，湊到的都被冷卻丟掉，
@@ -2813,13 +3005,19 @@ function castCombo(c, target) {
     p.focusStacks = 0;
   }
   const ok = castOugi(c, target);
+  // 影武者要重播的就是這一下。用招式自己的 dmg／radius 當基準，
+  // 沒有的話退回一個中庸值——重播的是「你剛做了什麼」，不必逐項複製。
+  if (ok && typeof mateEcho === 'function') {
+    const _pr = c.params || {};
+    mateEcho(c.name, _pr.dmg || 40, _pr.radius || _pr.range || _pr.len || 96, _pr.color);
+  }
   G.__comboDmgMul = prevDmgMul;
   G.__quietFx = false;   // 立即旗標關掉，但 __quietUntil 還會擋住招式之後的連鎖
   if (!ok) return false;
   p.beatLog = []; p.beatT = 0;
   if (c.ext && (p.extCd || 0) <= 0) {
     // 延伸窗口：從收尾接觸幀播完(0.18s)開 0.4 秒——「趁他還沒站直」
-    p.extWindow = { move: c.ext, name: c.extName || '', delay: 0.18, t: 0.4,
+    p.extWindow = { move: c.ext, name: c.extName || '', delay: 0.18, t: TUNE.extWindow,
       victim: p.lastComboVictim || null, buffered: false };
   }
   if (c.sig) {
@@ -2835,13 +3033,16 @@ function castCombo(c, target) {
     p.slotCd = p.slotCd || {};
     // 每格 1.2 秒：清空拍譜之後要再打兩下才會來，本來就有天然間隔，
     //  冷卻只要防「同一格被連續刷」就好，2.5 秒會把第三下擋掉。
-    p.slotCd[(c.row || '?') + '_' + (c.col || '?')] = 1.2;
+    // 每格冷卻優先吃招式自己寫的（螺旋槳 3.0 秒），沒寫才用 1.2 秒的預設。
+    p.slotCd[(c.row || '?') + '_' + (c.col || '?')] = (c.cd || 1.2);
     p.comboCd = 0.35;   // 極短的全域間隔，只防同一瞬間連續觸發
     p.comboSettle = 0.35;   // 句號：這 0.35 秒的靜止就是「一套打完了」
     // ★「再打中一下」那一欄是高頻連段（大足踢／巴投這種），每次都放字卡＋震動＋頓幀
     //   會很躁（總監 2026-08-04：動作有就好，華麗留給接 C 的延伸技）。
     //   所以 H 欄只留招式本身的動作，不做連段層級的演出。
-    const _loud = (c.col !== 'H');
+    // ★ 新盤四格全部是「打中就變招」的高頻格（C 已經不是欄），
+    //   所以一律走安靜路線：招式本身的動作有就好，字卡/震動/頓幀留給接 C 的延伸技。
+    const _loud = false;
     if (!_loud) { G.screenShake = _shake0; G.hitstop = _hs0; }   // 招式本身的震動與頓幀也還原
     if (_loud) {
       G.hitstopEcho = { delay: 0.06, dur: 0.04 };
@@ -2867,6 +3068,12 @@ function ougiReady() {
 }
 
 function castOugi(o, target) {
+  // 招式的死因由 kind 決定（KIND_SRC），沒列到的算「絕技死」。
+  const _prevSrc = _dmgSrc;
+  _dmgSrc = (typeof KIND_SRC !== 'undefined' && KIND_SRC[o.kind]) || 'skill';
+  try { return _castOugiInner(o, target); } finally { _dmgSrc = _prevSrc; }
+}
+function _castOugiInner(o, target) {
   const p = G.player;
   const pr = o.params;
   let ok = false;
@@ -3419,6 +3626,15 @@ function castOugi(o, target) {
       p.grabState.super = true;
       ok = true; break;
     }
+    case 'spin_lariat': {
+      // 自身旋轉的打擊技（不抓人）。持續段在 updateLariat 裡跑。
+      p.lariat = { t: 0, dur: pr.dur || 1.1, tick: 0, ang: (p.face > 0 ? 0 : Math.PI),
+        radius: pr.radius || 96, dmg: pr.dmg || 14, tickT: pr.tick || 0.12,
+        hitCd: pr.hitCd || 0.22, knock: pr.knock || 90, stun: pr.stun || 0.25,
+        moveMul: pr.moveMul || 0.78, hits: 0 };
+      sfx('swing_leg', { pitch: 0.8 });
+      ok = true; break;
+    }
     case 'counter_field': {
       p.ougiField = pr.dur;
       spawnFx('shock', p.x, p.y, '#5a8ac9', 90);
@@ -3662,11 +3878,15 @@ function updateStrikes(dt) {
         : s.cur + s.spd * dt;
       if (s.ghost) { if (s.t >= s.dur) s.dead = true; continue; }
       // 掃掠帶：上一幀角度到這一幀角度之間的扇區都算刀路
+      // ★ 原點可覆寫：同伴（影武者／弟子）的攻擊要從它自己的位置發出，
+      //   不是從玩家身上。沒有這個的話同伴只是動畫，判定還是在玩家腳下。
+      const _ox = (s.ox !== undefined) ? s.ox : p.x;
+      const _oy = (s.oy !== undefined) ? s.oy : p.y;
       for (const e of G.enemies) {
         if (e.dead || e.grabbed || e.thrown || s.hit.includes(e)) continue;
-        const d = Math.hypot(e.x - p.x, e.y - p.y);
+        const d = Math.hypot(e.x - _ox, e.y - _oy);
         if (d > s.reach + e.r) continue;
-        const ea = Math.atan2(e.y - p.y, e.x - p.x);
+        const ea = Math.atan2(e.y - _oy, e.x - _ox);
         const tol = Math.atan2(e.r, Math.max(24, d)) + 0.12;
         const inBand = Math.abs(angDiff(ea, s.cur)) < tol ||
           (Math.abs(angDiff(ea, prev)) + Math.abs(angDiff(ea, s.cur)) <
@@ -3687,11 +3907,13 @@ function updateStrikes(dt) {
     } else if (s.kind === 'slam') {
       if (s.t >= s.delay && !s.boomed) {
         s.boomed = true;
-        spawnFx('shock', p.x, p.y, s.w.color, s.reach);
+        const _sx = (s.ox !== undefined) ? s.ox : p.x;
+        const _sy = (s.oy !== undefined) ? s.oy : p.y;
+        spawnFx('shock', _sx, _sy, s.w.color, s.reach);
         G.screenShake = Math.max(G.screenShake, 4 + s.w.dmg * 0.12);
         for (const e of G.enemies) {
           if (e.dead || e.grabbed || e.thrown) continue;
-          if (dist2(e.x, e.y, p.x, p.y) < (s.reach + e.r) * (s.reach + e.r)) strikeHit(s, e);
+          if (dist2(e.x, e.y, _sx, _sy) < (s.reach + e.r) * (s.reach + e.r)) strikeHit(s, e);
         }
         s.dead = true;
       }
@@ -3712,6 +3934,10 @@ function addHitstop(sec, heavy) {
 function applyWeaponHit(w, e, reach, mulOverride, isEcho, swingId) {
   const p = G.player;
   if (e.dead) return;
+  // 普攻的死因看武器類別：刃＝斬死、摔技＝摔死、其餘＝打死
+  // 同伴（影武者／弟子）打死的另外歸類——玩家會想知道有多少是徒弟收的尾
+  _dmgSrc = (w.klass === '同伴') ? 'mate'
+    : (w.klass === '刃') ? 'blade' : (w.klass === '摔技' ? 'throw' : 'strike');
 
   let base = w.dmg * liveDamageMult();
   if (mulOverride) base *= mulOverride;
@@ -3734,11 +3960,12 @@ function applyWeaponHit(w, e, reach, mulOverride, isEcho, swingId) {
 
   // 爆擊
   let crit = false;
-  const critChance = p.stats.crit + w.crit;
+  const critChance = p.stats.crit + (w.crit || 0);
   if (p.guaranteedCrit && !isEcho) { crit = true; p.guaranteedCrit = false; }
   else if (rng() * 100 < critChance) crit = true;
   if (crit) {
-    let cm = w.critMult;
+    // 臨時造的攻擊物件（特性、道具生成的）常常漏欄位，這裡不能假設它齊全。
+    let cm = Number.isFinite(w.critMult) ? w.critMult : 1.5;
     if (hasItem('famed_koshirae') && w.klass === '刃') cm += 0.4;
     base *= cm;
   }
@@ -3761,6 +3988,15 @@ function applyWeaponHit(w, e, reach, mulOverride, isEcho, swingId) {
     p.focusStacks = 0;
   }
 
+  // ★★ 最後閘門：NaN 傷害會讓目標永遠殺不死（NaN 的所有比較都是 false），
+  //   而且完全不報錯——這種東西必須當場攔下來並且留下痕跡，不能靜靜吞掉。
+  if (!Number.isFinite(base)) {
+    if (typeof window !== 'undefined' && window.__test && window.__test.errors) {
+      window.__test.errors.push('傷害算出非有限值 base=' + base + ' 武器=' + (w.name || w.klass || '?'));
+    }
+    base = w.dmg * liveDamageMult();                       // 退回最基本的那一項
+    if (!Number.isFinite(base)) base = 1;                  // 連它都壞掉就給 1，至少殺得死
+  }
   const dealt = hurtEnemy(e, base, {
     crit, fromAngle: w.angle, weaponLifesteal: w.lifesteal,
   });
@@ -3907,7 +4143,14 @@ function applyWeaponHit(w, e, reach, mulOverride, isEcho, swingId) {
   }
 
   if (crit && !isEcho) {
-    if (sp === 'iai' && !e.dead) hurtEnemy(e, base * 0.7 / w.critMult, { crit: true, fromAngle: w.angle });
+    // ★ 這裡是除法而且吃裸的 w.critMult，比 3826 那個乘法更危險：
+    //   欄位缺 → NaN（目標永遠殺不死）、欄位是 0 → Infinity（一擊必殺，同樣是壞掉）。
+    //   3826 已經防呆了，這行當時漏掉——同一個欄位要在每個用到的地方都防，
+    //   否則下次再出現一個沒補齊欄位的合成武器，居合就會再中一次。
+    if (sp === 'iai' && !e.dead) {
+      const _cmI = (Number.isFinite(w.critMult) && w.critMult) ? w.critMult : 1.5;
+      hurtEnemy(e, base * 0.7 / _cmI, { crit: true, fromAngle: w.angle });
+    }
     if (sp === 'crit_shock') {
       // 拳頭是往前打穿的，不是往四周炸開（總監明令：近戰的拳不該是圓形範圍）。
       // 震盪從命中點沿拳路往後方傳，只波及站在那條線上的人——貫通不是擴散。
@@ -3966,13 +4209,40 @@ function updatePlayer(dt) {
   const _sp = traitOf('sprint');
   if (_sp && (p.sprintLock || 0) <= 0) spd *= _sp.sprint.mul;
   if (p.grabState) spd *= 0.7;          // 掄著人跑比較慢
+  // 螺旋打樁：轉的時候可以走（總監指定「可以邊轉邊走（突進）」），只是慢一點
+  if (p.lariat) spd *= p.lariat.moveMul;
   if (moving) { p.lastMoveX = mx; p.lastMoveY = my; }
   p.vx = mx * spd; p.vy = my * spd;
-  p.x += p.vx * dt; p.y += p.vy * dt;
+  // ★★ 摺足：卡的是「位移」不是「速度」。
+   //   拍譜是用 p.vx/p.vy 判斷站拍還是移拍的（見 beatFromState）——
+   //   如果把停頓期的速度設成 0，玩家明明按著方向鍵，連段拍卻會隨機跳成「站」，
+   //   整個連段盤直接壞掉。所以速度照常寫入，只有這一幀要不要真的前進被閘門控制。
+  let _stepGate = 1;
+  const _sw = G.char && G.char.stepWalk;
+  if (_sw) {
+    if (!moving) { p.stepT = 0; }
+    else {
+      const _cyc = _sw.step + _sw.pause;
+      p.stepT = (p.stepT || 0) + dt;
+      if (p.stepT >= _cyc) p.stepT -= _cyc;
+      const _inStep = p.stepT < _sw.step;
+      // 爆發倍率由週期自動算：平均速度跟沒有摺足時完全一樣。
+      // 「慢」歸 stats.speed 管、「卡」歸這裡管，兩件事不要混在一個數字裡。
+      _stepGate = _inStep ? (_cyc / _sw.step) : 0;
+      // 每一步落地的那一瞬：踏地塵。沒有這個的話停頓期會像是掉幀而不是像踏步。
+      if (_inStep && !p.stepFx) {
+        p.stepFx = true;
+        spawnFx('slide', p.x - mx * 8, p.y + p.r * 0.7, '#b9ac96', 12);
+      } else if (!_inStep) p.stepFx = false;
+    }
+  }
+  p.x += p.vx * _stepGate * dt; p.y += p.vy * _stepGate * dt;
   p.x = Math.max(p.r, Math.min(ARENA.w - p.r, p.x));
   p.y = Math.max(p.r, Math.min(ARENA.h - p.r, p.y));
   pushOutOfWalls(p);
-  p.walkAnim += moving ? dt * 10 : -p.walkAnim * dt * 8;
+  // 走路動畫跟著位移閘門走：停頓期腳不能還在划，那會變成「滑行」而不是「踏步」
+  p.walkAnim += moving ? dt * 10 * (typeof _stepGate === 'number' ? Math.min(1, _stepGate) : 1)
+    : -p.walkAnim * dt * 8;
 
   if (moving) { p.moveTime = Math.min(1, p.moveTime + dt); p.stillT = 0; p.stancePop = false; }
   else {
@@ -4172,7 +4442,7 @@ function updateEnemies(dt) {
       if (hitWall || hitBlock) {
         const hard = spd > 420;
         // 撞牆傷害隨速度放大：轟得越用力、撞得越慘
-        hurtEnemy(e, throwDmg((8 + e.maxHp * 0.12) * (hard ? 1.8 : 1)), { trueDmg: true });
+        hurtEnemy(e, throwDmg((8 + e.maxHp * 0.12) * (hard ? 1.8 : 1)), { trueDmg: true, src: 'wall' });
         if (!e.dead) {
           e.stun = Math.max(e.stun, hard ? 1.4 : 0.8);
           e.hitSquash = Math.max(e.hitSquash || 0, hard ? 0.3 : 0.2);
@@ -4233,12 +4503,38 @@ function updateEnemies(dt) {
     const kdcy = Math.exp(-(e.knockDecay || 6.44) * dt);
     e.knockX *= kdcy; e.knockY *= kdcy;
 
+    // ★★ 傾倒（總監 2026-08-04 核可，爽度優先）。
+    //   踉蹌／定身期間敵人「一步都不能動」，而 reel 由玩家每一次連段命中刷新
+    //   （applyWeaponHit 設 0.35+0.15*comboStep，連段中武器 cd 吃 3.1 倍加速，
+    //   攻擊間隔遠短於 reel 時長，所以整段連段期間他是釘死的）。
+    //   結果就是：你的擊退把他推到射程外十來 px、你的連段又讓他動不了、
+    //   你的普攻搆不到——雙方都被自己的規則鎖住，玩家只能乾等。
+    //   實測乾等佔總時長 4.58%、最長單次 40.8 秒。
+    //   解法：被打呆的人緩慢往玩家傾倒，只補到「剛好打得到」為止，不多走一步。
+    //   語意上也對——被打呆本來就是踉蹌著往前倒，不是釘在原地。
+    //   實測 100px/s：乾等 4.58% → 2.22%，最長單次 40.8s → 30.2s，
+    //   成因分佈裡「定身」從 38% 掉到 1%。
+    //   ★ 綁的是玩家「當下實際」的 reach（吃 liveRangeMult），所以 stats.range
+    //     變負的時候縫會自己收掉，不需要另外對表。
+    const __lean = function () {
+      // 頭目不傾倒（自己的節奏）；被抓/飛行中另有位移邏輯；凍結麻痺＝完全停住是既有設計語意，
+      // 要不要一起開是冰雷兩系的控場定位取捨，維持現狀不動。
+      if (e.boss || e.grabbed || e.thrown || e.freeze > 0 || e.paralyze > 0) return;
+      const lx = p.x - e.x, ly = p.y - e.y, ld = Math.hypot(lx, ly) || 1;
+      let lreach = 0;
+      for (const lw of p.weapons) { const lr = lw.range * liveRangeMult(); if (lr > lreach) lreach = lr; }
+      const lwant = lreach + e.r - 6;
+      if (ld > lwant) {
+        const lstep = Math.min(TUNE.leanSpd * dt, ld - lwant);
+        e.x += lx / ld * lstep; e.y += ly / ld * lstep;
+      }
+    };
     if (e.reel) {
       e.reel.t -= dt;
       if (e.reel.t <= 0) e.reel = null;
-      else { clampEnemy(e); continue; }
+      else { __lean(); clampEnemy(e); continue; }
     }
-    if (e.stun > 0) { e.stun -= dt; clampEnemy(e); continue; }
+    if (e.stun > 0) { e.stun -= dt; __lean(); clampEnemy(e); continue; }
 
     const dx = p.x - e.x, dy = p.y - e.y;
     const d = Math.hypot(dx, dy) || 1;
@@ -4373,7 +4669,7 @@ function updateEnemies(dt) {
 function clampEnemy(e) {
   e.x = Math.max(e.r, Math.min(ARENA.w - e.r, e.x));
   e.y = Math.max(e.r, Math.min(ARENA.h - e.r, e.y));
-  pushOutOfWalls(e);
+  pushOutOfWalls(e);   // 激怒跳過推牆的判斷已經收進 pushOutOfWalls 本身，這裡不再分岔
 }
 
 function updateBoss(e, dt, ux, uy, d) {
@@ -4613,6 +4909,21 @@ function updateWave(dt) {
         if (!e.enraged) {
           e.enraged = true;
           spawnFx('shock', e.x, e.y, '#d9564f', e.r * 2.2);
+        }
+      });
+    }
+    // ★ 保底：激怒是「跑得到」，這一條是「保證到得了」。
+    //   只要清場拖過 40 秒就每秒把剩下的往玩家身上搬，最後直接貼到攻擊範圍內。
+    //   「殺光才過關」是總監定案的規則，那就必須有一條數學上不會失敗的收尾，
+    //   不能靠「行為應該會把它帶過來」——實測激怒被障礙物擋住時完全不會。
+    if (G.clearT > 40) {
+      const pg = G.player;
+      alive.forEach(e => {
+        const dxg = pg.x - e.x, dyg = pg.y - e.y, dg = Math.hypot(dxg, dyg) || 1;
+        const want = pg.r + e.r + 8;                 // 貼到一定打得到的距離
+        if (dg > want) {
+          const step = Math.max(60 * dt, (dg - want) * 1.2 * dt);
+          e.x += dxg / dg * step; e.y += dyg / dg * step;
         }
       });
     }
@@ -4914,6 +5225,8 @@ function updateGame(dt) {
   updateSpawning(dt);
   updatePlayer(dt);
   updateWeapons(dt);
+  syncMates();
+  updateMates(dt);
   updateStrikes(dt);
   updateHazards(dt);
   updateEnemies(dt);
@@ -4941,6 +5254,7 @@ let SAVE = null;
 function saveGame() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(SAVE)); } catch (e) {} }
 
 function onRunEnd(won) {
+  achFlush();   // 這一局累積的死因統計寫進 localStorage
   if (!SAVE) SAVE = loadSave();
   SAVE.totalWaves = (SAVE.totalWaves || 0) + G.wave;
   SAVE.runs++;
@@ -4976,6 +5290,8 @@ function maxDangerUnlocked() {
 /* ---------- 連段盤操作（UI 用） ---------- */
 /* 把某招放進某格。同一招只能上一格——放進去之前先把它從別格拔掉。
    回傳被換下來的招（給 UI 講「換下來的招不會消失」）。 */
+/* 混拍孿生格：站移 與 移站 是同一個邏輯格（總監「看數量不看順序」的直接後果） */
+const MIX_TWIN = { S_M: 'M_S', M_S: 'S_M' };
 function setBoardSlot(row, col, fid) {
   const p = G.player;
   if (!p || !p.comboBoard) return null;
@@ -4985,8 +5301,22 @@ function setBoardSlot(row, col, fid) {
   if (!fid) { delete p.comboBoard[key]; return old; }
   if (!FINISHER_MAP[fid]) return null;
   if ((p.ownedFinishers || []).indexOf(fid) < 0) return null;
-  for (const k in p.comboBoard) if (p.comboBoard[k] === fid) delete p.comboBoard[k];
+  // ★★ 混拍孿生格要當成「一個邏輯格」成對處理（2026-08-04）。
+  //   總監定案「AAB 跟 BBA 都是大腳」＝同一招故意佔 S_M 與 M_S 兩格，
+  //   但下面這段「同一招只能上一格」的去重會把孿生的那格刪掉——
+  //   玩家只要對混拍格做任何一次確認（連把 BIG BOOT 放回原位都算），
+  //   M_S 就無聲消失，「前綴 BB + 第三下站著打中」從此不變招，而畫面上不會有任何提示。
+  //   開局的預設盤面本身就違反了這段程式碼在維護的不變式，所以這是結構性的，不是邊角。
+  const sib = MIX_TWIN[key] || null;
+  for (const k in p.comboBoard) {
+    if (p.comboBoard[k] !== fid) continue;
+    if (k === key || (sib && k === sib)) continue;   // 自己跟孿生格不算重複
+    delete p.comboBoard[k];
+    const s2 = MIX_TWIN[k];                          // 從別的混拍格搬走時，兩格一起清
+    if (s2 && p.comboBoard[s2] === fid) delete p.comboBoard[s2];
+  }
   p.comboBoard[key] = fid;
+  if (sib) p.comboBoard[sib] = fid;                  // 放進混拍格＝兩格一起換
   return old;
 }
 /* 這一招現在在盤上的哪一格（沒有就回 null） */
@@ -5092,11 +5422,130 @@ function traitOnControl(e) {
   if (cm && e && !e.dead && (p.cometCd || 0) <= 0) {
     p.cometCd = 1.2;
     G.strikes.push({
-      w: { klass: '氣', dmg: cm.onControl.comet.dmg, cd: 1 }, reach: cm.onControl.comet.r,
+      // ★ 這個臨時武器物件要補齊 applyWeaponHit 會讀的每一個數值欄位。
+      //   原本只給 klass/dmg/cd，少了 critMult——碰上「拳打繃帶」的必定暴擊時
+      //   base *= undefined 直接變 NaN，而 NaN 的比較永遠是 false，
+      //   被打中的目標從此不可能死（實測：波 20 的橫綱血量變 NaN，卡滿 4200 秒）。
+      w: { name: '彗星', klass: '氣', dmg: cm.onControl.comet.dmg, cd: 1,
+           crit: 0, critMult: 1.5, lifesteal: 0 },
+      reach: cm.onControl.comet.r,
       kind: 'slam', t: 0, hit: [], delay: cm.onControl.comet.delay,
       cometAt: { x: e.x, y: e.y },
     });
     spawnFx('shock', e.x, e.y, '#a06fd0', 30);
+  }
+}
+
+/* ---------- 同伴：影武者與弟子（總監 2026-08-05） ---------- */
+function syncMates() {
+  const p = G.player; if (!p) return;
+  G.mates = G.mates || [];
+  const want = [];
+  if (hasItem('shadow_charm')) want.push('shadow');
+  if (hasItem('deshi_band')) want.push('deshi');
+  for (const id of want) {
+    if (!G.mates.some(m => m.id === id)) {
+      G.mates.push({ id, def: MATES[id], x: p.x, y: p.y, face: p.face,
+        cd: 0, queue: [], anim: 0, moving: false, popT: 0.35 });
+      spawnFx('summon', p.x, p.y, MATES[id].color, 46);
+    }
+  }
+  G.mates = G.mates.filter(m => want.indexOf(m.id) >= 0);
+}
+
+/* 影武者要重播什麼：玩家每放出一次收尾招就排進佇列 */
+function mateEcho(name, dmg, reach, color) {
+  const sh = (G.mates || []).find(m => m.id === 'shadow');
+  if (!sh) return;
+  if (sh.queue.length >= sh.def.maxQueue) sh.queue.shift();
+  sh.queue.push({ t: sh.def.delay, name, dmg, reach: reach || 90, color: color || sh.def.color });
+}
+
+function updateMates(dt) {
+  const p = G.player; if (!p || !G.mates || !G.mates.length) return;
+  for (const m of G.mates) {
+    const d = m.def;
+    if (m.popT > 0) m.popT -= dt;
+    let tx, ty;
+    if (m.id === 'shadow') {
+      // 影武者站在「玩家 trailLen 秒前的位置」——所以你的走位等於在擺放它
+      p.trail = p.trail || [];
+      p.trail.push({ x: p.x, y: p.y, t: G.time });
+      while (p.trail.length > 2 && G.time - p.trail[0].t > 2) p.trail.shift();
+      const want = G.time - d.trailLen;
+      let pick = p.trail[0];
+      for (const q of p.trail) { if (q.t <= want) pick = q; else break; }
+      tx = pick.x; ty = pick.y;
+    } else {
+      // 弟子跟在玩家後面，但會朝最近的敵人挪一點——它要站在打得到的地方
+      const ml = Math.hypot(p.lastMoveX, p.lastMoveY) || 1;
+      tx = p.x - p.lastMoveX / ml * d.follow;
+      ty = p.y - p.lastMoveY / ml * d.follow;
+      const tgt = nearestEnemy(p.x, p.y, d.seek);
+      if (tgt) { tx = (tx + tgt.x) / 2; ty = (ty + tgt.y) / 2; }
+    }
+    // ★ 最小間距：站著不動時「玩家 0.9 秒前的位置」就是玩家現在的位置，
+    //   同伴會直接鑽進玩家身體裡——邏輯沒錯，畫面上三隻疊成一團完全不能看。
+    //   目標點太靠近就沿著固定角度推出去，每個同伴一個角度，彼此也不會疊。
+    const _mind = 64;   // 46 實測還是太擠（企鵝約 60px 高），畫面上三隻仍然疊在一起
+    const _pdx = tx - p.x, _pdy = ty - p.y, _pd = Math.hypot(_pdx, _pdy);
+    if (_pd < _mind) {
+      const _slot = (m.id === 'shadow') ? 2.5 : -2.5;   // 影武者偏左後、弟子偏右後
+      const _base = (_pd > 4) ? Math.atan2(_pdy, _pdx)
+        : Math.atan2(-(p.lastMoveY || 0), -(p.lastMoveX || 1)) + _slot * 0.35;
+      tx = p.x + Math.cos(_base) * _mind;
+      ty = p.y + Math.sin(_base) * _mind;
+    }
+    const dx = tx - m.x, dy = ty - m.y, dd = Math.hypot(dx, dy);
+    m.moving = dd > 6;
+    if (m.moving) {
+      // 追不上就直接補位——同伴掉隊是最沒意義的挫折
+      const spd = Math.max(220, dd * 4.5);
+      const step = Math.min(dd, spd * dt);
+      m.x += dx / dd * step; m.y += dy / dd * step;
+      if (Math.abs(dx) > 2) m.face = dx > 0 ? 1 : -1;
+    }
+    m.x = Math.max(m.r || 14, Math.min(ARENA.w - 14, m.x));
+    m.y = Math.max(14, Math.min(ARENA.h - 14, m.y));
+    m.anim += (m.moving ? dt * 9 : -m.anim * dt * 8);
+
+    if (m.id === 'shadow') {
+      for (let i = m.queue.length - 1; i >= 0; i--) {
+        const q = m.queue[i];
+        q.t -= dt;
+        if (q.t > 0) continue;
+        m.queue.splice(i, 1);
+        // 重播：同樣的招名、同樣的圈，位置換成影武者的
+        G.strikes.push({
+          w: { name: q.name, klass: '同伴', dmg: q.dmg * d.dmgMul, cd: 1,
+               crit: 0, critMult: 1.5, lifesteal: 0, color: q.color },
+          reach: q.reach, kind: 'slam', t: 0, hit: [], delay: 0,
+          ox: m.x, oy: m.y, mate: true,
+        });
+        m.popT = 0.3;
+        sfx('hit_mid', { pitch: 1.25, vol: 0.5 });
+      }
+    } else {
+      m.cd -= dt;
+      if (m.cd <= 0) {
+        const w0 = p.weapons && p.weapons[0];
+        const tgt = nearestEnemy(m.x, m.y, (w0 ? w0.range : 70) * d.reachMul + 40);
+        if (tgt && w0) {
+          m.cd = d.interval;
+          const a0 = Math.atan2(tgt.y - m.y, tgt.x - m.x);
+          m.face = Math.cos(a0) > 0 ? 1 : -1;
+          m.popT = 0.3;
+          G.strikes.push({
+            w: { name: '弟子', klass: '同伴', dmg: w0.dmg * d.dmgMul, cd: 1,
+                 crit: 0, critMult: 1.5, lifesteal: 0, color: d.color },
+            reach: w0.range * d.reachMul, kind: 'sweep', t: 0, hit: [],
+            ang0: a0 - 0.9, ang1: a0 + 0.9, cur: a0 - 0.9, dur: 0.18,
+            ox: m.x, oy: m.y, mate: true,
+          });
+          sfx('swing', { pitch: 1.3, vol: 0.35 });
+        } else m.cd = 0.2;
+      }
+    }
   }
 }
 
@@ -5154,6 +5603,7 @@ function applyElements(e) {
 
 /* 每幀推進元素狀態。★放在 updateEnemies 的迴圈裡呼叫。 */
 function updateElementStatus(e, dt) {
+  _dmgSrc = 'elem';
   if (e.elemCd_thunder > 0) e.elemCd_thunder -= dt;
   if (e.elemCd_ice > 0) e.elemCd_ice -= dt;
   if (e.paralyze > 0) e.paralyze -= dt;
@@ -5271,11 +5721,11 @@ function burstParticles(x, y, opts) {
     let i = -1;
     for (let j = 0; j < PT.n; j++) if (PT.life[j] <= 0) { i = j; break; }
     if (i < 0) { if (PT.n < PT_MAX) i = PT.n++; else i = (PT.rr = ((PT.rr || 0) + 1) % PT_MAX); }
-    const a = (dir === null) ? rng() * Math.PI * 2 : dir + (rng() - 0.5) * spread;
-    const sp = (o.spd || 90) * (0.45 + rng() * 0.85);
+    const a = (dir === null) ? prng() * Math.PI * 2 : dir + (prng() - 0.5) * spread;
+    const sp = (o.spd || 90) * (0.45 + prng() * 0.85);
     PT.x[i] = x; PT.y[i] = y;
     PT.vx[i] = Math.cos(a) * sp; PT.vy[i] = Math.sin(a) * sp;
-    PT.max[i] = PT.life[i] = (o.life || 0.42) * (0.6 + rng() * 0.7);
+    PT.max[i] = PT.life[i] = (o.life || 0.42) * (0.6 + prng() * 0.7);
     PT.size[i] = o.size || 2;
     PT.col[i] = ci;
     PT.grav[i] = (o.grav === undefined) ? 220 : o.grav;

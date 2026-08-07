@@ -14,7 +14,7 @@ function onModeChange() {
     else if (G.mode === 'gameover' || G.mode === 'victory') bgmStop(1.2);
     else bgmStop(0.5);
   }
-  ['panel-menu', 'panel-select', 'panel-levelup', 'panel-shop', 'panel-end', 'panel-trait'].forEach(id => {
+  ['panel-menu', 'panel-select', 'panel-levelup', 'panel-shop', 'panel-end', 'panel-trait', 'panel-ach'].forEach(id => {
     $(id).classList.add('hidden');
   });
   $('hud-hint').classList.add('hidden');
@@ -105,7 +105,7 @@ function sigNameOf(chId) {
 /* 把拍譜翻成一句人話。「移移站」是給程式看的縮寫，不是給人看的句子。 */
 // D 一定要有：沒有連段表的職業，奧義拍譜的前綴裡就有 D（相撲力士 DSS／鐵頭功 DDD／
 // 狂人 DMD／合氣道師範 SDS），少一個 key 就會在連段表上印出藍色的「undefined」方塊。
-const BEAT_WORD = { S: '站著不動', M: '一邊移動', D: '衝刺命中' };
+const BEAT_WORD = { S: '站著不動', M: '一邊移動', D: '按 SPACE' };
 const CN_NUM = ['', '一', '兩', '三', '四', '五'];
 const BEAT_CLS = { S: 'still', M: 'move', D: 'dash' };
 function beatSpan(b) {
@@ -561,6 +561,40 @@ function toast(msg, bad) {
   toastTimer = setTimeout(() => { el.className = 'toast'; }, 1400);
 }
 
+/* ---------- 戰績（死因紀錄，跨局累積） ---------- */
+function renderAch() {
+  const a = (typeof achLoad === 'function') ? achLoad() : { kills: {}, best: {} };
+  const tot = a.kills.__all || 0;
+  let h = '<div class="ach-total">總擊殺 <b>' + tot + '</b></div>';
+  // 死因排行：按次數排序，讓玩家一眼看出「我是怎麼打的」
+  const rows = KILL_SRC.map(k => ({ k, v: a.kills[k.id] || 0 })).sort((x, y) => y.v - x.v);
+  const max = Math.max(1, rows[0] ? rows[0].v : 1);
+  h += '<div class="ach-grid">';
+  for (const r of rows) {
+    const pct = tot ? Math.round(r.v / tot * 100) : 0;
+    h += '<div class="ach-row' + (r.v ? '' : ' zero') + '">' +
+      '<b>' + r.k.name + '</b>' +
+      '<i class="bar"><u style="width:' + Math.round(r.v / max * 100) + '%"></u></i>' +
+      '<span>' + r.v + (r.v ? '　' + pct + '%' : '') + '</span>' +
+      '<em>' + r.k.desc + '</em></div>';
+  }
+  h += '</div>';
+  // 成就：只顯示已達成的階級，未達成顯示下一階門檻——玩家要看得到目標
+  h += '<div class="title-sm">成就</div><div class="ach-list">';
+  for (const ac of ACHIEVEMENTS) {
+    const cur = a.kills[ac.src] || 0;
+    let tier = 0;
+    for (let i = 0; i < ac.tiers.length; i++) if (cur >= ac.tiers[i]) tier = i + 1;
+    const next = tier < ac.tiers.length ? ac.tiers[tier] : null;
+    h += '<div class="ach-item t' + tier + '">' +
+      '<b>' + ac.name + '</b>' +
+      '<span>' + (tier ? ACH_TIER_NAME[tier] : '—') + '</span>' +
+      '<em>' + (next ? (cur + ' / ' + next) : ('已滿階　' + cur)) + '</em></div>';
+  }
+  h += '</div>';
+  $('ach-body').innerHTML = h;
+}
+
 /* ---------- 結算 ---------- */
 function renderEnd() {
   const won = G.mode === 'victory';
@@ -575,6 +609,13 @@ function renderEnd() {
     '<div class="kv"><span>造成傷害</span><b>' + Math.round(G.stats.dmgDealt) + '</b></div>' +
     '<div class="kv"><span>承受傷害</span><b>' + Math.round(G.stats.dmgTaken) + '</b></div>' +
     '<div class="kv"><span>等級</span><b>' + G.level + '</b></div>';
+  // 這一局是怎麼打的：死因分佈。只列有發生的，避免一排零把重點淹掉。
+  const rk = G.runKills || {};
+  const rows = KILL_SRC.filter(k => rk[k.id]).sort((x, y) => rk[y.id] - rk[x.id]);
+  if (rows.length) {
+    $('end-stats').innerHTML += '<div class="kv head"><span>死因</span><b></b></div>' +
+      rows.map(k => '<div class="kv"><span>' + k.name + '</span><b>' + rk[k.id] + '</b></div>').join('');
+  }
   if (won) {
     const nd = Math.min(5, G.danger + 1);
     $('end-unlock').textContent = G.danger < 5 ? ('解鎖　危險 ' + nd) : '已達最高危險等級';
@@ -1131,6 +1172,8 @@ function boot() {
   initInput();
   initPauseMenu();
   $('btn-play').onclick = openSelect;
+  $('btn-ach').onclick = () => { renderAch(); $('panel-menu').classList.add('hidden'); $('panel-ach').classList.remove('hidden'); };
+  $('ach-close').onclick = () => { $('panel-ach').classList.add('hidden'); $('panel-menu').classList.remove('hidden'); };
   $('btn-back').onclick = () => { G.mode = 'menu'; onModeChange(); };
   $('btn-start').onclick = beginRun;
   $('shop-reroll').onclick = () => { if (shopReroll()) renderShop(); };
@@ -1156,24 +1199,26 @@ function boardHtml() {
   // A＝站著不動打中、B＝一邊移動打中、C＝按 SPACE。
   // 前兩拍只是「湊滿了」的計數，不決定出哪一招——它只影響變體加成。
   let h = '<div class="combo-head">連段盤' +
-    '<span>打中兩下之後，<b>第三下你做什麼</b>就決定變成哪一招</span></div>';
+    '<span><b>前兩下偏站還是偏移</b>挑一排、<b>第三下你在做什麼</b>挑一欄，第三下就變成那一招</span></div>';
   h += '<div class="bd">';
   h += '<div class="bd-r bd-h"><div class="bd-c bd-lab"></div>' +
-    '<div class="bd-c bd-hd"><b class="bw bw-still">打中</b><span>第三下打中</span></div>' +
-    '<div class="bd-c bd-hd"><b class="bw bw-dash">C</b><span>第三下按 SPACE</span></div></div>';
+    '<div class="bd-c bd-hd"><b class="bw bw-still">A</b><span>第三下站著打中</span></div>' +
+    '<div class="bd-c bd-hd"><b class="bw bw-move">B</b><span>第三下移動打中</span></div></div>';
   for (const r of BOARD_ROWS) {
     h += '<div class="bd-r">';
     h += '<div class="bd-c bd-lab"><b>' + r.name + '</b><span>' + r.hint + '</span></div>';
     for (const c of BOARD_COLS) {
       const key = r.key + '_' + c.key;
-      // C 欄只有一格有意義（衝刺沒有站/移之分），第二排的 C 格用累積多數挑，
-      // 但玩家看不到那個差異，所以只在第一排顯示 C 欄的說明避免誤導。
       const f = FINISHER_MAP[p.comboBoard[key]];
-      const off = f && ((f.home === 'D' ? 'D' : 'H') !== c.key);
+      const off = f && (f.home !== c.key);
+      // 混拍格（前綴偏站卻用移動收尾，或反過來）恆吃 ×1.25。
+      // ★ 這是格子的固有屬性不是玩家的操作，所以一定要標出來——
+      //   玩家日後從商店換別的招進這兩格，那招也會無聲吃到 +25%，沒標＝暗坑。
+      const mixed = (r.key !== c.key);
       h += '<div class="bd-c bd-slot on' + (f ? ' filled' : '') + '" data-slot="' + key + '">';
       if (f) {
         h += '<b>' + f.name + '</b><i>' +
-          (c.key === 'H' ? '換個狀態打中 ×' + BOARD_MIX_MUL : '按 SPACE 收尾') +
+          (mixed ? '混拍格 ×' + BOARD_MIX_MUL : '純拍格') +
           (off ? '　非本命 ×' + BOARD_OFFHOME_MUL : '') + '</i>';
       } else {
         h += '<b class="empty">空格</b><i>只出普攻</i>';
@@ -1195,7 +1240,7 @@ function boardPickHtml() {
   let h = '<div class="bd-pick"><div class="bd-pick-h">放進「' + openBoardSlot.replace('_', ' → ') + '」</div>';
   owned.forEach(f => {
     const at = boardSlotOf(f.id);
-    const off = (f.home === 'D' ? 'D' : 'H') !== col;
+    const off = f.home !== col;
     h += '<button class="bd-opt' + (f.id === cur ? ' on' : '') + '" data-fin="' + f.id + '">' +
       '<b>' + f.name + '</b>' +
       '<em>' + (off ? '非本命 ×' + BOARD_OFFHOME_MUL : '本命') + '</em>' +

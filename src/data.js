@@ -30,6 +30,30 @@ const TUNE_DEFS = [
   { g: '經濟', k: 'waveDurMul',     n: '波長倍率',       def: 1.0,   min: 0.5, max: 2,    step: 0.1 },
 ];
 const TUNE = {
+  leanSpd: 100,        // 傾倒速度 px/s。實測 60→乾等 3.05%、100→2.22%、160→2.80%
+  // ★★ 摔角手要摔得到人（總監 2026-08-04 核可）。
+  //   BBB 從抓技改成打擊技之後，盤面三格（頭槌／BIG BOOT／雙臂迴旋）全部是打擊技，
+   // 所有的「摔」——原地背摔、追擊側摔、螺旋高空摔——都被關在接 C 的延伸窗口後面。
+  //   而舊值（冷卻 8 秒＋窗口 0.4 秒）實測延伸技平均 55~75 秒才出一次：
+  //   沒搓到 C 的玩家整場只會頭槌、踢人、轉圈——那是拳手不是摔角手。
+  //   摔角這個類別的識別特徵就是「把人抓起來摔下去」，那件事不能一分鐘才發生一次。
+  //   不動任何招式，只讓 C 更容易搓到。
+  //   ★ 定案：只砍冷卻，窗口不動。
+  //     冷卻掃描（轉換率＝收尾招裡有多少接上了延伸技，10 種子、完整局長、配對）：
+  //       冷卻 4 → 危險0 60% / 危險3 50%   ← 60% 是紅線（延伸技變成連段的自動第四拍）
+  //       冷卻 5 → 52% / 48%
+  //       冷卻 6 → 49% / 45%              ← 唯一兩個難度都落在 30~50% 合格帶
+  //       冷卻 7 → 46% / 42%
+  //       冷卻 8 → 43% / 37%（原值）
+  //     冷卻確實在擋人（8→6 讓轉換率漲 6~8pp），所以砍它有證據；但砍到 4 會踩紅線。
+  extCd: 6,            // 延伸技共用冷卻（原 8）
+  // ★ 窗口維持 0.40：**沒有證據支持改動**（不是「數據顯示 0.40 較好」，兩者意義不同）。
+  //   實測窗口 0.55 / 0.45 / 0.40 跑出逐位元相同的結果（延伸技 467/467/467）——
+  //   bot 按 C 是為了衝刺不是為了接延伸技，它永遠落在窗口最前面那段，
+  //   放寬後多出來的部分它用不到，所以 **bot 沒有能力回答窗口該設多少**。
+  //   而原本以為存在的人類實測（「0.40 是硬牆、中段玩家一半接不到」）查無此量測，見規格 §10.11。
+  //   兩邊都沒有證據 → 維持現狀是唯一誠實的選擇。要回答它只能找人玩並記錄接到率。
+  extWindow: 0.40,     // 收尾之後可以按 C 的窗口長度
   // 接觸幀定格的長度。動畫師標這是「最沒把握的數字」：
   // 高頻招一場會出現很多次，100ms × 高頻可能累積成滞感。實機調。
   poseHold: 0.10,};
@@ -110,7 +134,12 @@ const MOVES = [
   { id: 'suplex_grab', name: '擒抱', short: '擒', slot: 'dash', color: '#b07a4a', cd: 4, price: 46,
     desc: '滑行擒抱住撞到的第一個敵人。抓住之後：移動＝掄著他甩打周遭；站定＝炸彈摔砸出範圍重擊。抓不住頭目。',
     dashSpd: 560, dashDur: 0.5, holdDur: 3.5 },
-  { id: 'iai_slash', name: '拔刀斬', short: '拔', slot: 'dash', color: '#4f5d75', cd: 4, price: 42,
+  // ★ 冷卻 4 → 2.4（總監 2026-08-05）：劍豪的定位是「走路很慢但會 DASH 斬擊」，
+  //   那代表拔刀斬是他的**主要交戰手段**，不是偶爾放的絕招。
+  //   注意它本身還有 1.0 秒的收刀段（期間完全不能移動，見 engine 的 iaiPhase），
+   // 所以實際的循環是「收刀 1 秒 + 冷卻」——冷卻 4 秒時一個循環要 5 秒以上，
+  //   配上走路慢，玩家會有很長時間既走不動也衝不出去。
+  { id: 'iai_slash', name: '拔刀斬', short: '拔', slot: 'dash', color: '#4f5d75', cd: 2.4, price: 42,
     desc: '三段式居合：先甩刀掃前方，反手把刀水平收回鞘——整整一秒，這是居合的代價——然後瞬身到方向鍵指的位置，路徑閃過一道白光，光上的敵人在半拍之後才裂開，連中三刀。',
     dashSpd: 900, dashDur: 0.22 },
   { id: 'lunge_thrust', name: '飛込正拳', short: '突', slot: 'dash', color: '#e8e4dc', cd: 4, price: 42,
@@ -264,26 +293,53 @@ const COMBOS = {
      純拍＝普通傷害、混拍變體較強；每條收尾後 0.4 秒內按 C＝延伸技（有冷卻高威力）。
      螺旋摔投退出拍序表，改掛在擒抱掄甩滿 3 秒按 C 的獎勵。 */
   wrestler: [
-    { seq: ['S', 'S', 'S'], name: '頭槌', kind: 'strike_heavy',
+    /* ── 盤上三招（總監 2026-08-04 指定表）──
+       AAA＝頭槌 ／ AAB・BBA＝BIG BOOT ／ BBB＝迴旋螺旋槳
+       三招的差異在「做了什麼」：定身／轟飛／掃場，不是「哪一個比較痛」。
+       ★ 曾經寫「每秒輸出刻意調成等值（60／64／61）」——那組數字是沒凍結量測協定
+         量出來的，已作廢。凍結協定 n=400 的實測是 1.00×／1.50×／2.08×（見規格 §10.7）。
+         總監 2026-08-04 裁示「先好玩比較重要 不要平衡」，所以維持不動，不要照等值改。 */
+    { seq: ['S', 'S', 'S'], name: '頭槌', kind: 'strike_heavy', cd: 1.2,
       params: { dmg: 38, stun: 1.8, radius: 78, cleaveMul: 0.5, pose: 'head', img: 'fx_slam' },
       // 頭槌不把人頂飛，改成原地暈眩（總監 2026-08-04）：
       // 頂上去的力道是往下壓不是往外推，而且轟飛會把你自己的飯磗推走
       // （摔角手射程只有 66）。損失的位移換成定身 0.6 → 1.8 秒。
-      ext: 'running_ddt', extName: '衝刺DDT',
-      desc: 'AAA：兩記手刀之後站定用頭撞上去。馬上按 C＝衝向最近的人接移動 DDT。' },
-    { seq: ['M', 'M', 'M'], name: '繩索投', kind: 'rope_throw',
-      params: { dmg: 26, spd: 1500, stun: 1.2 },
-      ext: 'big_boot', extName: 'BIG BOOT',
-      desc: 'B：措住人往畫面外的繩索一丟，他會彈回來。彈回來的瞬間馬上按 C＝一記 BIG BOOT 把他的臉踢回去。' },
-    { seq: ['M', 'M', 'S'], name: '德式背摔', kind: 'suplex',
-      params: { dmg: 62, stun: 1.2 },
-      ext: 'toss_powerbomb', extName: '拋高炸彈摔',
-      desc: 'BBA：移動兩下之後站定環抱住對手，整個人向後仰把他從頭頂翻到身後。馬上按 C＝把人拋高，追上去空中接住轉炸彈摔。' },
-    { seq: ['S', 'S', 'M'], name: '腰投', kind: 'hip_toss',
-      params: { dmg: 55, stun: 0.9 },
-      ext: 'gut_roll', extName: '抱腰翻滾',
-      desc: 'AAB：站定兩下之後踏步勾住手臂，以腰為支點把人往前摔。馬上按 C＝抱著他在地上連續翻滾輾過去。' },
-    /* ---- C 結尾（2 拍前綴在前：matchCombo 取最長匹配，順序只是保險） ---- */
+      // 放在「站站站」這格語意也對：你站定，所以你不需要位移。
+      ext: 'spot_suplex', extName: '原地背摔',
+      desc: 'AAA：兩記手刀之後站定用頭撞上去，他會原地暈很久。馬上按 C＝就地環抱後仰摔。' },
+    { seq: ['S', 'S', 'M'], name: 'BIG BOOT', kind: 'knock_cone', cd: 1.2,
+      // dmg 從 48 砍到 36：這招落在混拍格，恆吃 BOARD_MIX_MUL ×1.25，
+      // 36×1.25 之後才跟頭槌等值（實測 76 vs 72）。直接寫 48 會變成一格獨大。
+      // arc 90 是刻意收窄的——大腳是一隻腳不是掃堂腿，窄扇形只把正面那個轟走，
+      // 旁邊那圈留給你繼續打。
+      params: { dmg: 36, knock: 220, arc: 90, range: 132, stun: 1.05, launch: 560 },
+      ext: 'side_slam', extName: '追擊側摔',
+      desc: 'AAB／BBA（站移混著打）：一隻大腳直接踹臉，正面那個飛出去。馬上按 C＝追上去把他側摔進地板。' },
+    // ★ 名字改過：本來叫「螺旋打樁」——那是桑吉爾夫那個**抓技**的名字
+    //   （スクリューパイルドライバー：抓住→跳起→旋轉→頭朝下鑽進地板）。
+    //   打樁 piledriver 在摔角裡的定義就是「把對手頭朝下釘進地板」，沒有打擊技叫打樁。
+    //   總監指正的正是「不是抓技是打擊技」，名字卻掛著那個抓技，等於在畫面上跟玩家說反話。
+    //   雙臂迴旋＝ダブルラリアット（Double Lariat），才是他描述的那一招。
+    { seq: ['M', 'M', 'M'], name: '雙臂迴旋', kind: 'spin_lariat', cd: 3.0,
+      // ★ 總監 2026-08-04 指正：這一格是「像直升機那樣」的**打擊技**，不是抓技。
+      //   雙臂平舉、自身旋轉，掃到周圍所有人（桑吉爾夫的螺旋打樁）。
+      //   我原本做成 grab_super（抓一個人當武器掄）——那是抓技，整個做錯了方向。
+      // dur 1.10 ＝ 2.3 圈（動畫師規格）。
+      // ★ 要調強弱請動 hitCd 跟 dmg，不要動 tick。
+      //   每個 tick 掃的是「半徑 96 的整個圓盤裡所有人」，沒有弧可以漏、覆蓋率恆等於 100%，
+      //   所以只要 tick ≤ hitCd，把它調成 0.06 或 0.20 對結果幾乎沒差別。
+      //   真正的節流是 hitCd 0.22（＝同一個人最快每半圈被掃到一次，dur 1.10 下最多吃 5 下）。
+      //   ⚠ 不要把舊的「tick 是覆蓋率參數」那套搬過來——那是 grab_super 的性質：
+      //     它的 tick 是「被掄的那一個人當下這一格碰到誰」的**點取樣**，
+      //     兩次判定之間身體掃過 35~110 度的弧完全沒判定，所以間隔拉寬＝漏掉更多弧。
+      //     本 kind 是整個圓盤判定，那個論證不成立。照舊觀念調 tick 會調不動，
+      //     然後誤判成「這招沒反應」。
+      params: { dur: 1.10, radius: 96, dmg: 14, tick: 0.12, hitCd: 0.22,
+        knock: 90, stun: 0.25, moveMul: 0.78 },
+      ext: 'spiral_air', extName: '螺旋高空摔',
+      desc: 'BBB：雙臂平舉整個人轉起來，像直升機一樣把周圍的人全部掃一遍。轉的時候可以走。馬上按 C＝抓一個飛上去轉著砸下來。' },
+    /* ---- ↓ 以下退出開局盤面（C 不再是欄），留在池子裡當商店貨 ----
+       seq 只剩「本命格判定」一個用途：最後一格是 D 的，在 buildFinisherPool 會被改判成「移」。 */
     { seq: ['S', 'S', 'D'], name: '矛頭衝撞', kind: 'charge_line',
       params: { dmg: 72, len: 165, width: 52, knock: 0, stun: 1.6, pose: 'lariat', chargeSpd: 900, single: true },
       desc: 'AAC：壓低身體對著腹部正面撞進去，把人從腰部折成兩半帶倒——他不會飛走，會在原地被折斷。' },
@@ -307,6 +363,11 @@ const COMBOS = {
 
 /* 延伸技表（資料驅動；摔角手的專屬摔投走引擎硬編碼分支） */
 const EXT_MOVES = {
+  /* 摔角手．頭槌接 C：就地環抱後仰。三個延伸技裡唯一不位移的，
+     所以數字最高（130）——它沒有「順便換位」這個附加價值可以折抵。 */
+  spot_suplex: { name: '原地背摔', kind: 'suplex', shake: 13, hitstop: 0.13, sfx: 'hit_heavy',
+    params: { dmg: 130, stun: 1.6 } },
+
   /* 空手道：摔角手的延伸是「把人變成道具」，空手道的延伸是「把一擊變成一個形狀」
      ——點(當身)／面(飛後迴蹴)／地(鐵槌落)／貼身(肘當)，四個形狀不重複，全部零轟飛。 */
   atemi: { name: '當身', kind: 'shock_nova', shake: 13, hitstop: 0.12, sfx: 'ougi_hit',
@@ -540,7 +601,20 @@ const CHARACTERS = [
   {
     id: 'kenshi', name: '劍豪', tag: '重斬慢刀',
     color: '#4f5d75', skin: '#4a4f5c',
-    stats: { dmg: 30, range: 15, atkSpd: -25, maxHp: -15 },
+    // ★ 總監 2026-08-05 定調：「走路很慢，但是會 DASH 斬擊。攻擊範圍不能太大」。
+    //   改之前這兩項正好相反——移速沒有任何減益（跟一般職業一樣快），
+    //   射程還是 +15（打刀 96 × 1.15 = 110，全職業第二長）。
+    //   speed -22：明顯比人慢，但不到相撲力士(-28)那種挪不動；
+    //     他的機動性要靠拔刀斬換取，走路本來就不該是他的移動手段。
+    //   range +15 → -10：打刀 96 × 0.90 ≈ 86。刀比拳長是合理的，但不該是「站遠遠掃」。
+    stats: { dmg: 30, range: -10, atkSpd: -25, maxHp: -15, speed: -22 },
+    // ★ 摺足（總監 2026-08-05）：武士不是滑行，是「踏出去一步、腳釘住、再踏一步」。
+    //   step＝踏出去的那一段（真的在移動），pause＝腳釘住的那一段（完全不前進）。
+    //   ★ 平均速度刻意保持不變（爆發倍率由 (step+pause)/step 自動算出），
+     //   所以「慢」完全由 stats.speed 負責、「卡」完全由這裡負責，兩件事分開調。
+    //   設計意圖：走路沒辦法做微調 → 想精準到位就得用拔刀斬 →
+    //   玩法自然建立在 DASH 的使用時機上（總監定調）。
+    stepWalk: { step: 0.14, pause: 0.22 },
     weapon: 'katana', slots: 6,
     special: 'iai',
     moves: { dash: 'iai_slash', move: 'twin_slash', still: 'triple_slash' },
@@ -811,6 +885,8 @@ const ITEMS = [
   { id: 'reach_pad', name: '護臂',       tier: 2, price: 25, stats: { range: 15, armor: 1 } },
   { id: 'vampire_fang', name: '吸血牙',  tier: 2, price: 28, stats: { lifesteal: 6 } },
   { id: 'magnet',    name: '磁鐵',       tier: 2, price: 24, stats: { harvest: 3 }, special: 'magnet' },
+  { id: 'shadow_charm', name: '影武者護符', tier: 3, price: 46, stats: {}, special: 'mate_shadow' },
+  { id: 'deshi_band',   name: '入門腰帶',   tier: 3, price: 44, stats: {}, special: 'mate_deshi' },
   { id: 'oil_can',   name: '潤滑油',     tier: 2, price: 25, stats: { atkSpd: 14, block: -4 } },
   { id: 'shin_guard', name: '護脛',      tier: 2, price: 26, stats: { dodge: 8, speed: 5 } },
   { id: 'gambler',   name: '賭徒骰子',   tier: 2, price: 27, stats: { luck: 25, maxHp: -10 } },
@@ -840,6 +916,8 @@ ITEMS.forEach(i => ITEM_MAP[i.id] = i);
 /* 道具說明文字（由 stats 與 special 自動組出，special 需要人話補充） */
 const SPECIAL_DESC = {
   magnet: '素材吸取範圍大幅提升。',
+  mate_shadow: '召出影武者。它不會自己出手——它把你剛打出來的收尾招，半拍之後在它站的位置重播一次（傷害四成）。你打得越好它越強。',
+  mate_deshi: '收一個弟子。他無敵，會自己找人打，但出手慢、傷害低——他是來幫你補刀擋路的，不是來替你清場的。',
   lastStand: '生命低於 25% 時護甲 +10。',
   lowHpDmg: '每失去 10% 生命，傷害額外 +6%。',
   comboBoost: '連續命中同一目標時，每段 +5% 傷害（最多五段）。',
@@ -903,6 +981,80 @@ const BOSSES = [
 ];
 const BOSS_MAP = {};
 BOSSES.forEach(b => BOSS_MAP[b.id] = b);
+
+
+/* ---------- 死因與成就（總監 2026-08-05） ----------
+   「摔死人、被踩死、被DASH死、被轉死等各種紀錄」。
+   死因在傷害端標記、在 killEnemy 結算，資料存 localStorage，跨局累積。
+   ★ 標記策略：不逐一改 103 個 hurtEnemy 呼叫點，而是在**系統入口**設 _dmgSrc，
+     castOugi 用一張 kind → 死因的對照表一次涵蓋大部分招式。 */
+const KILL_SRC = [
+  { id: 'throw',  name: '摔死',   desc: '背摔、炸彈摔、側摔、高空摔——被抓起來砸進地板' },
+  { id: 'stomp',  name: '踩死',   desc: '大腳、踢技、踏擊——一隻腳解決' },
+  { id: 'dash',   name: '撞死',   desc: '衝刺撞上去、金臂勾、拔刀突進' },
+  { id: 'spin',   name: '轉死',   desc: '雙臂迴旋、掄甩——被轉暈的那些' },
+  { id: 'blade',  name: '斬死',   desc: '刃類武器與斬擊系招式' },
+  { id: 'wall',   name: '撞牆死', desc: '被轟飛之後撞在牆上' },
+  { id: 'elem',   name: '屬性死', desc: '電麻痺、冰凍結、火燒、毒——不是被打死的' },
+  { id: 'skill',  name: '絕技死', desc: '其餘的招式收尾' },
+  { id: 'mate',   name: '同伴幹掉', desc: '影武者或弟子解決的——你只是動了個手' },
+  { id: 'strike', name: '打死',   desc: '就是拳腳普攻打死的' },
+];
+const KILL_SRC_MAP = {};
+KILL_SRC.forEach(k => KILL_SRC_MAP[k.id] = k);
+
+/* castOugi 的 kind → 死因。沒列到的走 skill。 */
+const KIND_SRC = {
+  suplex: 'throw', hip_toss: 'throw', rope_throw: 'throw', throw_chain: 'throw',
+  grab_super: 'spin', spin_lariat: 'spin',
+  knock_cone: 'stomp', flying_kick: 'stomp', dive_splash: 'stomp',
+  charge_line: 'dash', rebound_line: 'dash', pierce_line: 'dash', multi_thrust: 'dash',
+  line_pierce: 'blade', sweep_ring: 'blade', execute_cut: 'blade', delayed_cuts: 'blade',
+};
+
+/* 成就：每條三階。門檻走「看得到但要打一陣子」的量級。 */
+const ACHIEVEMENTS = [
+  { id: 'a_throw', src: 'throw',  name: '摔角手的浪漫', tiers: [10, 100, 500] },
+  { id: 'a_stomp', src: 'stomp',  name: '一隻腳就夠了', tiers: [10, 100, 500] },
+  { id: 'a_dash',  src: 'dash',   name: '路過而已',     tiers: [10, 100, 500] },
+  { id: 'a_spin',  src: 'spin',   name: '暈頭轉向',     tiers: [10, 100, 500] },
+  { id: 'a_blade', src: 'blade',  name: '一刀兩斷',     tiers: [10, 100, 500] },
+  { id: 'a_wall',  src: 'wall',   name: '牆壁也是武器', tiers: [5,  50,  250] },
+  { id: 'a_elem',  src: 'elem',   name: '不用親自動手', tiers: [10, 100, 500] },
+  { id: 'a_mate',  src: 'mate',   name: '我徒弟打的',   tiers: [10, 100, 500] },
+  { id: 'a_kill',  src: '__all',  name: '肉搏場常客',   tiers: [200, 2000, 10000] },
+];
+const ACH_TIER_NAME = ['', '銅', '銀', '金'];
+/* ---------- 同伴（總監 2026-08-05：影武者與弟子，都是可以玩的道具） ----------
+   ★ 設計取捨寫在這裡，之後要調的人先讀：
+   影武者＝**不自己決定任何事**，延遲重播玩家剛打出來的收尾招。
+     它放大你的操作而不是取代你的操作——這是刻意的。無敵但傷害打折，
+     語意上「它是影子，本來就打不到」，所以無敵不是免死金牌。
+   弟子＝自律，會自己找敵人用武器打。無敵，但傷害更低、攻擊間隔長，
+     定位是「幫你補刀跟擋路」，不是「替你清場」。
+     ⚠ 風險已知：無敵又自律的隊友有可能讓玩家站著看。所以它的每秒輸出
+       刻意壓在玩家普攻的兩成以下，靠它清場會非常慢。 */
+const MATES = {
+  shadow: {
+    id: 'shadow', name: '影武者', color: '#8fa8d4', alpha: 0.5, scale: 1.0,
+    delay: 0.5,          // 重播延遲（半拍）
+    dmgMul: 0.40,        // 重播傷害倍率
+    trailLen: 0.9,       // 站在玩家幾秒前的位置
+    maxQueue: 3,
+  },
+  deshi: {
+    id: 'deshi', name: '弟子', color: '#d9b06a', alpha: 0.92, scale: 0.78,
+    // 實測校準（同一個假人台、10 秒、玩家基準 469 傷害）：
+    //   1.35 / 0.30 / 0.85 → 弟子只打出 19，＝玩家的 4%，等於沒作用。
+    //   那不是「不搶你的擊殺」，是「看不出他在幹嘛」——兩種失敗要分清楚。
+    //   目標是玩家輸出的 15~20%：看得到他在幫忙，但靠他清場會非常慢。
+    interval: 0.95,      // 出手間隔（仍比玩家慢很多）
+    dmgMul: 0.70,      // 間距拉到 64 之後同伴離敵人也遠了，輸出從 17.7% 掉到 12.6%，補回來
+    reachMul: 1.05,
+    follow: 62,          // 跟在玩家後面的距離
+    seek: 190,           // 找敵人的範圍
+  },
+};
 
 /* ---------- 波次 / 難度 ---------- */
 /* 總監 2026-08-04 定案：退回 20 關。實測 30 關版本的後段（22-29 波）最低生命 98%、
@@ -1023,9 +1175,14 @@ const BOARD_ROWS = [
   { key: 'S', name: 'A', hint: '第三下站著不動打中' },
   { key: 'M', name: 'B', hint: '第三下一邊移動打中' },
 ];
+/* ★ 2026-08-04 二次定案：C 退出盤面。
+   舊盤是「排＝第三下做什麼、欄＝打中還是按 C」——實測前綴完全沒被讀取
+   （五種不同前綴的第三下打中，全部出同一招），等於前兩拍只是計數器。
+   新盤：排＝前兩拍的多數，欄＝第三下你在做什麼。前綴這才真的決定出什麼招，
+   而 C 專職當延伸技鍵（頭槌接 C ＝原地背摔），不再跟盤面搶輸入。 */
 const BOARD_COLS = [
-  { key: 'H', name: '打中', act: '第三下打中就變招' },
-  { key: 'D', name: 'C', act: '第三下按 SPACE' },
+  { key: 'S', name: 'A', act: '第三下站著不動打中' },
+  { key: 'M', name: 'B', act: '第三下一邊移動打中' },
 ];
 const BOARD_ROW_KEYS = BOARD_ROWS.map(r => r.key);
 /* 第三下換一個狀態打中＝變體加成。同一格同一招，但獎勵你在收尾那下變一下——
@@ -1043,7 +1200,14 @@ const FINISHER_MAP = {};
         id: cls + '_f' + i, cls,
         name: c.name, kind: c.kind, params: c.params,
         ext: c.ext, extName: c.extName, desc: c.desc, sig: !!c.sig,
-        home: c.seq[c.seq.length - 1],   // 本命格＝它原本的收尾拍
+        // ★ 本命格＝它原本的收尾拍。但 C 收尾的招在新盤上沒有本命格（C 已經不是欄了），
+        //   一律判成「移」——衝鋒／撲壓／飛踢系本來就是位移招，語意也對。
+        //   不改的話這些招放進任何一格都會無聲吃 0.7 折，而玩家看不到任何原因。
+        home: c.seq[c.seq.length - 1] === 'D' ? 'M' : c.seq[c.seq.length - 1],
+        // ★ 沒抄這行，招式表寫的每格冷卻會被完全吃掉，而且不會報錯——
+        //   摔角手 agent 第一輪就是漏了它，螺旋槳一直跑在 1.2 秒而不是 3.0 秒，
+        //   通關率量出 90% 才回頭發現。
+        cd: c.cd,
         tier: 1, price: PRICE[1],
       };
       FINISHER_MAP[f.id] = f;
@@ -1062,10 +1226,13 @@ function defaultBoard(clsId) {
     const i = list.findIndex(c => c.seq.length === 3 && c.seq[0] === pre && c.seq[2] === last);
     return i >= 0 ? clsId + '_f' + i : null;
   };
-  b['S_H'] = find('S', 'S') || find('S', 'M');
-  b['S_D'] = find('S', 'D');
-  b['M_H'] = find('M', 'M') || find('M', 'S');
-  b['M_D'] = find('M', 'D');
+  // 四格＝前綴（站多/移多）× 第三下（站著打中/移動打中）。
+  // 混拍那兩格（S_M / M_S）故意指向同一招：總監定案「看數量不看順序」，
+  // 站移 跟 移站 都是「混」，就該出同一招——玩家要記的是三招不是四招。
+  b['S_S'] = find('S', 'S');
+  b['S_M'] = find('S', 'M') || find('M', 'S');
+  b['M_S'] = b['S_M'];
+  b['M_M'] = find('M', 'M');
   for (const k in b) if (!b[k]) delete b[k];
   return b;
 }
@@ -1121,6 +1288,7 @@ const EXTRA_FINISHERS = {
     EXTRA_FINISHERS[cls].forEach((e, i) => {
       const f = Object.assign({}, e, {
         id: cls + '_x' + i, cls, price: PRICE[e.tier] || 30,
+        home: e.home === 'D' ? 'M' : e.home,   // 同上：新盤沒有 D 欄
       });
       FINISHER_POOL[cls].push(f);
       FINISHER_MAP[f.id] = f;

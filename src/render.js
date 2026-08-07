@@ -126,6 +126,7 @@ function drawGame() {
   if (G.player) drawWeaponsBehind();
   drawEnemies();
   drawEnemyMarkers();
+  drawMates();
   if (G.player) drawPlayer();
   if (G.player) drawSheatheAnim(G.player);
   if (G.player) drawWeaponsFront();
@@ -403,6 +404,79 @@ const FRAME_H = 46;   // 幀在世界座標的顯示高度
    bigboot_2.png 量過：伸出去的那隻腳在 x 425–501、y 185–308（512px 圖），
    佔橘色像素的 49%。把那塊裁下來重畫一次、放大 1.5 倍、內側對齊。 */
 const BOOT_SRC = { x: 425 / 512, y: 185 / 512, w: 76 / 512, h: 123 / 512 };
+/* 螺旋打樁的旋翼：裁角色自己的手臂，兩支繞著身體轉（總監：「像直升機那樣」）。
+   ★ 軌跡必須是橢圓不是圓——圓形軌跡讀起來是「垂直的風車」，
+     壓扁成 0.30 才會讀成「水平面在轉、只是我們斜著看」，那才是直升機。
+   ★ 身體不跟著翻滾：直升機的機身是穩的，轉的是旋翼。
+     （螺旋高空摔那個是整個人翻，兩者的語言不同，不要混用。）
+   手臂來源 frontslam_1 的伸出臂，量出來在 x 355~450 / y 115~215（512 基準）。 */
+/* 手臂裁切框。★ 起點不能設在 x=352——實測那一列的不透明高度還有 209px，那是軀幹不是手臂；
+   要到 x≈359 才收窄到 72px。裁到軀幹的後果是畫面上出現兩片硬邊梯形，像紙板不像手臂。 */
+const ARM_SRC = { x: 362 / 512, y: 116 / 512, w: 92 / 512, h: 96 / 512 };
+const LARIAT_SQUASH = 0.30;      // 橢圓壓扁比＝視角俯角
+/* ★★ 旋翼一定要從 frontslam_1 裁，不能用「當下正在播的那一幀」。
+   踩過的坑：第一版直接用傳進來的 img（＝pickFrame 的結果）。角色在轉的時候播的是
+   idle／walk，於是那個 (x352,y112,100x104) 的框裁到的是**頭部面具**，畫面上出現
+   兩個藍紅色小方塊繞著角色轉。截圖才看出來——數值測試全部通過（八方向都吃到傷害），
+   因為判定跟繪製是兩條獨立的路徑。視覺改動一定要真的看畫面。 */
+function lariatArmImg() {
+  const cf = CHAR_FRAMES[G.char && G.char.id];
+  const src = (cf && cf.ready) ? cf : BASE_FRAMES;
+  const okI = S => S && S.frontslam && S.frontslam[0] && S.frontslam[0].complete && S.frontslam[0].naturalWidth > 0;
+  if (okI(src)) return src.frontslam[0];
+  if (okI(BASE_FRAMES)) return BASE_FRAMES.frontslam[0];
+  return null;
+}
+function drawLariatArms(_ignored, front) {
+  const p = G.player; const la = p.lariat;
+  const img = lariatArmImg();
+  if (!la || !img) return;
+  const iw = img.naturalWidth, ih = img.naturalHeight;
+  const sx = ARM_SRC.x * iw, sy = ARM_SRC.y * ih;
+  const sw = ARM_SRC.w * iw, sh = ARM_SRC.h * ih;
+  // ★ 手臂要「從肩膀往外長」，不是「丟在軌道上」。
+  //   第一版把手臂畫在半徑 59px 處，而身體半徑只有約 25px——中間空一大段，
+   // 看起來像兩片紙板浮在角色旁邊。改成：把原點移到肩膀、轉向外、再從 0 往外畫。
+  const armLen = FRAME_H * 0.46;               // 手臂長度（從肩膀算起）
+  const armH = FRAME_H * 0.26;
+  const shoulder = -FRAME_H * 0.16;            // 肩高
+  const hub = FRAME_H * 0.10;                  // 肩膀離身體中線的距離
+  for (let i = 0; i < 2; i++) {
+    const a = la.ang + i * Math.PI;
+    const cs = Math.cos(a), sn = Math.sin(a);
+    // sn > 0 ＝ 轉到身體前面（畫在本體之後），sn <= 0 ＝ 在身後（畫在本體之前）
+    if ((sn > 0) !== front) continue;
+    // 螢幕上的方向：y 要吃橢圓壓扁，這樣手臂才會跟著軌跡的斜度走
+    const dir = Math.atan2(sn * LARIAT_SQUASH, cs);
+    const depth = 1 + sn * 0.12;               // 靠近鏡頭略大，遠離略小
+    // 側面朝向鏡頭時手臂看起來最長，指向鏡頭時最短——透視縮短，這個做了才立體
+    const fore = 0.45 + 0.55 * Math.abs(cs);
+    ctx.save();
+    ctx.translate(Math.cos(dir) * hub, Math.sin(dir) * hub + shoulder);
+    ctx.rotate(dir);
+    ctx.scale(depth, depth);
+    ctx.drawImage(img, sx, sy, sw, sh, 0, -armH / 2, armLen * fore, armH);
+    ctx.restore();
+  }
+  // 灰色殘影（總監裁示：拖影用中性灰）。只在身前那半畫，身後畫會被本體蓋掉變髒。
+  if (front) {
+    ctx.save();
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = "#5F574F";
+    for (let t = 1; t <= 5; t++) {
+      const a2 = la.ang - t * 0.16;
+      const cs2 = Math.cos(a2), sn2 = Math.sin(a2);
+      if (sn2 <= 0) continue;
+      const R2 = FRAME_H * 0.10 + FRAME_H * 0.46 * (0.45 + 0.55 * Math.abs(cs2)) * 0.8;
+      const x2 = cs2 * R2, y2 = sn2 * R2 * LARIAT_SQUASH + shoulder;
+      const rr = FRAME_H * 0.055 * (1 - t * 0.13);
+      ctx.beginPath(); ctx.ellipse(x2, y2, rr * 1.6, rr, Math.atan2(sn2 * LARIAT_SQUASH, cs2), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
 function drawBigFoot(img, _a, _b, dstX, dstY, dstW, dstH) {
   const p = G.player;
   const t = p.bigBootT || 0;
@@ -468,7 +542,9 @@ function drawPlayerFramed(p, c) {
     ctx.rotate(0.2 + bob * 0.035);
   }
   if (p.iframe > 0 && Math.floor(G.time * 20) % 2 === 0) ctx.filter = 'brightness(2.2)';
+  if (p.lariat) drawLariatArms(img, false);   // 轉到身後的那支：先畫，會被本體蓋住一部分
   ctx.drawImage(img, -w / 2, -FRAME_H * 0.62, w, FRAME_H);
+  if (p.lariat) drawLariatArms(img, true);    // 轉到身前的那支：後畫，蓋在本體上
   drawBigFoot(img, w / 2, FRAME_H / 2, -w / 2, -FRAME_H * 0.62, w, FRAME_H);
   // 配件：疊在頭部（基底幀構圖固定，錨點統一）
   // 武士的腰間刀鞘（專屬幀已畫進去就不疊）
@@ -872,6 +948,54 @@ function drawFighter(c, charDef, opts) {
 }
 
 /* ---------- 玩家 ---------- */
+/* 同伴：影武者（半透明藍）與弟子（縮小的實體）。
+   ★ 不重用 drawPlayerFramed——那個函式從頭到尾綁 G.player（姿勢、連段閃、站樁、
+     大腳、旋翼全都讀玩家狀態），硬套會把玩家的招式狀態畫到同伴身上。
+     同伴只要 idle／walk 兩組幀就夠讀，穩定度遠比共用重要。 */
+function drawMates() {
+  if (!G.mates || !G.mates.length || !G.char) return;
+  const cf = CHAR_FRAMES[G.char.id];
+  const src = (cf && cf.ready) ? cf : BASE_FRAMES;
+  if (!src || !src.idle || !src.idle[0] || !src.idle[0].complete) return;
+  for (const m of G.mates) {
+    const d = m.def;
+    const set = m.moving && src.walk ? src.walk : src.idle;
+    const img = set[Math.floor(Math.abs(m.anim) * 1.6) % set.length] || src.idle[0];
+    if (!img || !img.complete || !img.naturalWidth) continue;
+    const h = FRAME_H * d.scale;
+    const w = h * (img.width / img.height);
+    ctx.save();
+    ctx.translate(Math.round(m.x), Math.round(m.y));
+    // 影子先畫，不然同伴會像浮在空中
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath();
+    ctx.ellipse(0, h * 0.30, h * 0.26, h * 0.10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    if (m.face < 0) ctx.scale(-1, 1);
+    // 出手的那一下彈一下，不然同伴的攻擊在畫面上讀不出來
+    if (m.popT > 0) { const k = m.popT / 0.35; ctx.scale(1 + 0.14 * k, 1 - 0.10 * k); }
+    ctx.globalAlpha = d.alpha;
+    ctx.drawImage(img, -w / 2, -h * 0.62, w, h);
+    // 影武者疊一層本色，讀成「影子」而不是「另一隻半透明的企鵝」
+    if (m.id === 'shadow') {
+      ctx.globalCompositeOperation = 'source-atop';
+      ctx.globalAlpha = 0.42;
+      ctx.fillStyle = d.color;
+      ctx.fillRect(-w / 2, -h * 0.62, w, h);
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+    // 佇列指示：影武者手上還壓著幾招沒放，玩家要看得到
+    if (m.id === 'shadow' && m.queue && m.queue.length) {
+      ctx.fillStyle = d.color;
+      for (let i = 0; i < m.queue.length; i++) {
+        ctx.fillRect(Math.round(m.x) - 6 + i * 6, Math.round(m.y) - h * 0.72, 4, 4);
+      }
+    }
+  }
+}
+
 function drawPlayer() {
   const p = G.player;
   const c = G.char;
@@ -897,6 +1021,12 @@ function drawPlayer() {
     ctx.setLineDash([]);
   }
   ctx.translate(0, -air);
+  // 螺旋高空摔：滯空期間整個人轉起來。轉速前快後慢（落地前收住，砸下去那一下要看得清楚），
+  // 用 easeOut 收尾而不是等速——等速轉到落地會讓撞擊點被轉糊。
+  if (p.airSlam && p.airSlam.spiral) {
+    const kSp = Math.min(1, p.airSlam.t / (p.airSlam.dur || 1));
+    ctx.rotate(Math.PI * 2 * 1.75 * (1 - Math.pow(1 - kSp, 2.2)));
+  }
 
   // 頭上連段提示：目前拍列＋奧義就緒閃光——玩家不用看角落也知道連段打到哪
   {
